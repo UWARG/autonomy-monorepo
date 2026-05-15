@@ -1,0 +1,11 @@
+name = "warg_cli"
+language = "python"
+description = "WARG autonomy monorepo developer CLI."
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+test = "uv run pytest"
+run = "uv run warg"
+lint = "uv run ruff check ."

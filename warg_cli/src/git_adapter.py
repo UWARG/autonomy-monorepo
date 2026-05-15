@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+
+class GitAdapter:
+    def __init__(self, root: Path):
+        self.root = root
+
+    def sparse_checkout_enabled(self) -> bool:
+        result = self._run("config", "--bool", "core.sparseCheckout", check=False)
+        return result.returncode == 0 and result.stdout.strip() == "true"
+
+    def enable_sparse_checkout(self) -> None:
+        self._run("sparse-checkout", "init", "--cone")
+
+    def set_sparse_paths(self, paths: list[str]) -> None:
+        self._run("sparse-checkout", "set", *paths)
+
+    def current_sparse_paths(self) -> set[str]:
+        result = self._run("sparse-checkout", "list", check=False)
+        if result.returncode != 0:
+            return set()
+        return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+    def materialize_paths(self, paths: list[str]) -> set[str]:
+        before = self.current_sparse_paths()
+        if not self.sparse_checkout_enabled():
+            self.enable_sparse_checkout()
+        self.set_sparse_paths(paths)
+        return set(paths) - before
+
+    def _run(
+        self, *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.root,
+            check=check,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
