@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
 from errors import DependencyError, ManifestError
 from registry import Registry, find_repo_root
 
@@ -72,10 +73,10 @@ def write_registry(root: Path, projects: dict[str, str]) -> None:
         lines.append(f"[projects.{name}]")
         lines.append(f'path = "{path}"')
         lines.append("")
-    (root / "projects.toml").write_text("\n".join(lines))
+    (root / ROOT_REGISTRY_FILENAME).write_text("\n".join(lines))
 
 
 def write_manifest(root: Path, project: str, content: str) -> None:
     project_dir = root / project
     project_dir.mkdir()
-    (project_dir / "warg.toml").write_text(content)
+    (project_dir / PROJECT_MANIFEST_FILENAME).write_text(content)
