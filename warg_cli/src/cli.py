@@ -212,12 +212,12 @@ def _entry_path(registry: Registry, project_name: str) -> str:
 
 
 def _pick_project(registry: Registry) -> str | None:
-    if not registry.projects:
+    if not registry.entries:
         console.print("No projects found.")
         return None
     return questionary.select(
         "Select a project",
-        choices=sorted(registry.projects),
+        choices=sorted(registry.entries),
     ).ask()
 
 
