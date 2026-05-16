@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from constants import ROOT_REGISTRY_FILENAME
 from errors import DependencyError
 from models import Project
-from registry import ROOT_REGISTRY, Registry
+from registry import Registry
 from runner import CommandRunner
 
 
 def affected_projects(registry: Registry, changed_files: list[Path]) -> list[Project]:
-    if any(path.parts and path.parts[0] == ROOT_REGISTRY for path in changed_files):
+    if any(
+        path.parts and path.parts[0] == ROOT_REGISTRY_FILENAME
+        for path in changed_files
+    ):
         return list(registry.projects.values())
 
     directly_changed = _directly_changed_projects(registry, changed_files)

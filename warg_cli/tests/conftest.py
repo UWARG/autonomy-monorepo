@@ -4,12 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
+
 
 @pytest.fixture()
 def fixture_repo(tmp_path: Path) -> Path:
     (tmp_path / ".git").mkdir()
     (tmp_path / "README.md").write_text("# Fixture\n")
-    (tmp_path / "projects.toml").write_text(
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
         """
 [projects.camera]
 path = "camera"
@@ -73,4 +75,4 @@ setup = "echo setup-gesture"
 def write_manifest(root: Path, project: str, content: str) -> None:
     project_dir = root / project
     project_dir.mkdir()
-    (project_dir / "warg.toml").write_text(content.strip() + "\n")
+    (project_dir / PROJECT_MANIFEST_FILENAME).write_text(content.strip() + "\n")

@@ -3,19 +3,35 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import click
 import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ci import affected_projects, run_ci_pipeline
 from errors import WargError
 from git_adapter import GitAdapter
 from models import Project
-from registry import Registry, find_repo_root
+from registry import Registry, find_repo_root, load_project_manifest
 from runner import CommandRunner
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+class WargGroup(TyperGroup):
+    def resolve_command(
+        self, context: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        try:
+            return super().resolve_command(context, args)
+        except click.UsageError as error:
+            exit_code = _run_current_project_command(args)
+            if exit_code is None:
+                raise error
+            raise click.exceptions.Exit(exit_code) from None
+
+
+app = typer.Typer(cls=WargGroup, no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
 console = Console()
@@ -30,7 +46,8 @@ def clone(
 ) -> None:
     """Clone a WARG monorepo without checking out any projects."""
     try:
-        GitAdapter.clone_sparse(repository, destination)
+        with console.status("Cloning repository with sparse checkout..."):
+            GitAdapter.clone_sparse(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -92,9 +109,10 @@ def up(
 
     try:
         git = GitAdapter(root)
-        paths, setup_order, materialized = _materialize_dependency_graph(
-            root, git, project
-        )
+        with console.status(f"Materializing [bold]{project}[/bold]..."):
+            paths, setup_order, materialized = _materialize_dependency_graph(
+                root, git, project
+            )
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -199,6 +217,33 @@ def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
         raise typer.Exit(exit_code)
 
 
+def _run_current_project_command(args: list[str]) -> int | None:
+    if not args:
+        return None
+
+    command, *passthrough = args
+    if passthrough and passthrough[0] == "--":
+        passthrough = passthrough[1:]
+    project = _load_current_project()
+    if project is None or command not in project.commands:
+        return None
+
+    try:
+        return CommandRunner().run(project, command, passthrough)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        return 1
+
+
+def _load_current_project() -> Project | None:
+    current = Path.cwd().resolve()
+    for path in (current, *current.parents):
+        manifest = path / "warg.toml"
+        if manifest.exists():
+            return load_project_manifest(manifest)
+    return None
+
+
 def _materialize_dependency_graph(
     root: Path, git: GitAdapter, project_name: str
 ) -> tuple[list[str], list[Project], set[str]]:
@@ -265,12 +310,12 @@ def _entry_path(registry: Registry, project_name: str) -> str:
 
 
 def _pick_project(registry: Registry) -> str | None:
-    if not registry.projects:
+    if not registry.entries:
         console.print("No projects found.")
         return None
     return questionary.select(
         "Select a project",
-        choices=sorted(registry.projects),
+        choices=sorted(registry.entries),
     ).ask()
 
 
