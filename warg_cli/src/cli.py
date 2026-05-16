@@ -34,6 +34,25 @@ app = typer.Typer(cls=WargGroup, no_args_is_help=True, add_completion=False)
 console = Console()
 
 
+@app.command()
+def clone(
+    repository: str,
+    destination: Optional[str] = typer.Argument(
+        None, help="Directory to clone into. Defaults to Git's repository name."
+    ),
+) -> None:
+    """Clone a WARG monorepo without checking out any projects."""
+    try:
+        with console.status("Cloning repository with sparse checkout..."):
+            GitAdapter.clone_sparse(repository, destination)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    console.print("Cloned repository with sparse checkout enabled.")
+    console.print("Only root files are checked out. Run 'warg up <project>' next.")
+
+
 @app.command("list")
 def list_projects() -> None:
     """List discovered projects."""
@@ -87,9 +106,10 @@ def up(
 
     try:
         git = GitAdapter(root)
-        paths, setup_order, materialized = _materialize_dependency_graph(
-            root, git, project
-        )
+        with console.status(f"Materializing [bold]{project}[/bold]..."):
+            paths, setup_order, materialized = _materialize_dependency_graph(
+                root, git, project
+            )
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -237,12 +257,12 @@ def _entry_path(registry: Registry, project_name: str) -> str:
 
 
 def _pick_project(registry: Registry) -> str | None:
-    if not registry.projects:
+    if not registry.entries:
         console.print("No projects found.")
         return None
     return questionary.select(
         "Select a project",
-        choices=sorted(registry.projects),
+        choices=sorted(registry.entries),
     ).ask()
 
 

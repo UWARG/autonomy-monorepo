@@ -31,6 +31,32 @@ def test_info_shows_commands(fixture_repo: Path, monkeypatch) -> None:
     assert "test:unit" in result.stdout
 
 
+def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@github.com:warg/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "Only root files are checked out" in result.stdout
+
+
 def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
     calls = []
@@ -185,6 +211,42 @@ def test_up_uses_project_picker_when_project_is_missing(
         ("mavlink_comm", "setup", []),
         ("gesture_control", "setup", []),
     ]
+
+
+def test_up_project_picker_uses_root_registry_for_sparse_checkout(
+    tmp_path: Path, monkeypatch
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "projects.toml").write_text(
+        """
+[projects.camera]
+path = "camera"
+
+[projects.gesture_control]
+path = "gesture_control"
+""".strip()
+        + "\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    selected_choices = []
+
+    class FakeQuestion:
+        def ask(self) -> str:
+            return "gesture_control"
+
+    def fake_select(message: str, choices: list[str]) -> FakeQuestion:
+        assert message == "Select a project"
+        selected_choices.extend(choices)
+        return FakeQuestion()
+
+    monkeypatch.setattr("cli.questionary.select", fake_select)
+
+    from cli import _pick_project
+    from registry import Registry
+
+    assert _pick_project(Registry(tmp_path)) == "gesture_control"
+    assert selected_choices == ["camera", "gesture_control"]
 
 
 def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> None:
