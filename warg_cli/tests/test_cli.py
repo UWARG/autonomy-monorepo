@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, app
+from github_adapter import GitHubRepository
 from models import Project
 
 
@@ -55,6 +56,96 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
         ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
     ]
     assert "Only root files are checked out" in result.stdout
+
+
+def test_clone_picks_repository_when_missing(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr(
+        "cli._pick_repository",
+        lambda organization, include_archived: "git@github.com:UWARG/autonomy.git",
+    )
+
+    result = runner.invoke(app, ["clone"])
+
+    assert result.exit_code == 0
+    assert calls == [("git@github.com:UWARG/autonomy.git", None)]
+
+
+def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    class FakeGitHub:
+        @classmethod
+        def list_org_repositories(
+            cls, organization: str, include_archived: bool = False
+        ) -> list[GitHubRepository]:
+            assert organization == "UWARG"
+            assert include_archived is False
+            return [
+                GitHubRepository(
+                    name="autonomy-monorepo",
+                    ssh_url="git@github.com:UWARG/autonomy-monorepo.git",
+                    url="https://github.com/UWARG/autonomy-monorepo",
+                )
+            ]
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.GitHubAdapter", FakeGitHub)
+
+    result = runner.invoke(app, ["clone", "autonomy-monorepo"])
+
+    assert result.exit_code == 0
+    assert calls == [("git@github.com:UWARG/autonomy-monorepo.git", None)]
+
+
+def test_repository_picker_uses_fuzzy_choices(monkeypatch) -> None:
+    class FakeGitHub:
+        @classmethod
+        def list_org_repositories(
+            cls, organization: str, include_archived: bool = False
+        ) -> list[GitHubRepository]:
+            return [
+                GitHubRepository(
+                    name="autonomy-monorepo",
+                    ssh_url="git@github.com:UWARG/autonomy-monorepo.git",
+                    url="https://github.com/UWARG/autonomy-monorepo",
+                )
+            ]
+
+    class FakeFuzzy:
+        def __init__(self, choice: str):
+            self.choice = choice
+
+        def execute(self) -> str:
+            return self.choice
+
+    def fake_fuzzy(message: str, choices: list[object]):
+        assert message == "Select a UWARG repository"
+        assert len(choices) == 1
+        assert choices[0].name == "autonomy-monorepo"
+        assert choices[0].value == "git@github.com:UWARG/autonomy-monorepo.git"
+        return FakeFuzzy(choices[0].value)
+
+    monkeypatch.setattr("cli.GitHubAdapter", FakeGitHub)
+    monkeypatch.setattr("cli.inquirer.fuzzy", fake_fuzzy)
+
+    from cli import _pick_repository
+
+    assert _pick_repository("UWARG", False) == (
+        "git@github.com:UWARG/autonomy-monorepo.git"
+    )
 
 
 def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
@@ -313,16 +404,16 @@ path = "gesture_control"
 
     selected_choices = []
 
-    class FakeQuestion:
-        def ask(self) -> str:
+    class FakeFuzzy:
+        def execute(self) -> str:
             return "gesture_control"
 
-    def fake_select(message: str, choices: list[str]) -> FakeQuestion:
+    def fake_fuzzy(message: str, choices: list[str]) -> FakeFuzzy:
         assert message == "Select a project"
         selected_choices.extend(choices)
-        return FakeQuestion()
+        return FakeFuzzy()
 
-    monkeypatch.setattr("cli.questionary.select", fake_select)
+    monkeypatch.setattr("cli.inquirer.fuzzy", fake_fuzzy)
 
     from cli import _pick_project
     from registry import Registry

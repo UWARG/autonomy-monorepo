@@ -27,11 +27,16 @@ warg = "cli:app"
 Clone a WARG monorepo with sparse checkout enabled:
 
 ```bash
+warg clone
+warg clone autonomy-monorepo
 warg clone git@github.com:warg/autonomy-monorepo.git
 ```
 
 Only root files such as `README.md` and `projects.toml` are checked out
-initially. Project directories stay absent until they are materialized.
+initially. Project directories stay absent until they are materialized. When
+called without a repository, `warg clone` opens a searchable list of repositories
+in the UWARG GitHub organization, sorted by most recently updated first. You can
+also pass a UWARG repository name instead of a full clone URL.
 
 List registered projects:
 

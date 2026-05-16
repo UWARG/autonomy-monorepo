@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "WARG autonomy monorepo developer CLI"
 requires-python = ">=3.9"
 dependencies = [
-  "questionary>=2.0.1",
+  "InquirerPy>=0.3.4",
   "rich>=13.7.0",
   "tomli>=2.0.1; python_version < '3.11'",
   "typing-extensions>=4.10.0",

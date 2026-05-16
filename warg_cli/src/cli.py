@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Optional
 
 import click
-import questionary
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -13,6 +14,7 @@ from typer.core import TyperGroup
 from ci import affected_projects, run_ci_pipeline
 from errors import WargError
 from git_adapter import GitAdapter
+from github_adapter import GitHubAdapter
 from models import Project
 from registry import Registry, find_repo_root, load_project_manifest
 from runner import CommandRunner
@@ -39,13 +41,29 @@ console = Console()
 
 @app.command()
 def clone(
-    repository: str,
+    repository: Optional[str] = typer.Argument(
+        None,
+        help=(
+            "Repository URL, or a UWARG repository name. "
+            "Omit to pick from a searchable UWARG repo list."
+        ),
+    ),
     destination: Optional[str] = typer.Argument(
         None, help="Directory to clone into. Defaults to Git's repository name."
+    ),
+    organization: str = typer.Option(
+        "UWARG", "--org", help="GitHub organization to search when picking a repo."
+    ),
+    include_archived: bool = typer.Option(
+        False, "--include-archived", help="Include archived repositories in the picker."
     ),
 ) -> None:
     """Clone a WARG monorepo without checking out any projects."""
     try:
+        repository = repository or _pick_repository(organization, include_archived)
+        if not repository:
+            raise typer.Exit(1)
+        repository = _resolve_repository(repository, organization, include_archived)
         with console.status("Cloning repository with sparse checkout..."):
             GitAdapter.clone_sparse(repository, destination)
     except WargError as error:
@@ -191,6 +209,33 @@ def _load_repo_root() -> Path:
         raise typer.Exit(1) from error
 
 
+def _resolve_repository(
+    repository: str, organization: str, include_archived: bool
+) -> str:
+    if _looks_like_repository_url(repository):
+        return repository
+
+    repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
+    for candidate in repositories:
+        if candidate.name == repository:
+            return candidate.ssh_url
+
+    available = ", ".join(candidate.name for candidate in repositories) or "none"
+    from errors import GitError
+
+    raise GitError(
+        f"Unknown {organization} repository '{repository}'. Available repositories: {available}."
+    )
+
+
+def _looks_like_repository_url(repository: str) -> bool:
+    return (
+        "://" in repository
+        or repository.startswith("git@")
+        or repository.startswith("ssh://")
+    )
+
+
 def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
     root = _load_repo_root()
     try:
@@ -313,20 +358,41 @@ def _pick_project(registry: Registry) -> str | None:
     if not registry.entries:
         console.print("No projects found.")
         return None
-    return questionary.select(
-        "Select a project",
+    return inquirer.fuzzy(
+        message="Select a project",
         choices=sorted(registry.entries),
-    ).ask()
+    ).execute()
+
+
+def _pick_repository(
+    organization: str, include_archived: bool
+) -> str | None:
+    repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
+    if not repositories:
+        console.print(f"No repositories found in {organization}.")
+        return None
+
+    choices = [
+        Choice(
+            name=repository.name,
+            value=repository.ssh_url,
+        )
+        for repository in repositories
+    ]
+    return inquirer.fuzzy(
+        message=f"Select a {organization} repository",
+        choices=choices,
+    ).execute()
 
 
 def _pick_command(commands: dict[str, str]) -> str | None:
     if not commands:
         console.print("No commands found for this project.")
         return None
-    return questionary.select(
-        "Select a command",
+    return inquirer.fuzzy(
+        message="Select a command",
         choices=sorted(commands),
-    ).ask()
+    ).execute()
 
 
 def main() -> None:
