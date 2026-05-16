@@ -162,6 +162,26 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
     assert calls == ["gesture_control"]
 
 
+def test_up_reports_git_errors(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def materialize_paths(self, paths: list[str]) -> set[str]:
+            from errors import GitError
+
+            raise GitError("git sparse-checkout init failed: permission denied")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["up", "gesture_control"])
+
+    assert result.exit_code == 1
+    assert "git sparse-checkout init failed" in result.stdout
+
+
 def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
@@ -228,4 +248,3 @@ path = "mavlink_comm"
         "gesture_control",
     ]
     assert materialized == {"camera", "gesture_control", "mavlink_comm"}
-

@@ -13,3 +13,6 @@ class DependencyError(WargError):
 class CommandError(WargError):
     """Raised when a manifest command cannot be run."""
 
+
+class GitError(WargError):
+    """Raised when a Git operation cannot be completed."""

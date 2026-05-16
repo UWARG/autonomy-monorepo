@@ -73,10 +73,14 @@ def up(
     if not project:
         raise typer.Exit(1)
 
-    git = GitAdapter(root)
-    paths, setup_order, materialized = _materialize_dependency_graph(
-        root, git, project
-    )
+    try:
+        git = GitAdapter(root)
+        paths, setup_order, materialized = _materialize_dependency_graph(
+            root, git, project
+        )
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
     console.print("Sparse checkout paths:")
     for path in paths:
         console.print(f"  - {path}")

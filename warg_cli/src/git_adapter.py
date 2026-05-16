@@ -3,6 +3,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from errors import GitError
+
 
 class GitAdapter:
     def __init__(self, root: Path):
@@ -35,11 +37,16 @@ class GitAdapter:
     def _run(
         self, *args: str, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        result = subprocess.run(
             ["git", *args],
             cwd=self.root,
-            check=check,
+            check=False,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
+        if check and result.returncode != 0:
+            command = " ".join(["git", *args])
+            message = result.stderr.strip() or result.stdout.strip()
+            raise GitError(f"{command} failed: {message}")
+        return result
