@@ -125,11 +125,9 @@ def test_up_uses_project_picker_when_project_is_missing(
 
     assert result.exit_code == 0
     assert materialized["paths"] == [
-        "README.md",
         "camera",
         "gesture_control",
         "mavlink_comm",
-        "warg_cli",
     ]
     assert calls == [
         ("camera", "setup", []),
@@ -162,3 +160,5 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
 
     assert result.exit_code == 0
     assert calls == ["gesture_control"]
+
+

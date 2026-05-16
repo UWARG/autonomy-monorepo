@@ -27,6 +27,7 @@ def test_resolves_dependency_order(fixture_repo: Path) -> None:
 
 def test_detects_dependency_cycles(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
+    write_registry(tmp_path, {"a": "a", "b": "b"})
     write_manifest(tmp_path, "a", 'name = "a"\ndepends_on = ["b"]\n')
     write_manifest(tmp_path, "b", 'name = "b"\ndepends_on = ["a"]\n')
 
@@ -36,21 +37,20 @@ def test_detects_dependency_cycles(tmp_path: Path) -> None:
 
 def test_reports_missing_dependencies(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
+    write_registry(tmp_path, {"a": "a"})
     write_manifest(tmp_path, "a", 'name = "a"\ndepends_on = ["missing"]\n')
 
     with pytest.raises(DependencyError, match="unknown project 'missing'"):
         Registry(tmp_path).dependency_order("a")
 
 
-def test_sparse_paths_include_dependencies_and_root_files(fixture_repo: Path) -> None:
+def test_sparse_paths_include_project_and_dependencies(fixture_repo: Path) -> None:
     registry = Registry(fixture_repo)
 
     assert registry.sparse_paths_for("gesture_control") == [
-        "README.md",
         "camera",
         "gesture_control",
         "mavlink_comm",
-        "warg_cli",
     ]
 
 
@@ -62,8 +62,17 @@ def test_find_repo_root_from_nested_path(fixture_repo: Path) -> None:
 
 
 def test_unknown_project_lists_available_projects(fixture_repo: Path) -> None:
-    with pytest.raises(ManifestError, match="Available projects: camera"):
+    with pytest.raises(ManifestError, match="Registered projects: camera"):
         Registry(fixture_repo).get("missing")
+
+
+def write_registry(root: Path, projects: dict[str, str]) -> None:
+    lines = []
+    for name, path in projects.items():
+        lines.append(f"[projects.{name}]")
+        lines.append(f'path = "{path}"')
+        lines.append("")
+    (root / "projects.toml").write_text("\n".join(lines))
 
 
 def write_manifest(root: Path, project: str, content: str) -> None:

@@ -1,13 +1,26 @@
 # WARG Autonomy Monorepo
 
 This repository is organized as a flat monorepo. Each top-level directory is a
-project with its own `warg.toml` manifest.
+project with its own `warg.toml` manifest. Projects are deliberately registered
+in the root `projects.toml` file.
 
-The `warg` CLI discovers those manifests, resolves project dependencies, manages
-Git sparse-checkout paths, and runs project-defined commands.
+The `warg` CLI reads `projects.toml`, resolves project dependencies, manages Git
+sparse-checkout paths, and runs project-defined commands.
 
-Sparse checkouts always keep the `warg_cli` project available so the developer
-tooling remains present while individual autonomy projects are materialized.
+## Project registry
+
+Register every project in the root `projects.toml`:
+
+```toml
+[projects.camera]
+path = "camera"
+
+[projects.mavlink_comm]
+path = "mavlink_comm"
+
+[projects.gesture_control]
+path = "gesture_control"
+```
 
 ## Project manifests
 

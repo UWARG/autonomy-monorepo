@@ -9,10 +9,10 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
 from errors import DependencyError, ManifestError
-from models import Project
+from models import Project, ProjectEntry
 
 
-ROOT_INCLUDE_PATHS = ("README.md", ".gitignore", "warg_cli")
+ROOT_REGISTRY = "projects.toml"
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -26,18 +26,55 @@ def find_repo_root(start: Path | None = None) -> Path:
 class Registry:
     def __init__(self, root: Path):
         self.root = root.resolve()
+        self.entries = self._load_entries()
         self.projects = self._discover()
+
+    def _load_entries(self) -> dict[str, ProjectEntry]:
+        registry_path = self.root / ROOT_REGISTRY
+        if not registry_path.exists():
+            raise ManifestError(f"Missing root project registry: {ROOT_REGISTRY}.")
+
+        with registry_path.open("rb") as file:
+            data = tomllib.load(file)
+
+        projects = data.get("projects")
+        if not isinstance(projects, dict) or not projects:
+            raise ManifestError(f"{ROOT_REGISTRY}: '[projects]' must not be empty.")
+
+        entries: dict[str, ProjectEntry] = {}
+        for name, metadata in projects.items():
+            if not isinstance(name, str) or not name:
+                raise ManifestError(f"{ROOT_REGISTRY}: project names must be strings.")
+            if not isinstance(metadata, dict):
+                raise ManifestError(f"{ROOT_REGISTRY}: project '{name}' must be a table.")
+            path = metadata.get("path")
+            if not isinstance(path, str) or not path:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY}: project '{name}' must define a non-empty path."
+                )
+            if Path(path).is_absolute() or ".." in Path(path).parts:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY}: project '{name}' path must be repo-relative."
+                )
+            if name in entries:
+                raise ManifestError(f"{ROOT_REGISTRY}: duplicate project '{name}'.")
+            entries[name] = ProjectEntry(name=name, path=path)
+
+        return dict(sorted(entries.items()))
 
     def _discover(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}
-        for manifest in sorted(self.root.glob("*/warg.toml")):
+        for entry in self.entries.values():
+            manifest = self.root / entry.path / "warg.toml"
+            if not manifest.exists():
+                continue
             project = self._load_project(manifest)
-            if project.name in projects:
-                other = projects[project.name].path
+            if project.name != entry.name:
                 raise ManifestError(
-                    f"Duplicate project name '{project.name}' in {other} and {project.path}."
+                    f"{manifest}: project name '{project.name}' does not match "
+                    f"registry name '{entry.name}'."
                 )
-            projects[project.name] = project
+            projects[entry.name] = project
         return projects
 
     def _load_project(self, manifest: Path) -> Project:
@@ -76,12 +113,17 @@ class Registry:
         )
 
     def get(self, name: str) -> Project:
+        if name not in self.entries:
+            available = ", ".join(sorted(self.entries)) or "none"
+            raise ManifestError(
+                f"Unknown project '{name}'. Registered projects: {available}."
+            )
         try:
             return self.projects[name]
         except KeyError as error:
-            available = ", ".join(sorted(self.projects)) or "none"
             raise ManifestError(
-                f"Unknown project '{name}'. Available projects: {available}."
+                f"Project '{name}' is registered but not checked out. "
+                f"Run 'warg up {name}' to materialize it."
             ) from error
 
     def dependency_order(self, name: str) -> list[Project]:
@@ -114,8 +156,7 @@ class Registry:
 
     def sparse_paths_for(self, name: str) -> list[str]:
         project_paths = [project.relative_path for project in self.dependency_order(name)]
-        root_paths = [path for path in ROOT_INCLUDE_PATHS if (self.root / path).exists()]
-        return sorted({*root_paths, *project_paths})
+        return sorted(project_paths)
 
 
 def _expect_string(data: dict[str, Any], key: str, manifest: Path) -> str:

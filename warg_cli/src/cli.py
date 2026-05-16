@@ -7,7 +7,6 @@ import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
-from typing_extensions import Annotated
 
 from errors import WargError
 from git_adapter import GitAdapter
@@ -16,10 +15,6 @@ from runner import CommandRunner
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
-
-
-def _registry() -> Registry:
-    return Registry(find_repo_root())
 
 
 @app.command("list")
@@ -32,12 +27,13 @@ def list_projects() -> None:
     table.add_column("Depends on")
     table.add_column("Description")
 
-    for project in sorted(registry.projects.values(), key=lambda item: item.name):
+    for name, entry in registry.entries.items():
+        project = registry.projects.get(name)
         table.add_row(
-            project.name,
-            project.language or "",
-            ", ".join(project.depends_on),
-            project.description,
+            name,
+            project.language if project and project.language else "",
+            ", ".join(project.depends_on) if project else "",
+            project.description if project else f"Registered at {entry.path}",
         )
     console.print(table)
 
@@ -118,7 +114,7 @@ def run(
 
 def _load_registry() -> Registry:
     try:
-        return _registry()
+        return Registry(find_repo_root())
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error

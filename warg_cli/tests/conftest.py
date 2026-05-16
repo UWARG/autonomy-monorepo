@@ -9,7 +9,19 @@ import pytest
 def fixture_repo(tmp_path: Path) -> Path:
     (tmp_path / ".git").mkdir()
     (tmp_path / "README.md").write_text("# Fixture\n")
-    (tmp_path / "warg_cli").mkdir()
+    (tmp_path / "projects.toml").write_text(
+        """
+[projects.camera]
+path = "camera"
+
+[projects.gesture_control]
+path = "gesture_control"
+
+[projects.mavlink_comm]
+path = "mavlink_comm"
+""".strip()
+        + "\n"
+    )
 
     write_manifest(
         tmp_path,
