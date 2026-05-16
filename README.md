@@ -47,6 +47,7 @@ Commands are intentionally project-defined, similar to `scripts` in
 ## CLI examples
 
 ```bash
+warg clone git@github.com:warg/autonomy-monorepo.git
 warg list
 warg up gesture_control
 warg info gesture_control
@@ -54,3 +55,7 @@ warg run camera test
 warg run camera test:unit
 warg run mavlink_comm lint -- --fix
 ```
+
+`warg clone` uses Git sparse checkout and partial clone support so only root
+files such as `README.md` and `projects.toml` are checked out initially. Project
+directories stay absent until you materialize one with `warg up <project>`.

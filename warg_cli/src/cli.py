@@ -18,6 +18,24 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 console = Console()
 
 
+@app.command()
+def clone(
+    repository: str,
+    destination: Optional[str] = typer.Argument(
+        None, help="Directory to clone into. Defaults to Git's repository name."
+    ),
+) -> None:
+    """Clone a WARG monorepo without checking out any projects."""
+    try:
+        GitAdapter.clone_sparse(repository, destination)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    console.print("Cloned repository with sparse checkout enabled.")
+    console.print("Only root files are checked out. Run 'warg up <project>' next.")
+
+
 @app.command("list")
 def list_projects() -> None:
     """List discovered projects."""
