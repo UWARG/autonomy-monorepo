@@ -8,8 +8,8 @@ setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
 run = "uv run warg"
-lint = "uv run ruff check ."
+lint = "uv run --extra dev ruff check ."
 
 [ci]
-pr = ["test"]
+pr = ["lint", "test"]
 main = ["test", "build"]
