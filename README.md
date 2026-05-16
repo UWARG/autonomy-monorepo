@@ -56,6 +56,15 @@ warg run camera test:unit
 warg run mavlink_comm lint -- --fix
 ```
 
+When your current directory is inside a project with a `warg.toml`, bare command
+names are matched against that project's manifest:
+
+```bash
+cd camera
+warg test
+warg lint -- --fix
+```
+
 `warg clone` uses Git sparse checkout and partial clone support so only root
 files such as `README.md` and `projects.toml` are checked out initially. Project
 directories stay absent until you materialize one with `warg up <project>`.

@@ -3,18 +3,34 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import click
 import questionary
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from errors import WargError
 from git_adapter import GitAdapter
 from models import Project
-from registry import Registry, find_repo_root
+from registry import Registry, find_repo_root, load_project_manifest
 from runner import CommandRunner
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+class WargGroup(TyperGroup):
+    def resolve_command(
+        self, context: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        try:
+            return super().resolve_command(context, args)
+        except click.UsageError as error:
+            exit_code = _run_current_project_command(args)
+            if exit_code is None:
+                raise error
+            raise click.exceptions.Exit(exit_code) from None
+
+
+app = typer.Typer(cls=WargGroup, no_args_is_help=True, add_completion=False)
 console = Console()
 
 
@@ -146,6 +162,33 @@ def _load_repo_root() -> Path:
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
+
+
+def _run_current_project_command(args: list[str]) -> int | None:
+    if not args:
+        return None
+
+    command, *passthrough = args
+    if passthrough and passthrough[0] == "--":
+        passthrough = passthrough[1:]
+    project = _load_current_project()
+    if project is None or command not in project.commands:
+        return None
+
+    try:
+        return CommandRunner().run(project, command, passthrough)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        return 1
+
+
+def _load_current_project() -> Project | None:
+    current = Path.cwd().resolve()
+    for path in (current, *current.parents):
+        manifest = path / "warg.toml"
+        if manifest.exists():
+            return load_project_manifest(manifest)
+    return None
 
 
 def _materialize_dependency_graph(
