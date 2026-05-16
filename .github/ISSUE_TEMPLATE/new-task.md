@@ -14,5 +14,5 @@ Why/where are they supposed to complete this task?
 ## Requirements
 - What are they supposed to accomplish?
 
-## Relevent Resources
+## Relevant Resources
 - Are there any resources that can help them accomplish this goal?
