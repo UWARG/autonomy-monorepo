@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, app
+from github_adapter import GitHubRepository
 from models import Project
 
 
@@ -55,6 +56,58 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
         ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
     ]
     assert "Only root files are checked out" in result.stdout
+
+
+def test_clone_picks_repository_when_missing(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr(
+        "cli._pick_repository",
+        lambda organization, include_archived: "git@github.com:UWARG/autonomy.git",
+    )
+
+    result = runner.invoke(app, ["clone"])
+
+    assert result.exit_code == 0
+    assert calls == [("git@github.com:UWARG/autonomy.git", None)]
+
+
+def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    class FakeGitHub:
+        @classmethod
+        def list_org_repositories(
+            cls, organization: str, include_archived: bool = False
+        ) -> list[GitHubRepository]:
+            assert organization == "UWARG"
+            assert include_archived is False
+            return [
+                GitHubRepository(
+                    name="autonomy-monorepo",
+                    ssh_url="git@github.com:UWARG/autonomy-monorepo.git",
+                    url="https://github.com/UWARG/autonomy-monorepo",
+                )
+            ]
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.GitHubAdapter", FakeGitHub)
+
+    result = runner.invoke(app, ["clone", "autonomy-monorepo"])
+
+    assert result.exit_code == 0
+    assert calls == [("git@github.com:UWARG/autonomy-monorepo.git", None)]
 
 
 def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:

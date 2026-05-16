@@ -10,6 +10,7 @@ from rich.table import Table
 
 from errors import WargError
 from git_adapter import GitAdapter
+from github_adapter import GitHubAdapter
 from models import Project
 from registry import Registry, find_repo_root
 from runner import CommandRunner
@@ -20,13 +21,29 @@ console = Console()
 
 @app.command()
 def clone(
-    repository: str,
+    repository: Optional[str] = typer.Argument(
+        None,
+        help=(
+            "Repository URL, or a UWARG repository name. "
+            "Omit to pick from a searchable UWARG repo list."
+        ),
+    ),
     destination: Optional[str] = typer.Argument(
         None, help="Directory to clone into. Defaults to Git's repository name."
+    ),
+    organization: str = typer.Option(
+        "UWARG", "--org", help="GitHub organization to search when picking a repo."
+    ),
+    include_archived: bool = typer.Option(
+        False, "--include-archived", help="Include archived repositories in the picker."
     ),
 ) -> None:
     """Clone a WARG monorepo without checking out any projects."""
     try:
+        repository = repository or _pick_repository(organization, include_archived)
+        if not repository:
+            raise typer.Exit(1)
+        repository = _resolve_repository(repository, organization, include_archived)
         GitAdapter.clone_sparse(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
@@ -146,6 +163,33 @@ def _load_repo_root() -> Path:
         raise typer.Exit(1) from error
 
 
+def _resolve_repository(
+    repository: str, organization: str, include_archived: bool
+) -> str:
+    if _looks_like_repository_url(repository):
+        return repository
+
+    repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
+    for candidate in repositories:
+        if candidate.name == repository:
+            return candidate.ssh_url
+
+    available = ", ".join(candidate.name for candidate in repositories) or "none"
+    from errors import GitError
+
+    raise GitError(
+        f"Unknown {organization} repository '{repository}'. Available repositories: {available}."
+    )
+
+
+def _looks_like_repository_url(repository: str) -> bool:
+    return (
+        "://" in repository
+        or repository.startswith("git@")
+        or repository.startswith("ssh://")
+    )
+
+
 def _materialize_dependency_graph(
     root: Path, git: GitAdapter, project_name: str
 ) -> tuple[list[str], list[Project], set[str]]:
@@ -218,6 +262,28 @@ def _pick_project(registry: Registry) -> str | None:
     return questionary.select(
         "Select a project",
         choices=sorted(registry.projects),
+    ).ask()
+
+
+def _pick_repository(
+    organization: str, include_archived: bool
+) -> str | None:
+    repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
+    if not repositories:
+        console.print(f"No repositories found in {organization}.")
+        return None
+
+    choices = [
+        questionary.Choice(
+            title=f"{repository.name} ({repository.url})",
+            value=repository.ssh_url,
+        )
+        for repository in repositories
+    ]
+    return questionary.autocomplete(
+        f"Select a {organization} repository",
+        choices=choices,
+        match_middle=True,
     ).ask()
 
 

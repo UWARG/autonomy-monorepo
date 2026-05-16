@@ -47,6 +47,8 @@ Commands are intentionally project-defined, similar to `scripts` in
 ## CLI examples
 
 ```bash
+warg clone
+warg clone autonomy-monorepo
 warg clone git@github.com:warg/autonomy-monorepo.git
 warg list
 warg up gesture_control
@@ -58,4 +60,7 @@ warg run mavlink_comm lint -- --fix
 
 `warg clone` uses Git sparse checkout and partial clone support so only root
 files such as `README.md` and `projects.toml` are checked out initially. Project
-directories stay absent until you materialize one with `warg up <project>`.
+directories stay absent until you materialize one with `warg up <project>`. When
+called without a repository, `warg clone` opens a searchable list of repositories
+in the UWARG GitHub organization. You can also pass a UWARG repository name
+instead of a full clone URL.
