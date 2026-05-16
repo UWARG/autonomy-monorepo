@@ -19,7 +19,7 @@ jobs:
 
       - name: PR CI
         if: github.event_name == 'pull_request'
-        run: uv run --project warg_cli warg ci pr --base origin/${{ github.base_ref }}
+        run: uv run --project warg_cli warg ci pr --base ${{ github.event.pull_request.base.sha }}
 
       - name: Main CI
         if: github.event_name == 'push'
