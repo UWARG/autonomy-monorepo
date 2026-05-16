@@ -27,7 +27,8 @@ def clone(
 ) -> None:
     """Clone a WARG monorepo without checking out any projects."""
     try:
-        GitAdapter.clone_sparse(repository, destination)
+        with console.status("Cloning repository with sparse checkout..."):
+            GitAdapter.clone_sparse(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -89,9 +90,10 @@ def up(
 
     try:
         git = GitAdapter(root)
-        paths, setup_order, materialized = _materialize_dependency_graph(
-            root, git, project
-        )
+        with console.status(f"Materializing [bold]{project}[/bold]..."):
+            paths, setup_order, materialized = _materialize_dependency_graph(
+                root, git, project
+            )
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
