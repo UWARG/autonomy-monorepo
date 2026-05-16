@@ -28,12 +28,5 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-packages = []
-py-modules = [
-  "cli",
-  "errors",
-  "git_adapter",
-  "models",
-  "registry",
-  "runner",
-]
+only-include = ["src"]
+sources = ["src"]
