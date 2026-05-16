@@ -14,6 +14,7 @@ def test_discovers_top_level_manifests(fixture_repo: Path) -> None:
 
     assert sorted(registry.projects) == ["camera", "gesture_control", "mavlink_comm"]
     assert registry.get("camera").commands["test:unit"] == "echo unit-camera"
+    assert registry.get("camera").ci["pr"] == ("test",)
 
 
 def test_resolves_dependency_order(fixture_repo: Path) -> None:
@@ -65,6 +66,28 @@ def test_find_repo_root_from_nested_path(fixture_repo: Path) -> None:
 def test_unknown_project_lists_available_projects(fixture_repo: Path) -> None:
     with pytest.raises(ManifestError, match="Registered projects: camera"):
         Registry(fixture_repo).get("missing")
+
+
+def test_ci_references_must_match_commands(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    write_registry(tmp_path, {"a": "a"})
+    write_manifest(
+        tmp_path,
+        "a",
+        """
+name = "a"
+depends_on = []
+
+[commands]
+test = "echo test"
+
+[ci]
+pr = ["missing"]
+""",
+    )
+
+    with pytest.raises(ManifestError, match="references missing command 'missing'"):
+        Registry(tmp_path)
 
 
 def write_registry(root: Path, projects: dict[str, str]) -> None:

@@ -156,12 +156,35 @@ def load_project_manifest(manifest: Path) -> Project:
     ):
         raise ManifestError(f"{manifest}: '[commands]' must map strings to strings.")
 
+    ci = data.get("ci", {})
+    if not isinstance(ci, dict) or not all(
+        isinstance(key, str)
+        and isinstance(value, list)
+        and all(isinstance(item, str) for item in value)
+        for key, value in ci.items()
+    ):
+        raise ManifestError(
+            f"{manifest}: '[ci]' must map pipeline names to lists of commands."
+        )
+
+    for pipeline, command_names in ci.items():
+        for command_name in command_names:
+            if command_name not in commands:
+                raise ManifestError(
+                    f"{manifest}: [ci].{pipeline} references missing command "
+                    f"'{command_name}'."
+                )
+
     return Project(
         name=name,
         path=manifest.parent,
         description=description,
         depends_on=tuple(depends_on),
         commands=dict(sorted(commands.items())),
+        ci={
+            pipeline: tuple(command_names)
+            for pipeline, command_names in sorted(ci.items())
+        },
     )
 
 

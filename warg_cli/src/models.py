@@ -17,6 +17,7 @@ class Project:
     description: str = ""
     depends_on: tuple[str, ...] = field(default_factory=tuple)
     commands: dict[str, str] = field(default_factory=dict)
+    ci: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def relative_path(self) -> str:

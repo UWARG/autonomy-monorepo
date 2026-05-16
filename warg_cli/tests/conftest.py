@@ -35,8 +35,13 @@ depends_on = []
 
 [commands]
 setup = "echo setup-camera"
+lint = "echo lint-camera"
 test = "echo test-camera"
 "test:unit" = "echo unit-camera"
+
+[ci]
+pr = ["test"]
+main = ["lint", "test"]
 """,
     )
     write_manifest(
