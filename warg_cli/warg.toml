@@ -6,6 +6,7 @@ depends_on = []
 
 [commands]
 setup = "uv sync"
+build = "uv build"
 test = "uv run pytest"
 run = "uv run warg"
 lint = "uv run ruff check ."
