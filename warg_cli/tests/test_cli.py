@@ -251,7 +251,7 @@ def test_unknown_bare_command_still_reports_no_such_command(
     result = runner.invoke(app, ["missing"])
 
     assert result.exit_code == 2
-    assert "No such command 'missing'" in result.stdout
+    assert "No such command 'missing'" in result.output
 
 
 def test_up_uses_project_picker_when_project_is_missing(
