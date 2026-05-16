@@ -110,6 +110,46 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
     assert calls == [("git@github.com:UWARG/autonomy-monorepo.git", None)]
 
 
+def test_repository_picker_uses_searchable_strings(monkeypatch) -> None:
+    class FakeGitHub:
+        @classmethod
+        def list_org_repositories(
+            cls, organization: str, include_archived: bool = False
+        ) -> list[GitHubRepository]:
+            return [
+                GitHubRepository(
+                    name="autonomy-monorepo",
+                    ssh_url="git@github.com:UWARG/autonomy-monorepo.git",
+                    url="https://github.com/UWARG/autonomy-monorepo",
+                )
+            ]
+
+    class FakeAutocomplete:
+        def __init__(self, choice: str):
+            self.choice = choice
+
+        def ask(self) -> str:
+            return self.choice
+
+    def fake_autocomplete(message: str, choices: list[str], match_middle: bool):
+        assert message == "Select a UWARG repository"
+        assert choices == [
+            "autonomy-monorepo (https://github.com/UWARG/autonomy-monorepo)"
+        ]
+        assert all(isinstance(choice, str) for choice in choices)
+        assert match_middle is True
+        return FakeAutocomplete(choices[0])
+
+    monkeypatch.setattr("cli.GitHubAdapter", FakeGitHub)
+    monkeypatch.setattr("cli.questionary.autocomplete", fake_autocomplete)
+
+    from cli import _pick_repository
+
+    assert _pick_repository("UWARG", False) == (
+        "git@github.com:UWARG/autonomy-monorepo.git"
+    )
+
+
 def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
     calls = []

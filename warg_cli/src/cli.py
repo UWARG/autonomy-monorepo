@@ -273,18 +273,18 @@ def _pick_repository(
         console.print(f"No repositories found in {organization}.")
         return None
 
-    choices = [
-        questionary.Choice(
-            title=f"{repository.name} ({repository.url})",
-            value=repository.ssh_url,
-        )
+    clone_urls_by_choice = {
+        f"{repository.name} ({repository.url})": repository.ssh_url
         for repository in repositories
-    ]
-    return questionary.autocomplete(
+    }
+    choice = questionary.autocomplete(
         f"Select a {organization} repository",
-        choices=choices,
+        choices=list(clone_urls_by_choice),
         match_middle=True,
     ).ask()
+    if not choice:
+        return None
+    return clone_urls_by_choice[choice]
 
 
 def _pick_command(commands: dict[str, str]) -> str | None:
