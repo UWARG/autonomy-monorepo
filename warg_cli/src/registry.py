@@ -8,11 +8,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
+from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
 from errors import DependencyError, ManifestError
 from models import Project, ProjectEntry
-
-
-ROOT_REGISTRY = "projects.toml"
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -30,34 +28,46 @@ class Registry:
         self.projects = self._load_materialized_projects()
 
     def _load_entries(self) -> dict[str, ProjectEntry]:
-        registry_path = self.root / ROOT_REGISTRY
+        registry_path = self.root / ROOT_REGISTRY_FILENAME
         if not registry_path.exists():
-            raise ManifestError(f"Missing root project registry: {ROOT_REGISTRY}.")
+            raise ManifestError(
+                f"Missing root project registry: {ROOT_REGISTRY_FILENAME}."
+            )
 
         with registry_path.open("rb") as file:
             data = tomllib.load(file)
 
         projects = data.get("projects")
         if not isinstance(projects, dict) or not projects:
-            raise ManifestError(f"{ROOT_REGISTRY}: '[projects]' must not be empty.")
+            raise ManifestError(
+                f"{ROOT_REGISTRY_FILENAME}: '[projects]' must not be empty."
+            )
 
         entries: dict[str, ProjectEntry] = {}
         for name, metadata in projects.items():
             if not isinstance(name, str) or not name:
-                raise ManifestError(f"{ROOT_REGISTRY}: project names must be strings.")
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project names must be strings."
+                )
             if not isinstance(metadata, dict):
-                raise ManifestError(f"{ROOT_REGISTRY}: project '{name}' must be a table.")
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' must be a table."
+                )
             path = metadata.get("path")
             if not isinstance(path, str) or not path:
                 raise ManifestError(
-                    f"{ROOT_REGISTRY}: project '{name}' must define a non-empty path."
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' must define a "
+                    "non-empty path."
                 )
             if Path(path).is_absolute() or ".." in Path(path).parts:
                 raise ManifestError(
-                    f"{ROOT_REGISTRY}: project '{name}' path must be repo-relative."
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' path must be "
+                    "repo-relative."
                 )
             if name in entries:
-                raise ManifestError(f"{ROOT_REGISTRY}: duplicate project '{name}'.")
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: duplicate project '{name}'."
+                )
             entries[name] = ProjectEntry(name=name, path=path)
 
         return dict(sorted(entries.items()))
@@ -65,10 +75,10 @@ class Registry:
     def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}
         for entry in self.entries.values():
-            manifest = self.root / entry.path / "warg.toml"
+            manifest = self.root / entry.path / PROJECT_MANIFEST_FILENAME
             if not manifest.exists():
                 continue
-            project = self._load_project(manifest)
+            project = load_project_manifest(manifest)
             if project.name != entry.name:
                 raise ManifestError(
                     f"{manifest}: project name '{project.name}' does not match "
@@ -76,36 +86,6 @@ class Registry:
                 )
             projects[entry.name] = project
         return projects
-
-    def _load_project(self, manifest: Path) -> Project:
-        with manifest.open("rb") as file:
-            data = tomllib.load(file)
-
-        name = _expect_string(data, "name", manifest)
-        description = data.get("description", "")
-        if not isinstance(description, str):
-            raise ManifestError(f"{manifest}: 'description' must be a string.")
-
-        depends_on = data.get("depends_on", [])
-        if not isinstance(depends_on, list) or not all(
-            isinstance(item, str) for item in depends_on
-        ):
-            raise ManifestError(f"{manifest}: 'depends_on' must be a list of strings.")
-
-        commands = data.get("commands", {})
-        if not isinstance(commands, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in commands.items()
-        ):
-            raise ManifestError(f"{manifest}: '[commands]' must map strings to strings.")
-
-        return Project(
-            name=name,
-            path=manifest.parent,
-            description=description,
-            depends_on=tuple(depends_on),
-            commands=dict(sorted(commands.items())),
-        )
 
     def get(self, name: str) -> Project:
         if name not in self.entries:
@@ -152,6 +132,37 @@ class Registry:
     def sparse_paths_for(self, name: str) -> list[str]:
         project_paths = [project.relative_path for project in self.dependency_order(name)]
         return sorted(project_paths)
+
+
+def load_project_manifest(manifest: Path) -> Project:
+    with manifest.open("rb") as file:
+        data = tomllib.load(file)
+
+    name = _expect_string(data, "name", manifest)
+    description = data.get("description", "")
+    if not isinstance(description, str):
+        raise ManifestError(f"{manifest}: 'description' must be a string.")
+
+    depends_on = data.get("depends_on", [])
+    if not isinstance(depends_on, list) or not all(
+        isinstance(item, str) for item in depends_on
+    ):
+        raise ManifestError(f"{manifest}: 'depends_on' must be a list of strings.")
+
+    commands = data.get("commands", {})
+    if not isinstance(commands, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in commands.items()
+    ):
+        raise ManifestError(f"{manifest}: '[commands]' must map strings to strings.")
+
+    return Project(
+        name=name,
+        path=manifest.parent,
+        description=description,
+        depends_on=tuple(depends_on),
+        commands=dict(sorted(commands.items())),
+    )
 
 
 def _expect_string(data: dict[str, Any], key: str, manifest: Path) -> str:
