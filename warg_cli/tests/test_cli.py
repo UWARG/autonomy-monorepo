@@ -134,9 +134,7 @@ def test_repository_picker_uses_fuzzy_choices(monkeypatch) -> None:
     def fake_fuzzy(message: str, choices: list[object]):
         assert message == "Select a UWARG repository"
         assert len(choices) == 1
-        assert choices[0].name == (
-            "autonomy-monorepo (https://github.com/UWARG/autonomy-monorepo)"
-        )
+        assert choices[0].name == "autonomy-monorepo"
         assert choices[0].value == "git@github.com:UWARG/autonomy-monorepo.git"
         return FakeFuzzy(choices[0].value)
 

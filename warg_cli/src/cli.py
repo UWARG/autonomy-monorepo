@@ -276,7 +276,7 @@ def _pick_repository(
 
     choices = [
         Choice(
-            name=f"{repository.name} ({repository.url})",
+            name=repository.name,
             value=repository.ssh_url,
         )
         for repository in repositories

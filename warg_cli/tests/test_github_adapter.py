@@ -15,7 +15,7 @@ def test_lists_org_repositories_from_gh(monkeypatch) -> None:
             "--limit",
             "1000",
             "--json",
-            "name,sshUrl,url,isArchived",
+            "name,sshUrl,url,isArchived,updatedAt",
         ]
         return subprocess.CompletedProcess(
             args=args[0],
@@ -26,19 +26,22 @@ def test_lists_org_repositories_from_gh(monkeypatch) -> None:
     "name": "zeta",
     "sshUrl": "git@github.com:UWARG/zeta.git",
     "url": "https://github.com/UWARG/zeta",
-    "isArchived": false
+    "isArchived": false,
+    "updatedAt": "2025-01-02T00:00:00Z"
   },
   {
     "name": "old",
     "sshUrl": "git@github.com:UWARG/old.git",
     "url": "https://github.com/UWARG/old",
-    "isArchived": true
+    "isArchived": true,
+    "updatedAt": "2025-01-03T00:00:00Z"
   },
   {
     "name": "alpha",
     "sshUrl": "git@github.com:UWARG/alpha.git",
     "url": "https://github.com/UWARG/alpha",
-    "isArchived": false
+    "isArchived": false,
+    "updatedAt": "2025-01-01T00:00:00Z"
   }
 ]
 """,
@@ -49,8 +52,9 @@ def test_lists_org_repositories_from_gh(monkeypatch) -> None:
 
     repositories = GitHubAdapter.list_org_repositories("UWARG")
 
-    assert [repository.name for repository in repositories] == ["alpha", "zeta"]
-    assert repositories[0].ssh_url == "git@github.com:UWARG/alpha.git"
+    assert [repository.name for repository in repositories] == ["zeta", "alpha"]
+    assert repositories[0].ssh_url == "git@github.com:UWARG/zeta.git"
+    assert repositories[0].updated_at == "2025-01-02T00:00:00Z"
 
 
 def test_can_include_archived_repositories(monkeypatch) -> None:
@@ -64,7 +68,8 @@ def test_can_include_archived_repositories(monkeypatch) -> None:
     "name": "old",
     "sshUrl": "git@github.com:UWARG/old.git",
     "url": "https://github.com/UWARG/old",
-    "isArchived": true
+    "isArchived": true,
+    "updatedAt": "2025-01-03T00:00:00Z"
   }
 ]
 """,

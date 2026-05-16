@@ -16,6 +16,7 @@ class GitHubRepository:
     name: str
     ssh_url: str
     url: str
+    updated_at: str = ""
 
 
 class GitHubAdapter:
@@ -32,7 +33,7 @@ class GitHubAdapter:
                 "--limit",
                 "1000",
                 "--json",
-                "name,sshUrl,url,isArchived",
+                "name,sshUrl,url,isArchived,updatedAt",
             ],
             check=False,
             text=True,
@@ -55,7 +56,19 @@ class GitHubAdapter:
             name = record.get("name")
             ssh_url = record.get("sshUrl")
             url = record.get("url")
+            updated_at = record.get("updatedAt") or ""
             if not name or not ssh_url or not url:
                 continue
-            repositories.append(GitHubRepository(name=name, ssh_url=ssh_url, url=url))
-        return sorted(repositories, key=lambda repository: repository.name.lower())
+            repositories.append(
+                GitHubRepository(
+                    name=name,
+                    ssh_url=ssh_url,
+                    url=url,
+                    updated_at=updated_at,
+                )
+            )
+        return sorted(
+            sorted(repositories, key=lambda repository: repository.name.lower()),
+            key=lambda repository: repository.updated_at,
+            reverse=True,
+        )
