@@ -24,7 +24,6 @@ def list_projects() -> None:
     registry = _load_registry()
     table = Table(title="WARG projects")
     table.add_column("Project")
-    table.add_column("Language")
     table.add_column("Depends on")
     table.add_column("Description")
 
@@ -32,7 +31,6 @@ def list_projects() -> None:
         project = registry.projects.get(name)
         table.add_row(
             name,
-            project.language if project and project.language else "",
             ", ".join(project.depends_on) if project else "",
             project.description if project else f"Registered at {entry.path}",
         )
@@ -49,8 +47,6 @@ def info(project: str) -> None:
     console.print(f"[bold]{selected.name}[/bold]")
     if selected.description:
         console.print(selected.description)
-    if selected.language:
-        console.print(f"Language: {selected.language}")
 
     console.print("Dependency order:")
     for dependency in dependencies:

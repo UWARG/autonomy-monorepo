@@ -28,7 +28,6 @@ Each project should include a `warg.toml`:
 
 ```toml
 name = "gesture_control"
-language = "python"
 description = "Gesture control pipeline for camera-based command input."
 
 depends_on = ["camera", "mavlink_comm"]

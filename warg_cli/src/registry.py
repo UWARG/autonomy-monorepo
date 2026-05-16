@@ -27,7 +27,7 @@ class Registry:
     def __init__(self, root: Path):
         self.root = root.resolve()
         self.entries = self._load_entries()
-        self.projects = self._discover()
+        self.projects = self._load_materialized_projects()
 
     def _load_entries(self) -> dict[str, ProjectEntry]:
         registry_path = self.root / ROOT_REGISTRY
@@ -62,7 +62,7 @@ class Registry:
 
         return dict(sorted(entries.items()))
 
-    def _discover(self) -> dict[str, Project]:
+    def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}
         for entry in self.entries.values():
             manifest = self.root / entry.path / "warg.toml"
@@ -82,10 +82,6 @@ class Registry:
             data = tomllib.load(file)
 
         name = _expect_string(data, "name", manifest)
-        language = data.get("language")
-        if language is not None and not isinstance(language, str):
-            raise ManifestError(f"{manifest}: 'language' must be a string.")
-
         description = data.get("description", "")
         if not isinstance(description, str):
             raise ManifestError(f"{manifest}: 'description' must be a string.")
@@ -106,7 +102,6 @@ class Registry:
         return Project(
             name=name,
             path=manifest.parent,
-            language=language,
             description=description,
             depends_on=tuple(depends_on),
             commands=dict(sorted(commands.items())),

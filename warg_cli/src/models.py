@@ -14,7 +14,6 @@ class ProjectEntry:
 class Project:
     name: str
     path: Path
-    language: str | None = None
     description: str = ""
     depends_on: tuple[str, ...] = field(default_factory=tuple)
     commands: dict[str, str] = field(default_factory=dict)

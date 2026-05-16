@@ -28,7 +28,6 @@ path = "mavlink_comm"
         "camera",
         """
 name = "camera"
-language = "python"
 description = "Camera project."
 depends_on = []
 
@@ -43,7 +42,6 @@ test = "echo test-camera"
         "mavlink_comm",
         """
 name = "mavlink_comm"
-language = "python"
 depends_on = []
 
 [commands]
@@ -56,7 +54,6 @@ lint = "echo lint-mavlink"
         "gesture_control",
         """
 name = "gesture_control"
-language = "python"
 depends_on = ["camera", "mavlink_comm"]
 
 [commands]
