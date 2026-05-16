@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from ci import affected_projects, run_ci_pipeline
 from errors import WargError
 from git_adapter import GitAdapter
 from models import Project
@@ -15,6 +16,8 @@ from registry import Registry, find_repo_root
 from runner import CommandRunner
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(ci_app, name="ci")
 console = Console()
 
 
@@ -134,6 +137,30 @@ def run(
         raise typer.Exit(exit_code)
 
 
+@ci_app.command("pr")
+def ci_pr(
+    base: str = typer.Option(
+        "origin/main",
+        "--base",
+        help="Git ref to compare against with merge-base diff syntax.",
+    ),
+) -> None:
+    """Run PR CI for projects affected by this branch."""
+    _run_ci("pr", base=base, merge_base=True)
+
+
+@ci_app.command("main")
+def ci_main(
+    base: str = typer.Option(
+        "HEAD~1",
+        "--base",
+        help="Git ref or SHA to compare against with before/after diff syntax.",
+    ),
+) -> None:
+    """Run main-branch CI for projects affected by this push."""
+    _run_ci("main", base=base, merge_base=False)
+
+
 def _load_registry() -> Registry:
     return Registry(_load_repo_root())
 
@@ -144,6 +171,32 @@ def _load_repo_root() -> Path:
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
+
+
+def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
+    root = _load_repo_root()
+    try:
+        registry = Registry(root)
+        changed_files = GitAdapter(root).changed_files(base, merge_base=merge_base)
+        projects = affected_projects(registry, changed_files)
+        runnable_projects = [project for project in projects if pipeline in project.ci]
+        if not runnable_projects:
+            console.print(f"No affected projects define \\[ci].{pipeline}.")
+            return
+
+        console.print(f"Running [bold]{pipeline}[/bold] CI for affected projects:")
+        for project in runnable_projects:
+            commands = ", ".join(project.ci[pipeline])
+            console.print(f"  - {project.name}: {commands}")
+
+        exit_code = run_ci_pipeline(
+            registry, runnable_projects, pipeline, CommandRunner()
+        )
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if exit_code != 0:
+        raise typer.Exit(exit_code)
 
 
 def _materialize_dependency_graph(

@@ -121,6 +121,88 @@ def test_run_uses_command_picker_when_command_is_missing(
     assert calls == [("camera", "test", [])]
 
 
+def test_ci_pr_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
+            assert base == "origin/feature-base"
+            assert merge_base is True
+            return [Path("camera/src/capture.py")]
+
+    class FakeRunner:
+        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+            calls.append((project.name, command_name, passthrough))
+            return 0
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
+
+    result = runner.invoke(app, ["ci", "pr", "--base", "origin/feature-base"])
+
+    assert result.exit_code == 0
+    assert calls == [("camera", "test", [])]
+
+
+def test_ci_main_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
+            assert base == "abc123"
+            assert merge_base is False
+            return [Path("camera/src/capture.py")]
+
+    class FakeRunner:
+        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+            calls.append((project.name, command_name, passthrough))
+            return 0
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
+
+    result = runner.invoke(app, ["ci", "main", "--base", "abc123"])
+
+    assert result.exit_code == 0
+    assert calls == [("camera", "lint", []), ("camera", "test", [])]
+
+
+def test_ci_skips_affected_projects_without_pipeline(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
+            return [Path("mavlink_comm/src/radio.py")]
+
+    class FakeRunner:
+        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+            calls.append((project.name, command_name, passthrough))
+            return 0
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
+
+    result = runner.invoke(app, ["ci", "pr"])
+
+    assert result.exit_code == 0
+    assert calls == []
+    assert "No affected projects define [ci].pr" in result.stdout
+
+
 def test_up_uses_project_picker_when_project_is_missing(
     fixture_repo: Path, monkeypatch
 ) -> None:

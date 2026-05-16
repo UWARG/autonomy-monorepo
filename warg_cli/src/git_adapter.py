@@ -52,6 +52,15 @@ class GitAdapter:
         self.set_sparse_paths(desired)
         return set(desired) - before
 
+    def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
+        separator = "..." if merge_base else ".."
+        result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
+        return [
+            Path(line.strip())
+            for line in result.stdout.splitlines()
+            if line.strip()
+        ]
+
     def _run(
         self, *args: str, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
