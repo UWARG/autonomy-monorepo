@@ -31,6 +31,32 @@ def test_info_shows_commands(fixture_repo: Path, monkeypatch) -> None:
     assert "test:unit" in result.stdout
 
 
+def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@github.com:warg/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "Only root files are checked out" in result.stdout
+
+
 def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
     calls = []
