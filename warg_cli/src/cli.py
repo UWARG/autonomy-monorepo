@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-import questionary
+from InquirerPy import inquirer
+from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -259,10 +260,10 @@ def _pick_project(registry: Registry) -> str | None:
     if not registry.projects:
         console.print("No projects found.")
         return None
-    return questionary.select(
-        "Select a project",
+    return inquirer.fuzzy(
+        message="Select a project",
         choices=sorted(registry.projects),
-    ).ask()
+    ).execute()
 
 
 def _pick_repository(
@@ -273,28 +274,27 @@ def _pick_repository(
         console.print(f"No repositories found in {organization}.")
         return None
 
-    clone_urls_by_choice = {
-        f"{repository.name} ({repository.url})": repository.ssh_url
+    choices = [
+        Choice(
+            name=f"{repository.name} ({repository.url})",
+            value=repository.ssh_url,
+        )
         for repository in repositories
-    }
-    choice = questionary.autocomplete(
-        f"Select a {organization} repository",
-        choices=list(clone_urls_by_choice),
-        match_middle=True,
-    ).ask()
-    if not choice:
-        return None
-    return clone_urls_by_choice[choice]
+    ]
+    return inquirer.fuzzy(
+        message=f"Select a {organization} repository",
+        choices=choices,
+    ).execute()
 
 
 def _pick_command(commands: dict[str, str]) -> str | None:
     if not commands:
         console.print("No commands found for this project.")
         return None
-    return questionary.select(
-        "Select a command",
+    return inquirer.fuzzy(
+        message="Select a command",
         choices=sorted(commands),
-    ).ask()
+    ).execute()
 
 
 def main() -> None:

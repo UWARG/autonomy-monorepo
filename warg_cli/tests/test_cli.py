@@ -110,7 +110,7 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
     assert calls == [("git@github.com:UWARG/autonomy-monorepo.git", None)]
 
 
-def test_repository_picker_uses_searchable_strings(monkeypatch) -> None:
+def test_repository_picker_uses_fuzzy_choices(monkeypatch) -> None:
     class FakeGitHub:
         @classmethod
         def list_org_repositories(
@@ -124,24 +124,24 @@ def test_repository_picker_uses_searchable_strings(monkeypatch) -> None:
                 )
             ]
 
-    class FakeAutocomplete:
+    class FakeFuzzy:
         def __init__(self, choice: str):
             self.choice = choice
 
-        def ask(self) -> str:
+        def execute(self) -> str:
             return self.choice
 
-    def fake_autocomplete(message: str, choices: list[str], match_middle: bool):
+    def fake_fuzzy(message: str, choices: list[object]):
         assert message == "Select a UWARG repository"
-        assert choices == [
+        assert len(choices) == 1
+        assert choices[0].name == (
             "autonomy-monorepo (https://github.com/UWARG/autonomy-monorepo)"
-        ]
-        assert all(isinstance(choice, str) for choice in choices)
-        assert match_middle is True
-        return FakeAutocomplete(choices[0])
+        )
+        assert choices[0].value == "git@github.com:UWARG/autonomy-monorepo.git"
+        return FakeFuzzy(choices[0].value)
 
     monkeypatch.setattr("cli.GitHubAdapter", FakeGitHub)
-    monkeypatch.setattr("cli.questionary.autocomplete", fake_autocomplete)
+    monkeypatch.setattr("cli.inquirer.fuzzy", fake_fuzzy)
 
     from cli import _pick_repository
 
