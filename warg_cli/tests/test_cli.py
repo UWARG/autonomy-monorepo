@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from cli import app
+from cli import _materialize_dependency_graph, app
 from models import Project
 
 
@@ -161,4 +161,71 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
     assert result.exit_code == 0
     assert calls == ["gesture_control"]
 
+
+def test_up_materializes_requested_project_before_reading_dependencies(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "projects.toml").write_text(
+        """
+[projects.camera]
+path = "camera"
+
+[projects.gesture_control]
+path = "gesture_control"
+
+[projects.mavlink_comm]
+path = "mavlink_comm"
+""".strip()
+        + "\n"
+    )
+    calls = []
+
+    class FakeGit:
+        def materialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            for path in paths:
+                project_dir = tmp_path / path
+                project_dir.mkdir(exist_ok=True)
+                manifest = project_dir / "warg.toml"
+                if manifest.exists():
+                    continue
+                if path == "gesture_control":
+                    manifest.write_text(
+                        'name = "gesture_control"\n'
+                        'depends_on = ["camera", "mavlink_comm"]\n'
+                        "[commands]\n"
+                        'setup = "echo setup-gesture"\n'
+                    )
+                elif path == "camera":
+                    manifest.write_text(
+                        'name = "camera"\n'
+                        "depends_on = []\n"
+                        "[commands]\n"
+                        'setup = "echo setup-camera"\n'
+                    )
+                elif path == "mavlink_comm":
+                    manifest.write_text(
+                        'name = "mavlink_comm"\n'
+                        "depends_on = []\n"
+                        "[commands]\n"
+                        'setup = "echo setup-mavlink"\n'
+                    )
+            return set(paths)
+
+    paths, order, materialized = _materialize_dependency_graph(
+        tmp_path, FakeGit(), "gesture_control"
+    )
+
+    assert calls == [
+        ["gesture_control"],
+        ["camera", "gesture_control", "mavlink_comm"],
+    ]
+    assert paths == ["camera", "gesture_control", "mavlink_comm"]
+    assert [project.name for project in order] == [
+        "camera",
+        "mavlink_comm",
+        "gesture_control",
+    ]
+    assert materialized == {"camera", "gesture_control", "mavlink_comm"}
 

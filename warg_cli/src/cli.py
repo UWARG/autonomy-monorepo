@@ -10,6 +10,7 @@ from rich.table import Table
 
 from errors import WargError
 from git_adapter import GitAdapter
+from models import Project
 from registry import Registry, find_repo_root
 from runner import CommandRunner
 
@@ -66,19 +67,22 @@ def up(
     force: bool = typer.Option(False, "--force", help="Rerun setup commands."),
 ) -> None:
     """Materialize a project and its dependencies with Git sparse-checkout."""
-    registry = _load_registry()
+    root = _load_repo_root()
+    registry = Registry(root)
     project = project or _pick_project(registry)
     if not project:
         raise typer.Exit(1)
 
-    paths = registry.sparse_paths_for(project)
-    materialized = GitAdapter(registry.root).materialize_paths(paths)
+    git = GitAdapter(root)
+    paths, setup_order, materialized = _materialize_dependency_graph(
+        root, git, project
+    )
     console.print("Sparse checkout paths:")
     for path in paths:
         console.print(f"  - {path}")
 
     runner = CommandRunner()
-    for dependency in registry.dependency_order(project):
+    for dependency in setup_order:
         should_setup = force or dependency.relative_path in materialized
         if "setup" in dependency.commands and should_setup:
             console.print(f"Running setup for [bold]{dependency.name}[/bold]")
@@ -113,11 +117,80 @@ def run(
 
 
 def _load_registry() -> Registry:
+    return Registry(_load_repo_root())
+
+
+def _load_repo_root() -> Path:
     try:
-        return Registry(find_repo_root())
+        return find_repo_root()
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
+
+
+def _materialize_dependency_graph(
+    root: Path, git: GitAdapter, project_name: str
+) -> tuple[list[str], list[Project], set[str]]:
+    requested_paths = {_path_for_project(root, project_name)}
+    materialized: set[str] = set()
+
+    while True:
+        materialized.update(git.materialize_paths(sorted(requested_paths)))
+        registry = Registry(root)
+        order, discovered_paths = _discover_dependency_order(registry, project_name)
+        missing_paths = discovered_paths - requested_paths
+        if not missing_paths:
+            paths = sorted(requested_paths)
+            return paths, order, materialized
+        requested_paths.update(missing_paths)
+
+
+def _discover_dependency_order(
+    registry: Registry, project_name: str
+) -> tuple[list[Project], set[str]]:
+    order: list[Project] = []
+    requested_paths: set[str] = set()
+    visiting: list[str] = []
+    visited: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in visited:
+            return
+        if name in visiting:
+            cycle = " -> ".join([*visiting, name])
+            from errors import DependencyError
+
+            raise DependencyError(f"Dependency cycle detected: {cycle}.")
+
+        project = registry.get(name)
+        requested_paths.add(project.relative_path)
+        visiting.append(name)
+        for dependency in project.depends_on:
+            requested_paths.add(_entry_path(registry, dependency))
+            if dependency in registry.projects:
+                visit(dependency)
+        visiting.pop()
+        visited.add(name)
+        order.append(project)
+
+    visit(project_name)
+    return order, requested_paths
+
+
+def _path_for_project(root: Path, project_name: str) -> str:
+    registry = Registry(root)
+    return _entry_path(registry, project_name)
+
+
+def _entry_path(registry: Registry, project_name: str) -> str:
+    if project_name not in registry.entries:
+        available = ", ".join(sorted(registry.entries)) or "none"
+        from errors import DependencyError
+
+        raise DependencyError(
+            f"Unknown project '{project_name}'. Registered projects: {available}."
+        )
+    return registry.entries[project_name].path
 
 
 def _pick_project(registry: Registry) -> str | None:

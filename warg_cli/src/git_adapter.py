@@ -28,8 +28,9 @@ class GitAdapter:
         before = self.current_sparse_paths()
         if not self.sparse_checkout_enabled():
             self.enable_sparse_checkout()
-        self.set_sparse_paths(paths)
-        return set(paths) - before
+        desired = sorted({*before, *paths})
+        self.set_sparse_paths(desired)
+        return set(desired) - before
 
     def _run(
         self, *args: str, check: bool = True
@@ -42,4 +43,3 @@ class GitAdapter:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-
