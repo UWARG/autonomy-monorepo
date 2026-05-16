@@ -1,15 +1,26 @@
 # WARG Autonomy Monorepo
 
-This repository is organized as a flat monorepo. Each top-level directory is a
-project with its own `warg.toml` manifest. Projects are deliberately registered
-in the root `projects.toml` file.
+This repository is organized as a flat monorepo for WARG autonomy projects.
+Each top-level directory is a project, and every project is registered from the
+root `projects.toml` file.
 
-The `warg` CLI reads `projects.toml`, resolves project dependencies, manages Git
-sparse-checkout paths, and runs project-defined commands.
+## Layout
+
+```text
+.
+├── README.md
+├── projects.toml
+└── <project>/
+    ├── warg.toml
+    └── ...
+```
+
+Projects own their local source, tests, dependencies, and commands. The root of
+the repo owns only shared repository documentation and the project registry.
 
 ## Project registry
 
-Register every project in the root `projects.toml`:
+Register every project in `projects.toml`:
 
 ```toml
 [projects.camera]
@@ -22,9 +33,12 @@ path = "mavlink_comm"
 path = "gesture_control"
 ```
 
+The registry is intentionally explicit so dependency resolution and sparse
+checkout paths stay predictable.
+
 ## Project manifests
 
-Each project should include a `warg.toml`:
+Each project should include a `warg.toml` manifest:
 
 ```toml
 name = "gesture_control"
@@ -41,30 +55,11 @@ run = "uv run python -m gesture_control"
 lint = "uv run ruff check ."
 ```
 
-Commands are intentionally project-defined, similar to `scripts` in
-`package.json`. The CLI does not hardcode project commands like `test` or `lint`.
+Commands are project-defined, similar to `scripts` in `package.json`. Keep
+project-specific setup and workflows in the project manifest rather than in the
+root README.
 
-## CLI examples
+## Projects
 
-```bash
-warg clone git@github.com:warg/autonomy-monorepo.git
-warg list
-warg up gesture_control
-warg info gesture_control
-warg run camera test
-warg run camera test:unit
-warg run mavlink_comm lint -- --fix
-```
-
-When your current directory is inside a project with a `warg.toml`, bare command
-names are matched against that project's manifest:
-
-```bash
-cd camera
-warg test
-warg lint -- --fix
-```
-
-`warg clone` uses Git sparse checkout and partial clone support so only root
-files such as `README.md` and `projects.toml` are checked out initially. Project
-directories stay absent until you materialize one with `warg up <project>`.
+- `warg_cli`: developer CLI for materializing projects, inspecting manifests,
+  and running project-defined commands. See [warg_cli/README.md](warg_cli/README.md).
