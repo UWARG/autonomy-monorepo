@@ -54,3 +54,12 @@ warg run camera test
 warg run camera test:unit
 warg run mavlink_comm lint -- --fix
 ```
+
+When your current directory is inside a project with a `warg.toml`, bare command
+names are matched against that project's manifest:
+
+```bash
+cd camera
+warg test
+warg lint -- --fix
+```
