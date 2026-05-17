@@ -63,3 +63,5 @@ root README.
 
 - `warg_cli`: developer CLI for materializing projects, inspecting manifests,
   and running project-defined commands. See [warg_cli/README.md](warg_cli/README.md).
+
+-  `IMS`: Intelligent Monitoring System, a dashboard displaying MAVLink message feed, drone state, and live camera feed.
