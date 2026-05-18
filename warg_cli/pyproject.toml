@@ -2,6 +2,7 @@
 name = "warg-cli"
 version = "0.1.0"
 description = "WARG autonomy monorepo developer CLI"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.9"
 dependencies = [
   "InquirerPy>=0.3.4",
@@ -10,6 +11,10 @@ dependencies = [
   "typing-extensions>=4.10.0",
   "typer>=0.12.3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/UWARG/autonomy-monorepo"
+Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
