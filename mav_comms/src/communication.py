@@ -1,6 +1,6 @@
 import logging 
 import time 
-from pyavlink import mavutil
+from pymavlink import mavutil
 
 from utils import ( 
     AttitudeMessage, 
