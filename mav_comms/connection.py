@@ -12,14 +12,14 @@ class MavConnection:
     ) -> None: 
         self.host = host 
         self.port = port 
-    
-    def connect(self) -> bool: 
-        """Establish a MAVLink connection to the drone."""
-
-    def disconnect(self) -> None: 
-        """Close the MAVLink connection."""
 
     def is_connected(self) -> bool: 
         """Check if the MAVLink connection is active."""
+
+    def send_heartbeat(self) -> bool: 
+        """Send a heartbeat message to maintain the connection."""
+
+    def receive_heartbeat(self) -> bool: 
+        """Wait for a heartbeat message from the drone to confirm connection."""
 
     
