@@ -2,6 +2,7 @@
 name = "warg-cli"
 version = "0.1.0"
 description = "WARG autonomy monorepo developer CLI"
+license = "MIT"
 requires-python = ">=3.9"
 dependencies = [
   "InquirerPy>=0.3.4",
