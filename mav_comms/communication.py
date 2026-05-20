@@ -12,11 +12,11 @@ class MavComms:
     def __init__(self, connection: MavConnection) -> None:
         self.connection = connection 
 
-    def send_position(self, position: PositionMessage) -> bool: 
-        """Send a position message to the drone."""
+    def receive_position(self, position: PositionMessage) -> bool: 
+        """Receive a position message from the drone."""
 
-    def send_attitude(self, attitude: AttitudeMessage) -> bool: 
-        """Send an attitude message to the drone."""
+    def receive_attitude(self, attitude: AttitudeMessage) -> bool: 
+        """Receive an attitude message from the drone."""
     
 
     

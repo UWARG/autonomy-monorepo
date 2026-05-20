@@ -25,6 +25,10 @@ class AbstractCamera(abc.ABC):
     def __init__(self):
         pass
 
+    def start(self) -> bool: 
+        """Initializes the camera, returns True on Success."""
+        pass
+    
     def stop(self) -> None: 
         """Stop the Camera and release any resources."""
         pass
