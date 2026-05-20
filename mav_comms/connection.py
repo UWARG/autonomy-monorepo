@@ -1,7 +1,7 @@
 import logging 
 from pymavlink import mavutil 
 
-from utils import MAVLINK_TCP_HOST, MAVLINK_TCP_PORT
+from .constants import MAVLINK_TCP_HOST, MAVLINK_TCP_PORT
 
 class MavConnection: 
 

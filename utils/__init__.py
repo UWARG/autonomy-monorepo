@@ -2,12 +2,6 @@
 Utils - shared constants, enums, and types for the Airside system 
 """
 
-from .constants import ( 
-    UINT16_MAX,
-    MAVLINK_TCP_HOST,
-    MAVLINK_TCP_PORT,
-)
-
 from .enums import ( 
     Colours,
     Direction,
