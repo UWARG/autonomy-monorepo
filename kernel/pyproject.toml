@@ -1,28 +1,19 @@
 [project]
-name = "warg-cli"
+name = "kernel"
 version = "0.1.0"
-description = "WARG autonomy monorepo developer CLI"
+description = "WARG autonomy airside kernel - scheduler and state management"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
-dependencies = [
-  "InquirerPy>=0.3.4",
-  "rich>=13.7.0",
-  "tomli>=2.0.1; python_version < '3.11'",
-  "typing-extensions>=4.10.0",
-  "typer>=0.12.3",
-]
+dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/warg_cli"
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/kernel"
 Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
-
-[project.scripts]
-warg = "cli:app"
 
 [build-system]
 requires = ["hatchling"]
