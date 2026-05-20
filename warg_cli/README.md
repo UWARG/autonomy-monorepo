@@ -5,26 +5,17 @@ monorepo. It reads the root `projects.toml`, loads each project's `warg.toml`,
 resolves project dependencies, manages Git sparse-checkout paths, and runs
 project-defined commands.
 
-## Development
+## Installation
 
-From this directory:
+Install from PyPI:
 
 ```bash
-warg run warg_cli setup
-warg run warg_cli test
-warg run warg_cli run -- --help
-```
-
-The package exposes the CLI entry point from `pyproject.toml`:
-
-```toml
-[project.scripts]
-warg = "cli:app"
+uv tool install warg-cli
 ```
 
 ## Commands
 
-Clone a WARG monorepo with sparse checkout enabled:
+Clone the WARG monorepo with sparse checkout enabled:
 
 ```bash
 warg clone
@@ -82,3 +73,20 @@ lint = "uv run ruff check ."
 
 `warg up <project>` runs `setup` for newly materialized projects and their
 dependencies. Use `warg up <project> --force` to rerun setup commands.
+
+## Development
+
+From the monorepo root directory:
+
+```bash
+warg run warg_cli setup
+warg run warg_cli test
+warg run warg_cli run -- --help
+```
+
+The package exposes the CLI entry point from `pyproject.toml`:
+
+```toml
+[project.scripts]
+warg = "cli:app"
+```
