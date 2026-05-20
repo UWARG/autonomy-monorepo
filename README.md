@@ -63,3 +63,6 @@ root README.
 
 - `warg_cli`: developer CLI for materializing projects, inspecting manifests,
   and running project-defined commands. See [warg_cli/README.md](warg_cli/README.md).
+
+- `kernel`: scheduler and state-management library for building airside autonomy projects.
+  See [kernel/README.md](kernel/README.md).
