@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, app
+from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
 
@@ -56,6 +57,93 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
         ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
     ]
     assert "Only root files are checked out" in result.stdout
+
+
+def test_clone_warns_when_repository_uses_https(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "https://github.com/UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "unable to push" in result.stdout
+    assert (
+        "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
+        in result.stdout
+    )
+
+
+def test_clone_falls_back_to_https_when_github_ssh_clone_fails(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            if repository == "git@github.com:UWARG/autonomy-monorepo.git":
+                raise GitError("SSH clone failed")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@github.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+    ]
+    assert "SSH clone failed. Retrying with HTTPS" in result.stdout
+    assert "unable to push" in result.stdout
+
+
+def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            raise GitError("SSH clone failed")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@example.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert calls == [
+        ("git@example.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "Error:" in result.stdout
 
 
 def test_clone_picks_repository_when_missing(monkeypatch) -> None:
