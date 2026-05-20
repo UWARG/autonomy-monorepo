@@ -1,15 +1,31 @@
-import logging 
-import time 
-from pymavlink import mavutil
+from abc import ABC, abstractmethod
 
-class MavCommand: 
+from .connection import MavConnection
+from utils import FlightMode
+
+
+class MavCommand(ABC):
     def __init__(self, connection: MavConnection) -> None:
-        self.connection = connection 
+        self.connection = connection
 
-    def change_altitude(self, altitude: float) -> bool: 
-        """Send a command to change the drone's altitude."""
-    
-    def change_yaw(self, yaw: float) -> bool: 
-        """Send a command to change the drone's yaw."""
+    @abstractmethod
+    def execute(self) -> bool:
+        """Execute the command, returns True on success."""
+        pass
 
-    
+class ChangeAltitudeCommand(MavCommand):
+    def __init__(self, connection: MavConnection, altitude: float) -> None:
+        super().__init__(connection)
+        self.altitude = altitude
+
+    def execute(self) -> bool:
+        """Change the drone's target altitude."""
+
+
+class ChangeYawCommand(MavCommand):
+    def __init__(self, connection: MavConnection, yaw: float) -> None:
+        super().__init__(connection)
+        self.yaw = yaw
+
+    def execute(self) -> bool:
+        """Change the drone's yaw."""
