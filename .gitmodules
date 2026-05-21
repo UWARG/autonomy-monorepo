@@ -1,0 +1,3 @@
+[submodule "SITL-Plus/src/ardupilot"]
+	path = SITL-Plus/src/ardupilot
+	url = https://github.com/ArduPilot/ardupilot.git
