@@ -1,5 +1,5 @@
-from .frame import CameraFrame
-from .abstract_camera import AbstractCamera
-from .arducam import Arducam
-from .oakd import OakD
-from .sim import SimCamera
+from .frame import CameraFrame as CameraFrame
+from .abstract_camera import AbstractCamera as AbstractCamera
+from .arducam import Arducam as Arducam
+from .oakd import OakD as OakD
+from .sim import SimCamera as SimCamera

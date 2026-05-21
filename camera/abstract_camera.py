@@ -4,20 +4,9 @@ Includes shared logic, so the same function can be called no matter what camera
 is being used. 
 """
 
-import abc 
-import threading
-import queue 
-from typing import List 
+import abc
 
 from frame import CameraFrame
-import cv2 
-import numpy as np 
-
-from utils import (
-    Target, 
-    Coordinate, 
-    Colours, 
-)
 
 class AbstractCamera(abc.ABC): 
     """Abstract Camera class that all cameras must inherit from."""
