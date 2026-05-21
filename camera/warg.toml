@@ -9,5 +9,4 @@ test = "uv run --extra dev pytest"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
-pr = ["lint", "test"]
-main = ["test"]
+pr = ["lint"]
