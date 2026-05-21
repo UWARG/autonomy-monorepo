@@ -1,0 +1,18 @@
+[project]
+name = "ims"
+version = "0.1.0"
+description = "Intelligent Monitoring System — WebSocket server and React dashboard."
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = ["websockets>=12.0"]
+
+[project.urls]
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/ims"
+Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
+
+[project.optional-dependencies]
+dev = ["ruff>=0.8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
