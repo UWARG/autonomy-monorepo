@@ -1,0 +1,11 @@
+name = "ims"
+description = "Intelligent Monitoring System — WebSocket server and React dashboard."
+
+depends_on = ["utils", "mav_comms", "camera"]
+
+[commands]
+setup = "uv sync"
+lint = "uv run --extra dev ruff check ."
+
+[ci]
+pr = ["lint"]

@@ -3,3 +3,15 @@ path = "warg_cli"
 
 [projects.kernel]
 path = "kernel"
+
+[projects.camera]
+path = "camera"
+
+[projects.utils]
+path = "utils"
+
+[projects.mav_comms]
+path = "mav_comms"
+
+[projects.ims]
+path = "ims"
