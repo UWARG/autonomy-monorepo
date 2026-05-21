@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 from .connection import MavConnection
-from utils import FlightMode
 
 
 class MavCommand(ABC):

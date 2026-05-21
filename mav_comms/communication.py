@@ -1,6 +1,3 @@
-import time 
-from pymavlink import mavutil
-
 from utils import ( 
     AttitudeMessage, 
     PositionMessage,

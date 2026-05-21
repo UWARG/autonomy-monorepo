@@ -1,3 +1,3 @@
-from .communication import MavComms 
-from .connection import MavConnection
+from .communication import MavComms as MavComms
+from .connection import MavConnection as MavConnection
 
