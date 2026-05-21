@@ -1,0 +1,24 @@
+[project]
+name = "camera"
+version = "0.1.0"
+description = "Hardware abstraction layer for RGB and depth cameras."
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24.0"]
+
+[project.urls]
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/camera"
+Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

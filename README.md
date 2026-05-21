@@ -63,3 +63,13 @@ root README.
 
 - `warg_cli`: developer CLI for materializing projects, inspecting manifests,
   and running project-defined commands. See [warg_cli/README.md](warg_cli/README.md).
+
+- `kernel`: scheduler and state-management library for building airside autonomy projects.See [kernel/README.md](kernel/README.md).
+
+-  `IMS`: Intelligent Monitoring System, a dashboard displaying MAVLink message feed, drone state, and live camera feed.
+
+-  `Camera`: A Hardware Abstraction Layer for cameras. Normalizes frames from ArduCam, Oak-D, and simulation. 
+
+- `Utils`: Shared enums and dataclasses used across all Airside modules. 
+
+- `Mav_comms`: Wrapper around pymavlink.
