@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Intelligent Monitoring System — WebSocket server and React dashboard."
 license = "MIT"
 requires-python = ">=3.9"
-dependencies = ["websockets>=12.0"]
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/ims"

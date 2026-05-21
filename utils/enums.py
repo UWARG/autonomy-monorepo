@@ -21,5 +21,3 @@ class MavlinkMessageType(Enum):
 class CameraType(Enum): 
     """Enum for Camera Types"""
 
-class CurrentState(Enum): 
-    """Enum for the current state of the drone"""
