@@ -16,7 +16,7 @@ from errors import WargError
 from git_adapter import GitAdapter
 from github_adapter import GitHubAdapter
 from models import Project
-from registry import Registry, find_repo_root, load_project_manifest
+from registry import Registry, expand_dependents, find_repo_root, load_project_manifest
 from runner import CommandRunner
 
 
@@ -146,6 +146,50 @@ def up(
             exit_code = runner.run(dependency, "setup", [])
             if exit_code != 0:
                 raise typer.Exit(exit_code)
+
+
+@app.command("down")
+def down(
+    project: Optional[str] = typer.Argument(None),
+    include_dependencies: bool = typer.Option(
+        False,
+        "--include-dependencies",
+        "--deps",
+        help="Also unload dependencies that are checked out.",
+    ),
+) -> None:
+    """Remove a project from Git sparse-checkout."""
+    root = _load_repo_root()
+    registry = Registry(root)
+    project = project or _pick_project(registry)
+    if not project:
+        raise typer.Exit(1)
+
+    try:
+        paths, dependents = _unload_paths(registry, project, include_dependencies)
+        git = GitAdapter(root)
+        with console.status(f"Unloading [bold]{project}[/bold]..."):
+            removed = git.unmaterialize_paths(paths)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    if not removed:
+        console.print(f"[bold]{project}[/bold] is not checked out.")
+        return
+
+    removed_dependents = sorted(
+        dependent for dependent in dependents if dependent in removed
+    )
+    if removed_dependents:
+        console.print(
+            "[yellow]Warning:[/yellow] Also unloaded projects that depend on "
+            f"[bold]{project}[/bold]: {', '.join(removed_dependents)}"
+        )
+
+    console.print("Removed sparse checkout paths:")
+    for path in sorted(removed):
+        console.print(f"  - {path}")
 
 
 @app.command(
@@ -336,6 +380,25 @@ def _discover_dependency_order(
 
     visit(project_name)
     return order, requested_paths
+
+
+def _unload_paths(
+    registry: Registry, project_name: str, include_dependencies: bool
+) -> tuple[list[str], set[str]]:
+    paths = {_entry_path(registry, project_name)}
+    dependent_names = expand_dependents(registry, {project_name}) - {project_name}
+    dependents = {
+        registry.projects[name].relative_path
+        for name in dependent_names
+        if name in registry.projects
+    }
+    paths.update(dependents)
+    if include_dependencies and project_name in registry.projects:
+        paths.update(
+            project.relative_path
+            for project in registry.dependency_order(project_name)
+        )
+    return sorted(paths), dependents
 
 
 def _path_for_project(root: Path, project_name: str) -> str:

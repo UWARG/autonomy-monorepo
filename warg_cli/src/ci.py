@@ -5,7 +5,7 @@ from pathlib import Path
 from constants import ROOT_REGISTRY_FILENAME
 from errors import DependencyError
 from models import Project
-from registry import Registry
+from registry import Registry, expand_dependents
 from runner import CommandRunner
 
 
@@ -17,7 +17,7 @@ def affected_projects(registry: Registry, changed_files: list[Path]) -> list[Pro
         return list(registry.projects.values())
 
     directly_changed = _directly_changed_projects(registry, changed_files)
-    affected_names = _expand_dependents(registry, directly_changed)
+    affected_names = expand_dependents(registry, directly_changed)
     return _dependency_order_for_projects(registry, affected_names)
 
 
@@ -51,20 +51,6 @@ def _directly_changed_projects(
             if _is_relative_to(changed_file, project_path):
                 changed.add(name)
     return changed
-
-
-def _expand_dependents(registry: Registry, project_names: set[str]) -> set[str]:
-    affected = set(project_names)
-    changed = True
-    while changed:
-        changed = False
-        for project in registry.projects.values():
-            if project.name in affected:
-                continue
-            if any(dependency in affected for dependency in project.depends_on):
-                affected.add(project.name)
-                changed = True
-    return affected
 
 
 def _dependency_order_for_projects(

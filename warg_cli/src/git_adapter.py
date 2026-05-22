@@ -52,6 +52,14 @@ class GitAdapter:
         self.set_sparse_paths(desired)
         return set(desired) - before
 
+    def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+        before = self.current_sparse_paths()
+        if not before:
+            return set()
+        desired = sorted(before - set(paths))
+        self.set_sparse_paths(desired)
+        return before - set(desired)
+
     def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
         separator = "..." if merge_base else ".."
         result = self._run("diff", "--name-only", f"{base}{separator}HEAD")

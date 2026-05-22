@@ -468,6 +468,98 @@ def test_up_reports_git_errors(fixture_repo: Path, monkeypatch) -> None:
     assert "git sparse-checkout init failed" in result.stdout
 
 
+def test_down_removes_project_sparse_checkout_path(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "gesture_control"])
+
+    assert result.exit_code == 0
+    assert calls == [["gesture_control"]]
+    assert "Removed sparse checkout paths:" in result.stdout
+    assert "gesture_control" in result.stdout
+
+
+def test_down_can_include_dependencies(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app, ["down", "gesture_control", "--include-dependencies"]
+    )
+
+    assert result.exit_code == 0
+    assert calls == [["camera", "gesture_control", "mavlink_comm"]]
+
+
+def test_down_removes_checked_out_dependents_with_warning(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "camera"])
+
+    assert result.exit_code == 0
+    assert calls == [["camera", "gesture_control"]]
+    assert "Warning:" in result.stdout
+    assert "Also unloaded projects that depend on camera: gesture_control" in result.stdout
+    assert "camera" in result.stdout
+    assert "gesture_control" in result.stdout
+
+
+def test_down_reports_when_project_is_not_checked_out(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            return set()
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "camera"])
+
+    assert result.exit_code == 0
+    assert "camera is not checked out" in result.stdout
+
+
 def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
