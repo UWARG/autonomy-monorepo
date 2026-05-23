@@ -64,14 +64,10 @@ class GitAdapter:
         separator = "..." if merge_base else ".."
         result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
         return [
-            Path(line.strip())
-            for line in result.stdout.splitlines()
-            if line.strip()
+            Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
 
-    def _run(
-        self, *args: str, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
             cwd=self.root,

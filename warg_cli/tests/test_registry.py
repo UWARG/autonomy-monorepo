@@ -20,7 +20,9 @@ def test_discovers_top_level_manifests(fixture_repo: Path) -> None:
 def test_resolves_dependency_order(fixture_repo: Path) -> None:
     registry = Registry(fixture_repo)
 
-    assert [project.name for project in registry.dependency_order("gesture_control")] == [
+    assert [
+        project.name for project in registry.dependency_order("gesture_control")
+    ] == [
         "camera",
         "mavlink_comm",
         "gesture_control",

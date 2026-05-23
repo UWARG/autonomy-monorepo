@@ -434,8 +434,7 @@ def _unload_paths(
     paths.update(dependents)
     if include_dependencies and project_name in registry.projects:
         paths.update(
-            project.relative_path
-            for project in registry.dependency_order(project_name)
+            project.relative_path for project in registry.dependency_order(project_name)
         )
     return sorted(paths), dependents
 
@@ -466,9 +465,7 @@ def _pick_project(registry: Registry) -> str | None:
     ).execute()
 
 
-def _pick_repository(
-    organization: str, include_archived: bool
-) -> str | None:
+def _pick_repository(organization: str, include_archived: bool) -> str | None:
     repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
     if not repositories:
         console.print(f"No repositories found in {organization}.")
