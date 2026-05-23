@@ -134,6 +134,20 @@ class Registry:
         return sorted(project_paths)
 
 
+def expand_dependents(registry: Registry, project_names: set[str]) -> set[str]:
+    affected = set(project_names)
+    changed = True
+    while changed:
+        changed = False
+        for project in registry.projects.values():
+            if project.name in affected:
+                continue
+            if any(dependency in affected for dependency in project.depends_on):
+                affected.add(project.name)
+                changed = True
+    return affected
+
+
 def load_project_manifest(manifest: Path) -> Project:
     with manifest.open("rb") as file:
         data = tomllib.load(file)

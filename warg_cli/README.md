@@ -41,6 +41,15 @@ Materialize a project and its dependencies:
 warg up gesture_control
 ```
 
+Unload a project from sparse checkout:
+
+```bash
+warg down gesture_control
+```
+
+Projects that depend on the unloaded project are unloaded too, with a warning.
+Pass `--include-dependencies` to also unload checked-out dependencies.
+
 Inspect a project's manifest metadata:
 
 ```bash
