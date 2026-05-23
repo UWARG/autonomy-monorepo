@@ -62,21 +62,28 @@ def clone(
     include_archived: bool = typer.Option(
         False, "--include-archived", help="Include archived repositories in the picker."
     ),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Perform a normal clone instead of a partial sparse checkout.",
+    ),
 ) -> None:
-    """Clone a WARG monorepo without checking out any projects."""
+    """Clone a WARG monorepo sparsely by default, or fully with --full."""
     try:
         repository = repository or _pick_repository(organization, include_archived)
         if not repository:
             raise typer.Exit(1)
         repository = _resolve_repository(repository, organization, include_archived)
-        with console.status("Cloning repository with sparse checkout..."):
-            _clone_repository(repository, destination)
+        _clone_repository(repository, destination, full)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
 
-    console.print("Cloned repository with sparse checkout enabled.")
-    console.print("Only root files are checked out. Run 'warg up <project>' next.")
+    if full:
+        console.print("Cloned full repository.")
+    else:
+        console.print("Cloned repository with sparse checkout enabled.")
+        console.print("Only root files are checked out. Run 'warg up <project>' next.")
 
 
 @app.command("list")
@@ -296,10 +303,15 @@ def _warn_if_https_repository(repository: str) -> None:
     )
 
 
-def _clone_repository(repository: str, destination: str | None) -> None:
+def _clone_repository(repository: str, destination: str | None, full: bool) -> None:
     _warn_if_https_repository(repository)
     try:
-        GitAdapter.clone_sparse(repository, destination)
+        if full:
+            with console.status("Cloning repository..."):
+                GitAdapter.clone(repository, destination)
+        else:
+            with console.status("Cloning repository with sparse checkout..."):
+                GitAdapter.clone_sparse(repository, destination)
     except GitError:
         fallback = _github_ssh_url_to_https(repository)
         if fallback is None:
@@ -308,7 +320,10 @@ def _clone_repository(repository: str, destination: str | None) -> None:
             "[yellow]Warning:[/yellow] SSH clone failed. Retrying with HTTPS."
         )
         _warn_if_https_repository(fallback)
-        GitAdapter.clone_sparse(fallback, destination)
+        if full:
+            GitAdapter.clone(fallback, destination)
+        else:
+            GitAdapter.clone_sparse(fallback, destination)
 
 
 def _github_ssh_url_to_https(repository: str) -> str | None:
@@ -434,8 +449,7 @@ def _unload_paths(
     paths.update(dependents)
     if include_dependencies and project_name in registry.projects:
         paths.update(
-            project.relative_path
-            for project in registry.dependency_order(project_name)
+            project.relative_path for project in registry.dependency_order(project_name)
         )
     return sorted(paths), dependents
 
@@ -466,9 +480,7 @@ def _pick_project(registry: Registry) -> str | None:
     ).execute()
 
 
-def _pick_repository(
-    organization: str, include_archived: bool
-) -> str | None:
+def _pick_repository(organization: str, include_archived: bool) -> str | None:
     repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
     if not repositories:
         console.print(f"No repositories found in {organization}.")
