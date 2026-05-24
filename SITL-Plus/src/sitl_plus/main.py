@@ -17,8 +17,9 @@ import pybullet as p
 import cv2
 import pybullet_data
 import logging
+import subprocess
 import numpy as np
-
+import threading
 from pymavlink.quaternion import Quaternion
 from pymavlink.rotmat import Vector3
 
@@ -44,6 +45,7 @@ args = parser.parse_args()
 RATE_HZ = args.fps
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
+CAMERA_FPS=10
 
 # --- PyBullet initialization ---
 physicsClient = p.connect(p.DIRECT if args.nogui else p.GUI)
@@ -99,6 +101,7 @@ class Camera():
         self.depth_img=None
         self.seg_img=None
     def update(self):
+        time.sleep(1/CAMERA_FPS)
         pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
         R=p.getMatrixFromQuaternion(orn)
         R=np.reshape(R,(3,3))
@@ -113,6 +116,46 @@ class Camera():
         self.projection_matrix=p.computeProjectionMatrixFOV(self.fov,self.aspect,self.near,self.far)
     def capture_image(self):
         self.rgb_img,self.depth_img,self.seg_img=p.getCameraImage(self.width,self.height,self.view_matrix,self.projection_matrix,renderer=p.ER_BULLET_HARDWARE_OPENGL)[2:5]
+
+    def camera_thread(self):
+        while True:
+            self.capture_image()
+            self.update()
+            rgba_array = np.reshape(self.rgb_img, (self.width, self.height, 4)).astype(np.uint8)
+            rgb_array=cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
+            ok,rgb_bytes=cv2.imencode(
+                ".jpg",
+                rgb_array,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                )
+            if not ok:
+                logging.error("Failed to encode image")
+                continue
+            rgb_bytes=rgb_bytes.tobytes()
+            ok,depth_bytes=cv2.imencode(
+                ".jpg",
+                self.depth_img,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                )
+            if not ok:
+                logging.error("Failed to encode depth image")
+                continue
+            depth_bytes=depth_bytes.tobytes()
+            #if needed in future, uncomment
+            """
+            ok,seg_bytes=cv2.imencode(
+                ".jpg",
+                self.seg_img,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                )
+            if not ok:
+                logging.error("Failed to encode segmentation image")
+                continue
+            seg_bytes=seg_bytes.tobytes()
+            """
+            udp_header=struct.pack("QQ",len(rgb_bytes),len(depth_bytes))
+            groundside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))
+
 
 class Range_Finder():
     def __init__(self,attached_to_object,direction=[0,0,1]):
@@ -288,11 +331,14 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 9002))
 sock.settimeout(0.1)
 
+groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+groundside_socket.settimeout(0.1)
+
 last_SITL_frame = -1
 connected = False
 frame_count = 0
 frame_time = time.time()
-print_frame_count = 1000
+print_frame_count =1000
 
 vehicles = {
     "iris" : Iris,
@@ -323,7 +369,7 @@ new_camera=Camera(
                     height=224,
                     width=224)
 logging.info("Created camera")
-
+"""
 while True:
     
     time.sleep(1/new_camera.fps)
@@ -335,23 +381,34 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):
         sys.exit(0)
     p.stepSimulation()
-
+"""
 def main():
+
+    global RATE_HZ
+    global TIME_STEP
+    global last_SITL_frame
+    global connected
+    global frame_count
+    global frame_time
+    global print_frame_count
+    global vehicle
+    global robot_id
+    global new_camera
+    global sock
+
     logging.info("Starting main loop")
+    if new_camera:
+        thread_camera=threading.Thread(target=new_camera.camera_thread,daemon=True)
+        thread_camera.start()
+
+
+    #wait for the airside simulation to start
     while True:
         try:
             data, address = sock.recvfrom(100)
         except OSError:
             time.sleep(0.01)
             continue
-        if new_camera:
-            new_camera.update()
-            new_camera.capture_image()
-            cv2.imshow("Camera",new_camera.rgb_img)
-            print(np.array(new_camera.rgb_img).shape)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
         parse_format = 'HHI16H'
         if len(data) != struct.calcsize(parse_format):
             print(f"Bad packet size: {len(data)}")
@@ -366,12 +423,11 @@ def main():
         frame_rate_hz = decoded[1]
         frame_number = decoded[2]
         pwm = decoded[3:]
-
         if frame_rate_hz != RATE_HZ:
+            print(f"Updated rate from {RATE_HZ} to {frame_rate_hz} Hz")
             RATE_HZ = frame_rate_hz
             TIME_STEP = 1.0 / RATE_HZ
             p.setTimeStep(TIME_STEP)
-            print(f"Updated rate to {RATE_HZ} Hz")
 
         if frame_number < last_SITL_frame:
             vehicle.reset()
@@ -401,11 +457,24 @@ def main():
             "velocity": velo
         }
 
-        sock.sendto((json.dumps(json_data, separators=(',', ':')) + "\n").encode("ascii"), address)
+        result=sock.sendto((json.dumps(json_data, separators=(',', ':')) + "\n").encode("ascii"), address)
+        if result == -1:
+            logging.error(f"Failed to send data to {address}")
+            continue
 
         if frame_count % print_frame_count == 0:
             now = time.time()
             total_time = now - frame_time
-            print(f"{print_frame_count/total_time:.2f} fps T={phys_time:.3f} dt={total_time:.3f}")
+            logging.info(f"{print_frame_count/total_time:.2f} fps T={phys_time:.3f} dt={total_time:.3f}")
+            logging.info(f"imu: gyro={gyro[0]:.2f}, {gyro[1]:.2f}, {gyro[2]:.2f}, accel={accel[0]:.2f}, {accel[1]:.2f}, {accel[2]:.2f}, pos={pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}, euler={euler[0]:.2f}, {euler[1]:.2f}, {euler[2]:.2f}, velocity={velo[0]:.2f}, {velo[1]:.2f}, {velo[2]:.2f}")
             frame_time = now
 
+
+
+if __name__ == "__main__":
+    #start the airside simulation
+    result=subprocess.run(["python", "groundside.py"])
+    if result.returncode != 0:
+        logging.error(f"Airside simulation failed with return code {result.returncode}")
+        sys.exit(1)
+    main()
