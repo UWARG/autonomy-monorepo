@@ -36,7 +36,6 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Argument parsing ---
 parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
-parser.add_argument("--vehicle", required=True, choices=['racecar', 'iris'], default='iris', help="vehicle type")
 parser.add_argument("--fps", type=float, default=1200.0, help="physics frame rate")
 parser.add_argument("--nogui", default=False, action='store_true', help="disable GUI")
 args = parser.parse_args()
@@ -73,6 +72,7 @@ robot_id = None
 def constrain(v, min_v, max_v):
     '''constrain a value to a range'''
     return max(min_v, min(v, max_v))
+
 
 
 class Camera():
@@ -156,7 +156,7 @@ class Camera():
             udp_header=struct.pack("QQ",len(rgb_bytes),len(depth_bytes))
             groundside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))
 
-
+""" to finish
 class Range_Finder():
     def __init__(self,attached_to_object,direction=[0,0,1]):
         self.attached_to_object=attached_to_object
@@ -178,7 +178,25 @@ class Range_Finder():
         
     def update(self):
         self.range_img=p.getRangeImage(self.attached_to_object)
+"""
 
+class Object():
+    def __init__(self,name,position=[0,0,0],orientation=[0,0,0],scale=1):
+        orientation=p.getQuaternionFromEuler(orientation)
+        self.suffix=name.split(".")[-1]
+        self.name=name
+        self.position=position
+        self.orientation=orientation
+        self.scale=scale
+    def initialize(self):
+        match self.suffix:
+            case "urdf":
+                self.id=p.loadURDF(self.name,self.position,self.orientation,globalScaling=self.scale)
+            case "sdf":
+                self.id=p.loadSDF(self.name,self.position,self.orientation,globalScaling=self.scale)
+            case _:
+                logging.error(f"Unknown object type: {self.suffix}")
+                sys.exit(1)
 
 
 
@@ -250,39 +268,6 @@ class Iris(object):
         p.resetBasePositionAndOrientation(robot_id, [0, 0, 0.2], [0, 0, 0, 1])
 
 
-class RaceCar(object):
-    '''racing car'''
-    def __init__(self):
-        global robot_id
-        robot_id = p.loadURDF("racecar/racecar.urdf", [0, 0, 0.2])
-
-        self.steering_joints = [4, 6]
-        self.wheel_joints = [2, 3, 5, 7]
-        self.steer_max = 45.0
-        self.throttle_max = 200.0
-
-        self.reset()
-
-        print("Created RaceCar vehicle")
-
-    def update(self, pwm):
-        '''update RaceCar simulation'''
-        steering = constrain((pwm[0] - 1500.0)/500.0, -1, 1) * math.radians(self.steer_max) * -1
-        throttle = constrain((pwm[2] - 1500.0)/500.0, -1, 1) * self.throttle_max
-
-        for joint in self.wheel_joints:
-            p.setJointMotorControl2(robot_id, joint,
-                                    p.VELOCITY_CONTROL,
-                                    targetVelocity=throttle)
-        for joint in self.steering_joints:
-            p.setJointMotorControl2(robot_id, joint,
-                                    p.POSITION_CONTROL,
-                                    targetPosition=steering)
-
-    def reset(self):
-        '''reset time and location'''
-        p.resetBasePositionAndOrientation(robot_id, [0, 0, 0.2], [0, 0, 0, 1])
-
 
 def vector_to_AP(vec):
     return Vector3(vec[0], -vec[1], -vec[2])
@@ -340,15 +325,7 @@ frame_count = 0
 frame_time = time.time()
 print_frame_count =1000
 
-vehicles = {
-    "iris" : Iris,
-    "racecar" : RaceCar
-}
-
-if args.vehicle not in vehicles:
-    print(f"Unknown vehicle {args.vehicle}")
-    sys.exit(1)
-vehicle = vehicles[args.vehicle]()
+vehicle = Iris()
 
 # show the joints
 print("Vehicle joints:")
@@ -369,19 +346,8 @@ new_camera=Camera(
                     height=224,
                     width=224)
 logging.info("Created camera")
-"""
-while True:
-    
-    time.sleep(1/new_camera.fps)
-    new_camera.capture_image()
-    new_camera.update()
-    rgba_array = np.reshape(new_camera.rgb_img, (new_camera.width, new_camera.height, 4)).astype(np.uint8)
-    rgb_array=cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
-    cv2.imshow("Camera",rgb_array)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        sys.exit(0)
-    p.stepSimulation()
-"""
+
+
 def main():
 
     global RATE_HZ
@@ -400,6 +366,16 @@ def main():
     if new_camera:
         thread_camera=threading.Thread(target=new_camera.camera_thread,daemon=True)
         thread_camera.start()
+
+    #define some objects
+    objects=[
+        Object("r2d2.urdf",position=[4,6,0],orientation=[0,0,math.pi/2]),
+        Object("cartpole.urdf",position=[0,3,0],orientation=[0,0,0]),
+        Object("sphere_small.urdf",position=[2,2,0],orientation=[math.pi/2,0,0],scale=5),
+
+    ]
+    for obj in objects:
+        obj.initialize()
 
 
     #wait for the airside simulation to start
