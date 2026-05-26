@@ -42,6 +42,8 @@ RATE_HZ = 800
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
 CAMERA_FPS=10
+RANGE_FINDER_FPS=10
+MISSED_FRAMES_ALLOWED=5
 
 # --- PyBullet initialization ---
 physicsClient = p.connect(p.DIRECT if args.nogui else p.GUI)
@@ -151,29 +153,39 @@ class Camera():
             udp_header=struct.pack("QQ",len(rgb_bytes),len(depth_bytes))
             groundside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))
 
-""" to finish
+
 class Range_Finder():
-    def __init__(self,attached_to_object,direction=[0,0,1]):
-        self.attached_to_object=attached_to_object
-        pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
+    def __init__(self,direction=[0,0,-1],dist=10): #global direction
+        self.direction=direction
+        self.dist=dist
+    
+    def update(self):
+        pos,orn=p.getBasePositionAndOrientation(robot_id)
         self.ray_from=np.array(pos)
         self.ray_to=[
-            self.ray_from[0]+direction[0],
-            self.ray_from[1]+direction[1],
-            self.ray_from[2]+direction[2]
+            self.ray_from[0]+self.direction[0]*self.dist,
+            self.ray_from[1]+self.direction[1]*self.dist,
+            self.ray_from[2]+self.direction[2]*self.dist
         ]
-        group_env=2
-        for i in range(p.getNumBodies()):
-            for j in range(p.getNumJoints(i)):
-                p.setCollisionFilterGroupMask(j,-1,collisionFilterGroup=group_env,collisionFilterMask=1)
-
-        
-        p.setCollisionFilterGroupMask(ENV_ID,-1,collisionFilterGroup=group_env,collisionFilterMask=1) #1 is default collision group assigned to raycast
-        p.rayTest(self.ray_from,self.ray_to,collisionFilterMask=group_env)
-        
-    def update(self):
-        self.range_img=p.getRangeImage(self.attached_to_object)
-"""
+    
+        result=p.rayTest(self.ray_from,self.ray_to)
+        id=result[0][0] #tuple inside array
+        coordinates=result[0][3]
+        while id==robot_id:
+            self.ray_to=self.ray_from+np.array(self.direction)*0.1 #if the ray hits the robot, move the ray slightly forward
+            result=p.rayTest(self.ray_from,self.ray_to)
+            id=result[0][0]
+            coordinates=result[0][3]
+        self.range=math.sqrt(
+            (coordinates[0]-self.ray_from[0])**2+
+            (coordinates[1]-self.ray_from[1])**2+
+            (coordinates[2]-self.ray_from[2])**2
+        )
+    def range_thread(self):
+        while True:
+            self.update()
+            time.sleep(1/RANGE_FINDER_FPS)
+            groundside_socket.sendto(struct.pack("f",self.range),('127.0.0.1', 8001))
 
 class Object():
     def __init__(self,name,position=[0,0,0],orientation=[0,0,0],scale=1):
@@ -341,6 +353,8 @@ new_camera=Camera(
                     width=224)
 logging.info("Created camera")
 
+range_finder=Range_Finder()
+logging.info("Created range finder")
 
 def main():
 
@@ -360,6 +374,9 @@ def main():
     if new_camera:
         thread_camera=threading.Thread(target=new_camera.camera_thread,daemon=True)
         thread_camera.start()
+    if range_finder:
+        thread_range_finder=threading.Thread(target=range_finder.range_thread,daemon=True)
+        thread_range_finder.start()
 
     #define some objects
     objects=[
@@ -399,7 +416,7 @@ def main():
             TIME_STEP = 1.0 / RATE_HZ
             p.setTimeStep(TIME_STEP)
 
-        if frame_number < last_SITL_frame:
+        if frame_number < last_SITL_frame-MISSED_FRAMES_ALLOWED: #to protect against out of order frames (usually skips at most 4 on 800 fps, adjust based on fps)
             print(f"frame_number: {frame_number} last_SITL_frame: {last_SITL_frame}")
             vehicle.reset()
             print("Controller reset")
@@ -442,9 +459,4 @@ def main():
 
 
 if __name__ == "__main__":
-    #start the airside simulation
-    result=subprocess.run(["python", "groundside.py"])
-    if result.returncode != 0:
-        logging.error(f"Airside simulation failed with return code {result.returncode}")
-        sys.exit(1)
     main()
