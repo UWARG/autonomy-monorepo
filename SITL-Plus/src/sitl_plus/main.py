@@ -25,10 +25,8 @@ from pymavlink.rotmat import Vector3
 
 #drone default position and orientation
 DRONE_FOV=60
-DRONE_ASPECT=1.0
 DRONE_NEAR=0.1
 DRONE_FAR=100.0
-DRONE_OFFSET_X=[1,0,0]
 DRONE_OFFSET_Y=[0,1,0]
 DRONE_OFFSET_Z=[0,0,1]
 
@@ -36,12 +34,11 @@ logging.basicConfig(level=logging.INFO)
 
 # --- Argument parsing ---
 parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
-parser.add_argument("--fps", type=float, default=1200.0, help="physics frame rate")
 parser.add_argument("--nogui", default=False, action='store_true', help="disable GUI")
 args = parser.parse_args()
 
 # --- Constants ---
-RATE_HZ = args.fps
+RATE_HZ = 800
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
 CAMERA_FPS=10
@@ -76,9 +73,8 @@ def constrain(v, min_v, max_v):
 
 
 class Camera():
-    def __init__(self,attached_to_object,fps=60,fov=60,aspect=1.0,near=0.1,far=100.0,height=224,width=224,camera_orientation=[0,0,1]):
-        self.attached_to_object=attached_to_object
-        self.fps=fps
+
+    def _get_view_matrix(self):
         pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
         R=p.getMatrixFromQuaternion(orn)
         R=np.reshape(R,(3,3))
@@ -86,14 +82,22 @@ class Camera():
         y=R[:,1] #left = +y
         z=R[:,2] #up = +z
         
-        self.view_matrix=p.computeViewMatrix(np.array(pos)+np.array(DRONE_OFFSET_X),
-        np.array(x)+2*np.array(DRONE_OFFSET_X),
-        np.array(z))
+        self.view_matrix=p.computeViewMatrix(np.array(pos)+np.array(x), #camera position
+        np.array(pos)+2*np.array(x), # look at
+        np.array(z)) #up vector
+
+
+    def __init__(self,attached_to_object,fps=60,fov=60,near=0.1,far=100.0,height=224,width=224,camera_orientation=[0,0,1]):
+        self.attached_to_object=attached_to_object
+        self.fps=fps
+
+        self._get_view_matrix()
+
 
         self.fov=fov
         self.height=height
         self.width=width
-        self.aspect=aspect
+        self.aspect=width/height
         self.near=near
         self.far=far
         self.projection_matrix=p.computeProjectionMatrixFOV(fov,width/height,near,far)
@@ -102,18 +106,9 @@ class Camera():
         self.seg_img=None
     def update(self):
         time.sleep(1/CAMERA_FPS)
-        pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
-        R=p.getMatrixFromQuaternion(orn)
-        R=np.reshape(R,(3,3))
-        x=R[:,0] #forward = +x
-        y=R[:,1] #left = +y
-        z=R[:,2] #up = +z
-        
-        self.view_matrix=p.computeViewMatrix(np.array(pos)+np.array(DRONE_OFFSET_X),
-        np.array(x)+2*np.array(DRONE_OFFSET_X),
-        np.array(z))
-
+        self._get_view_matrix()
         self.projection_matrix=p.computeProjectionMatrixFOV(self.fov,self.aspect,self.near,self.far)
+
     def capture_image(self):
         self.rgb_img,self.depth_img,self.seg_img=p.getCameraImage(self.width,self.height,self.view_matrix,self.projection_matrix,renderer=p.ER_BULLET_HARDWARE_OPENGL)[2:5]
 
@@ -314,7 +309,7 @@ def physics_step(pwm_in,camera=None):
 # --- UDP communication setup ---
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 9002))
-sock.settimeout(0.1)
+sock.settimeout(0.5) #0.5 seconds is the maximum time to wait for a packet so frame does not get missed
 
 groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 groundside_socket.settimeout(0.1)
@@ -340,7 +335,6 @@ new_camera=Camera(
                     attached_to_object=robot_id,
                     fps=RATE_HZ,
                     fov=DRONE_FOV,
-                    aspect=DRONE_ASPECT,
                     near=DRONE_NEAR,
                     far=DRONE_FAR,
                     height=224,
@@ -406,8 +400,8 @@ def main():
             p.setTimeStep(TIME_STEP)
 
         if frame_number < last_SITL_frame:
+            print(f"frame_number: {frame_number} last_SITL_frame: {last_SITL_frame}")
             vehicle.reset()
-            time_now = 0.0
             print("Controller reset")
         elif frame_number != last_SITL_frame + 1 and connected:
             print(f"Missed {frame_number - last_SITL_frame - 1} frames")

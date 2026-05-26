@@ -21,7 +21,13 @@ def main():
             file_line=line.split("\t")
             file_line[-1]=file_line[-1].strip("\n")
             lines.append(file_line)
-
+    conn.mav.param_set_send(
+        target_system=conn.target_system,
+        target_component=conn.target_component,
+        param_id=b"SIM_RATE_HZ",
+        param_value=800,
+        param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32
+    )
     conn.mav.mission_clear_all_send(
         target_system=conn.target_system,
         target_component=conn.target_component,
