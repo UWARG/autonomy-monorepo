@@ -81,53 +81,38 @@ class GitAdapter:
         ]
 
     def repository_access_diagnostics(self) -> list[str]:
+        lines = []
         if self.root is None:
-            return [
-                "Git repository: not found",
-                f"GIT_SSH_COMMAND: {_env_value('GIT_SSH_COMMAND')}",
-                f"SSH_AUTH_SOCK: {_env_value('SSH_AUTH_SOCK')}",
-                self._probe(
-                    "ssh -T -o BatchMode=yes git@github.com",
-                    ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
-                    cwd=None,
-                    success_text="successfully authenticated",
-                ),
+            lines.append("Git repository: not found")
+
+        else:
+            remote_url = self._config_value("remote.origin.url") or "(not set)"
+            promisor = self._config_value("remote.origin.promisor") or "(not set)"
+            partial_filter = (
+                self._config_value("remote.origin.partialclonefilter") or "(not set)"
+            )
+            core_ssh_command = self._config_value("core.sshCommand") or "(not set)"
+            lines += [
+                f"Git repository: {self.root}",
+                f"remote.origin.url: {remote_url}",
+                f"remote.origin.promisor: {promisor}",
+                f"remote.origin.partialclonefilter: {partial_filter}",
+                f"core.sshCommand: {core_ssh_command}",
             ]
 
-        remote_url = self._config_value("remote.origin.url") or "(not set)"
-        promisor = self._config_value("remote.origin.promisor") or "(not set)"
-        partial_filter = (
-            self._config_value("remote.origin.partialclonefilter") or "(not set)"
-        )
-        core_ssh_command = self._config_value("core.sshCommand") or "(not set)"
-
-        lines = [
-            f"Git repository: {self.root}",
-            f"remote.origin.url: {remote_url}",
-            f"remote.origin.promisor: {promisor}",
-            f"remote.origin.partialclonefilter: {partial_filter}",
-            f"core.sshCommand: {core_ssh_command}",
+        lines += [
             f"GIT_SSH_COMMAND: {_env_value('GIT_SSH_COMMAND')}",
             f"SSH_AUTH_SOCK: {_env_value('SSH_AUTH_SOCK')}",
         ]
 
         lines.append(
             self._probe(
-                "git ls-remote --exit-code origin HEAD",
-                ["git", "ls-remote", "--exit-code", "origin", "HEAD"],
-                cwd=self.root,
+                "ssh -T -o BatchMode=yes git@github.com",
+                ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
+                cwd=None,
+                success_text="successfully authenticated",
             )
         )
-
-        if _is_github_ssh_url(remote_url):
-            lines.append(
-                self._probe(
-                    "ssh -T -o BatchMode=yes git@github.com",
-                    ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
-                    cwd=None,
-                    success_text="successfully authenticated",
-                )
-            )
 
         return lines
 
@@ -182,12 +167,6 @@ class GitAdapter:
             return f"{label}: ok{suffix}"
         suffix = f": {output}" if output else ""
         return f"{label}: failed with exit code {result.returncode}{suffix}"
-
-
-def _is_github_ssh_url(remote_url: str) -> bool:
-    return remote_url.startswith("git@github.com:") or remote_url.startswith(
-        "ssh://git@github.com/"
-    )
 
 
 def _single_line(value: str) -> str:
