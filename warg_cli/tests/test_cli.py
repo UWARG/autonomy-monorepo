@@ -226,9 +226,7 @@ def test_clone_full_uses_normal_clone(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert calls == [
-        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
-    ]
+    assert calls == [("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")]
     assert "Cloned full repository" in result.stdout
     assert "Only root files are checked out" not in result.stdout
 

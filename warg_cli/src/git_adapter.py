@@ -185,9 +185,8 @@ class GitAdapter:
 
 
 def _is_github_ssh_url(remote_url: str) -> bool:
-    return (
-        remote_url.startswith("git@github.com:")
-        or remote_url.startswith("ssh://git@github.com/")
+    return remote_url.startswith("git@github.com:") or remote_url.startswith(
+        "ssh://git@github.com/"
     )
 
 
