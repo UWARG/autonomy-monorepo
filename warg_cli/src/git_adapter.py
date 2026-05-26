@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from errors import GitError
 
 
 class GitAdapter:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path | None):
         self.root = root
 
     @classmethod
@@ -79,6 +80,57 @@ class GitAdapter:
             Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
 
+    def repository_access_diagnostics(self) -> list[str]:
+        if self.root is None:
+            return [
+                "Git repository: not found",
+                f"GIT_SSH_COMMAND: {_env_value('GIT_SSH_COMMAND')}",
+                f"SSH_AUTH_SOCK: {_env_value('SSH_AUTH_SOCK')}",
+                self._probe(
+                    "ssh -T -o BatchMode=yes git@github.com",
+                    ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
+                    cwd=None,
+                    success_text="successfully authenticated",
+                ),
+            ]
+
+        remote_url = self._config_value("remote.origin.url") or "(not set)"
+        promisor = self._config_value("remote.origin.promisor") or "(not set)"
+        partial_filter = (
+            self._config_value("remote.origin.partialclonefilter") or "(not set)"
+        )
+        core_ssh_command = self._config_value("core.sshCommand") or "(not set)"
+
+        lines = [
+            f"Git repository: {self.root}",
+            f"remote.origin.url: {remote_url}",
+            f"remote.origin.promisor: {promisor}",
+            f"remote.origin.partialclonefilter: {partial_filter}",
+            f"core.sshCommand: {core_ssh_command}",
+            f"GIT_SSH_COMMAND: {_env_value('GIT_SSH_COMMAND')}",
+            f"SSH_AUTH_SOCK: {_env_value('SSH_AUTH_SOCK')}",
+        ]
+
+        lines.append(
+            self._probe(
+                "git ls-remote --exit-code origin HEAD",
+                ["git", "ls-remote", "--exit-code", "origin", "HEAD"],
+                cwd=self.root,
+            )
+        )
+
+        if _is_github_ssh_url(remote_url):
+            lines.append(
+                self._probe(
+                    "ssh -T -o BatchMode=yes git@github.com",
+                    ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
+                    cwd=None,
+                    success_text="successfully authenticated",
+                )
+            )
+
+        return lines
+
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
@@ -93,3 +145,55 @@ class GitAdapter:
             message = result.stderr.strip() or result.stdout.strip()
             raise GitError(f"{command} failed: {message}")
         return result
+
+    def _config_value(self, key: str) -> str | None:
+        result = self._run("config", "--get", key, check=False)
+        if result.returncode != 0:
+            return None
+        value = result.stdout.strip()
+        return value or None
+
+    def _probe(
+        self,
+        label: str,
+        command: list[str],
+        *,
+        cwd: Path | None,
+        success_text: str | None = None,
+    ) -> str:
+        try:
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+            )
+        except FileNotFoundError:
+            return f"{label}: command not found"
+        except subprocess.TimeoutExpired:
+            return f"{label}: timed out after 10 seconds"
+
+        output = _single_line(result.stderr.strip() or result.stdout.strip())
+        if result.returncode == 0 or (success_text and success_text in output):
+            suffix = f" ({output})" if output else ""
+            return f"{label}: ok{suffix}"
+        suffix = f": {output}" if output else ""
+        return f"{label}: failed with exit code {result.returncode}{suffix}"
+
+
+def _is_github_ssh_url(remote_url: str) -> bool:
+    return (
+        remote_url.startswith("git@github.com:")
+        or remote_url.startswith("ssh://git@github.com/")
+    )
+
+
+def _single_line(value: str) -> str:
+    return " | ".join(line.strip() for line in value.splitlines() if line.strip())
+
+
+def _env_value(name: str) -> str:
+    return os.environ.get(name) or "(not set)"
