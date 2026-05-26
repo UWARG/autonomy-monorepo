@@ -4,13 +4,12 @@ from pathlib import Path
 import re
 from typing import Optional
 
-import click
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
 from rich.table import Table
-from typer.core import TyperGroup
+from typer.core import TyperGroup, click
 
 from ci import affected_projects, run_ci_pipeline
 from errors import WargError
