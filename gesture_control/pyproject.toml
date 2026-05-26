@@ -1,0 +1,32 @@
+[project]
+name = "gesture_control"
+version = "1.0.0"
+description = "Control the drone telekinesis style"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+dependencies = [
+  
+]
+
+[project.urls]
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/gesture_control"
+Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
+
+[project.scripts]
+
+
+[build-system]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src"]
+sources = ["src"]
