@@ -27,9 +27,7 @@ class GitHubAdapter:
         cls, organization: str, include_archived: bool = False
     ) -> list[GitHubRepository]:
         try:
-            return cls._list_org_repositories_with_gh(
-                organization, include_archived
-            )
+            return cls._list_org_repositories_with_gh(organization, include_archived)
         except GitHubError as gh_error:
             try:
                 return cls._list_org_repositories_with_api(

@@ -57,9 +57,7 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert calls == [
-        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
-    ]
+    assert calls == [("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")]
     assert "Only root files are checked out" in result.stdout
 
 
@@ -321,7 +319,9 @@ def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -338,7 +338,9 @@ def test_run_supports_passthrough_args(fixture_repo: Path, monkeypatch) -> None:
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -350,7 +352,9 @@ def test_run_supports_passthrough_args(fixture_repo: Path, monkeypatch) -> None:
     assert calls == [("camera", "test", ["--fix", "x y"])]
 
 
-def test_missing_command_lists_available_commands(fixture_repo: Path, monkeypatch) -> None:
+def test_missing_command_lists_available_commands(
+    fixture_repo: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(fixture_repo)
 
     result = runner.invoke(app, ["run", "camera", "missing"])
@@ -368,7 +372,9 @@ def test_run_uses_command_picker_when_command_is_missing(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -394,7 +400,9 @@ def test_ci_pr_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -
             return [Path("camera/src/capture.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -407,7 +415,9 @@ def test_ci_pr_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -
     assert calls == [("camera", "test", [])]
 
 
-def test_ci_main_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -> None:
+def test_ci_main_runs_affected_project_pipeline(
+    fixture_repo: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(fixture_repo)
     calls = []
 
@@ -421,7 +431,9 @@ def test_ci_main_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch)
             return [Path("camera/src/capture.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -448,7 +460,9 @@ def test_ci_skips_affected_projects_without_pipeline(
             return [Path("mavlink_comm/src/radio.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -469,7 +483,9 @@ def test_bare_command_runs_current_project_manifest_command(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -490,7 +506,9 @@ def test_bare_command_finds_project_manifest_from_nested_directory(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -531,7 +549,9 @@ def test_up_uses_project_picker_when_project_is_missing(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -603,7 +623,9 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append(project.name)
             return 0
 
@@ -674,9 +696,7 @@ def test_down_can_include_dependencies(fixture_repo: Path, monkeypatch) -> None:
 
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
-    result = runner.invoke(
-        app, ["down", "gesture_control", "--include-dependencies"]
-    )
+    result = runner.invoke(app, ["down", "gesture_control", "--include-dependencies"])
 
     assert result.exit_code == 0
     assert calls == [["camera", "gesture_control", "mavlink_comm"]]
@@ -703,7 +723,9 @@ def test_down_removes_checked_out_dependents_with_warning(
     assert result.exit_code == 0
     assert calls == [["camera", "gesture_control"]]
     assert "Warning:" in result.stdout
-    assert "Also unloaded projects that depend on camera: gesture_control" in result.stdout
+    assert (
+        "Also unloaded projects that depend on camera: gesture_control" in result.stdout
+    )
     assert "camera" in result.stdout
     assert "gesture_control" in result.stdout
 

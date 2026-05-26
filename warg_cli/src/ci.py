@@ -11,8 +11,7 @@ from runner import CommandRunner
 
 def affected_projects(registry: Registry, changed_files: list[Path]) -> list[Project]:
     if any(
-        path.parts and path.parts[0] == ROOT_REGISTRY_FILENAME
-        for path in changed_files
+        path.parts and path.parts[0] == ROOT_REGISTRY_FILENAME for path in changed_files
     ):
         return list(registry.projects.values())
 

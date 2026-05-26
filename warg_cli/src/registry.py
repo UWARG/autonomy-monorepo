@@ -130,7 +130,9 @@ class Registry:
         return order
 
     def sparse_paths_for(self, name: str) -> list[str]:
-        project_paths = [project.relative_path for project in self.dependency_order(name)]
+        project_paths = [
+            project.relative_path for project in self.dependency_order(name)
+        ]
         return sorted(project_paths)
 
 
