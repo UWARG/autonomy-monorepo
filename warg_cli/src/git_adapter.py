@@ -11,12 +11,24 @@ class GitAdapter:
         self.root = root
 
     @classmethod
+    def clone(cls, repository: str, destination: str | None = None) -> None:
+        command = ["git", "clone", repository]
+        if destination:
+            command.append(destination)
+
+        cls._run_clone_command(command)
+
+    @classmethod
     def clone_sparse(cls, repository: str, destination: str | None = None) -> None:
         command = ["git", "clone", "--filter=blob:none", "--sparse"]
         command.append(repository)
         if destination:
             command.append(destination)
 
+        cls._run_clone_command(command)
+
+    @staticmethod
+    def _run_clone_command(command: list[str]) -> None:
         result = subprocess.run(
             command,
             check=False,

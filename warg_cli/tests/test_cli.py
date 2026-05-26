@@ -38,6 +38,10 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
 
     class FakeGit:
         @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
+        @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
 
@@ -146,10 +150,82 @@ def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
     assert "Error:" in result.stdout
 
 
+def test_clone_full_uses_normal_clone(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected sparse clone")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "--full",
+            "git@github.com:warg/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "Cloned full repository" in result.stdout
+    assert "Only root files are checked out" not in result.stdout
+
+
+def test_clone_full_falls_back_to_https_when_github_ssh_clone_fails(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            if repository == "git@github.com:UWARG/autonomy-monorepo.git":
+                raise GitError("SSH clone failed")
+
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected sparse clone")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "--full",
+            "git@github.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+    ]
+    assert "SSH clone failed. Retrying with HTTPS" in result.stdout
+
+
 def test_clone_picks_repository_when_missing(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -170,6 +246,10 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
