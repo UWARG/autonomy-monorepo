@@ -610,7 +610,7 @@ path = "gesture_control"
     assert selected_choices == ["camera", "gesture_control"]
 
 
-def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> None:
+def test_up_runs_existing_project_setup(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
 
     class FakeGit:
@@ -618,7 +618,7 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
             self.root = root
 
         def materialize_paths(self, paths: list[str]) -> set[str]:
-            return {"gesture_control"}
+            return set()
 
     calls = []
 
@@ -635,7 +635,7 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
     result = runner.invoke(app, ["up", "gesture_control"])
 
     assert result.exit_code == 0
-    assert calls == ["gesture_control"]
+    assert calls == ["camera", "mavlink_comm", "gesture_control"]
 
 
 def test_up_reports_git_errors(fixture_repo: Path, monkeypatch) -> None:

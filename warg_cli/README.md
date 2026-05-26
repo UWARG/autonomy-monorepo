@@ -80,8 +80,9 @@ run = "uv run python -m gesture_control"
 lint = "uv run ruff check ."
 ```
 
-`warg up <project>` runs `setup` for newly materialized projects and their
-dependencies. Use `warg up <project> --force` to rerun setup commands.
+`warg up <project>` runs `setup` for the project and its dependencies every
+time, keeping already-materialized projects in sync with their current setup
+commands.
 
 ## Development
 

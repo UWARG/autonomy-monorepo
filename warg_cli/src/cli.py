@@ -128,7 +128,6 @@ def info(project: str) -> None:
 @app.command()
 def up(
     project: Optional[str] = typer.Argument(None),
-    force: bool = typer.Option(False, "--force", help="Rerun setup commands."),
 ) -> None:
     """Materialize a project and its dependencies with Git sparse-checkout."""
     root = _load_repo_root()
@@ -152,8 +151,7 @@ def up(
 
     runner = CommandRunner()
     for dependency in setup_order:
-        should_setup = force or dependency.relative_path in materialized
-        if "setup" in dependency.commands and should_setup:
+        if "setup" in dependency.commands:
             console.print(f"Running setup for [bold]{dependency.name}[/bold]")
             exit_code = runner.run(dependency, "setup", [])
             if exit_code != 0:
