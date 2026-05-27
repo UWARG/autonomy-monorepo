@@ -132,7 +132,7 @@ def info(project: str) -> None:
 
 @app.command()
 def doctor() -> None:
-    """Print Git sparse-checkout and remote access diagnostics."""
+    """Print Git config, SSH environment, and remote access diagnostics."""
     console.print("[bold]Git repository access[/bold]")
     root = find_repo_root_or_none()
     git = GitAdapter(root)
