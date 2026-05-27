@@ -14,11 +14,10 @@ class Object():
         self.orientation=orientation
         self.scale=scale
     def initialize(self):
-        match self.suffix:
-            case "urdf":
-                self.id=p.loadURDF(self.name,self.position,self.orientation,globalScaling=self.scale)
-            case "sdf":
-                self.id=p.loadSDF(self.name,self.position,self.orientation,globalScaling=self.scale)
-            case _:
-                logging.error(f"Unknown object type: {self.suffix}")
-                sys.exit(1)
+        if self.suffix == "urdf":
+            self.id=p.loadURDF(self.name,self.position,self.orientation,globalScaling=self.scale)
+        elif self.suffix == "sdf":
+            self.id=p.loadSDF(self.name,self.position,self.orientation,globalScaling=self.scale)
+        else:
+            logging.error(f"Unknown object type: {self.suffix}")
+            sys.exit(1)

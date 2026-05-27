@@ -16,18 +16,18 @@ class Camera():
         pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
         R=p.getMatrixFromQuaternion(orn)
         R=np.reshape(R,(3,3))
-        x=R[:,0] #forward = +x
-        y=R[:,1] #left = +y
+        #forward = +x left = +y
         z=R[:,2] #up = +z
         
-        self.view_matrix=p.computeViewMatrix(np.array(pos)+np.array(x), #camera position
-        np.array(pos)+2*np.array(x), # look at
+        self.view_matrix=p.computeViewMatrix(np.array(pos), #camera position
+        np.array(pos)+2*np.array(self.direction), # look at
         np.array(z)) #up vector
 
 
-    def __init__(self,attached_to_object,fps=60,fov=60,near=0.1,far=100.0,height=224,width=224,camera_orientation=[0,0,1]):
+    def __init__(self,attached_to_object,fps=60,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1]):
         self.attached_to_object=attached_to_object
         self.fps=fps
+        self.direction=direction
 
         self._get_view_matrix()
 
@@ -65,15 +65,18 @@ class Camera():
                 logging.error("Failed to encode image")
                 continue
             rgb_bytes=rgb_bytes.tobytes()
+            real_depth=100*self.far * self.near / (self.far - (self.far - self.near) * np.array(self.depth_img))
+            depth_array=np.reshape(real_depth, (self.width, self.height)).astype(np.uint16)
             ok,depth_bytes=cv2.imencode(
-                ".jpg",
-                self.depth_img,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                ".png",
+                np.array(depth_array),
+                [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
                 )
             if not ok:
                 logging.error("Failed to encode depth image")
                 continue
             depth_bytes=depth_bytes.tobytes()
+
             #if needed in future, uncomment
             """
             ok,seg_bytes=cv2.imencode(
@@ -86,5 +89,5 @@ class Camera():
                 continue
             seg_bytes=seg_bytes.tobytes()
             """
-            udp_header=struct.pack("QQ",len(rgb_bytes),len(depth_bytes))
+            udp_header=struct.pack("QQff",len(rgb_bytes),len(depth_bytes),self.far,self.near)
             state.groundside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))

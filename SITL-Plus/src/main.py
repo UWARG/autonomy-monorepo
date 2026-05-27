@@ -7,18 +7,13 @@ import argparse
 import json
 import math
 import os
-from re import L
 import socket
 import struct
-import sys
 import time
 from pathlib import Path
 import pybullet as p
-import cv2
 import pybullet_data
 import logging
-import subprocess
-import numpy as np
 import threading
 from pymavlink.quaternion import Quaternion
 from pymavlink.rotmat import Vector3
