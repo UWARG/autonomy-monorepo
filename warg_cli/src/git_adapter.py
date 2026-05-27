@@ -11,12 +11,24 @@ class GitAdapter:
         self.root = root
 
     @classmethod
+    def clone(cls, repository: str, destination: str | None = None) -> None:
+        command = ["git", "clone", repository]
+        if destination:
+            command.append(destination)
+
+        cls._run_clone_command(command)
+
+    @classmethod
     def clone_sparse(cls, repository: str, destination: str | None = None) -> None:
         command = ["git", "clone", "--filter=blob:none", "--sparse"]
         command.append(repository)
         if destination:
             command.append(destination)
 
+        cls._run_clone_command(command)
+
+    @staticmethod
+    def _run_clone_command(command: list[str]) -> None:
         result = subprocess.run(
             command,
             check=False,
@@ -52,18 +64,22 @@ class GitAdapter:
         self.set_sparse_paths(desired)
         return set(desired) - before
 
+    def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+        before = self.current_sparse_paths()
+        if not before:
+            return set()
+        desired = sorted(before - set(paths))
+        self.set_sparse_paths(desired)
+        return before - set(desired)
+
     def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
         separator = "..." if merge_base else ".."
         result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
         return [
-            Path(line.strip())
-            for line in result.stdout.splitlines()
-            if line.strip()
+            Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
 
-    def _run(
-        self, *args: str, check: bool = True
-    ) -> subprocess.CompletedProcess[str]:
+    def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
             cwd=self.root,

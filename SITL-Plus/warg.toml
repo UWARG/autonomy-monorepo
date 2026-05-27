@@ -1,5 +1,5 @@
-name = "warg_cli"
-description = "WARG autonomy monorepo developer CLI."
+name = "SITL-Plus"
+description = "WARG's SITL archtecture"
 
 depends_on = []
 
@@ -7,9 +7,8 @@ depends_on = []
 setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
-run = "uv run warg"
+run = "uv run python -m sitl_plus.main"
 lint = "uv run --extra dev ruff check ."
-format = "uv run --extra dev ruff format ."
 
 [ci]
 pr = ["lint", "test"]

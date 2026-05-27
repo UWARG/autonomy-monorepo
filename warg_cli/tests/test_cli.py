@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, app
+from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
 
@@ -37,6 +38,10 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
 
     class FakeGit:
         @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
+        @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
 
@@ -52,16 +57,173 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
+    assert calls == [("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")]
+    assert "Only root files are checked out" in result.stdout
+
+
+def test_clone_warns_when_repository_uses_https(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "https://github.com/UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "unable to push" in result.stdout
+    assert (
+        "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
+        in result.stdout
+    )
+
+
+def test_clone_falls_back_to_https_when_github_ssh_clone_fails(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            if repository == "git@github.com:UWARG/autonomy-monorepo.git":
+                raise GitError("SSH clone failed")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@github.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+    ]
+    assert "SSH clone failed. Retrying with HTTPS" in result.stdout
+    assert "unable to push" in result.stdout
+
+
+def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            raise GitError("SSH clone failed")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "git@example.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert calls == [
+        ("git@example.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo")
+    ]
+    assert "Error:" in result.stdout
+
+
+def test_clone_full_uses_normal_clone(monkeypatch) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected sparse clone")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "--full",
+            "git@github.com:warg/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
     assert calls == [
         ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
     ]
-    assert "Only root files are checked out" in result.stdout
+    assert "Cloned full repository" in result.stdout
+    assert "Only root files are checked out" not in result.stdout
+
+
+def test_clone_full_falls_back_to_https_when_github_ssh_clone_fails(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            calls.append((repository, destination))
+            if repository == "git@github.com:UWARG/autonomy-monorepo.git":
+                raise GitError("SSH clone failed")
+
+        @classmethod
+        def clone_sparse(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected sparse clone")
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(
+        app,
+        [
+            "clone",
+            "--full",
+            "git@github.com:UWARG/autonomy-monorepo.git",
+            "autonomy-monorepo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("git@github.com:UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+        ("https://github.com/UWARG/autonomy-monorepo.git", "autonomy-monorepo"),
+    ]
+    assert "SSH clone failed. Retrying with HTTPS" in result.stdout
 
 
 def test_clone_picks_repository_when_missing(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -82,6 +244,10 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        @classmethod
+        def clone(cls, repository: str, destination: str | None) -> None:
+            raise AssertionError("unexpected full clone")
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -153,7 +319,9 @@ def test_run_executes_dynamic_command(fixture_repo: Path, monkeypatch) -> None:
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -170,7 +338,9 @@ def test_run_supports_passthrough_args(fixture_repo: Path, monkeypatch) -> None:
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -182,7 +352,9 @@ def test_run_supports_passthrough_args(fixture_repo: Path, monkeypatch) -> None:
     assert calls == [("camera", "test", ["--fix", "x y"])]
 
 
-def test_missing_command_lists_available_commands(fixture_repo: Path, monkeypatch) -> None:
+def test_missing_command_lists_available_commands(
+    fixture_repo: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(fixture_repo)
 
     result = runner.invoke(app, ["run", "camera", "missing"])
@@ -200,7 +372,9 @@ def test_run_uses_command_picker_when_command_is_missing(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -226,7 +400,9 @@ def test_ci_pr_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -
             return [Path("camera/src/capture.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -239,7 +415,9 @@ def test_ci_pr_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -
     assert calls == [("camera", "test", [])]
 
 
-def test_ci_main_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch) -> None:
+def test_ci_main_runs_affected_project_pipeline(
+    fixture_repo: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(fixture_repo)
     calls = []
 
@@ -253,7 +431,9 @@ def test_ci_main_runs_affected_project_pipeline(fixture_repo: Path, monkeypatch)
             return [Path("camera/src/capture.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -280,7 +460,9 @@ def test_ci_skips_affected_projects_without_pipeline(
             return [Path("mavlink_comm/src/radio.py")]
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -301,7 +483,9 @@ def test_bare_command_runs_current_project_manifest_command(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -322,7 +506,9 @@ def test_bare_command_finds_project_manifest_from_nested_directory(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -363,7 +549,9 @@ def test_up_uses_project_picker_when_project_is_missing(
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append((project.name, command_name, passthrough))
             return 0
 
@@ -422,7 +610,7 @@ path = "gesture_control"
     assert selected_choices == ["camera", "gesture_control"]
 
 
-def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> None:
+def test_up_runs_existing_project_setup(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
 
     class FakeGit:
@@ -430,12 +618,14 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
             self.root = root
 
         def materialize_paths(self, paths: list[str]) -> set[str]:
-            return {"gesture_control"}
+            return set()
 
     calls = []
 
     class FakeRunner:
-        def run(self, project: Project, command_name: str, passthrough: list[str]) -> int:
+        def run(
+            self, project: Project, command_name: str, passthrough: list[str]
+        ) -> int:
             calls.append(project.name)
             return 0
 
@@ -445,7 +635,7 @@ def test_up_skips_existing_project_setup(fixture_repo: Path, monkeypatch) -> Non
     result = runner.invoke(app, ["up", "gesture_control"])
 
     assert result.exit_code == 0
-    assert calls == ["gesture_control"]
+    assert calls == ["camera", "mavlink_comm", "gesture_control"]
 
 
 def test_up_reports_git_errors(fixture_repo: Path, monkeypatch) -> None:
@@ -466,6 +656,98 @@ def test_up_reports_git_errors(fixture_repo: Path, monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "git sparse-checkout init failed" in result.stdout
+
+
+def test_down_removes_project_sparse_checkout_path(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "gesture_control"])
+
+    assert result.exit_code == 0
+    assert calls == [["gesture_control"]]
+    assert "Removed sparse checkout paths:" in result.stdout
+    assert "gesture_control" in result.stdout
+
+
+def test_down_can_include_dependencies(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "gesture_control", "--include-dependencies"])
+
+    assert result.exit_code == 0
+    assert calls == [["camera", "gesture_control", "mavlink_comm"]]
+
+
+def test_down_removes_checked_out_dependents_with_warning(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    calls = []
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            calls.append(paths)
+            return set(paths)
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "camera"])
+
+    assert result.exit_code == 0
+    assert calls == [["camera", "gesture_control"]]
+    assert "Warning:" in result.stdout
+    assert (
+        "Also unloaded projects that depend on camera: gesture_control" in result.stdout
+    )
+    assert "camera" in result.stdout
+    assert "gesture_control" in result.stdout
+
+
+def test_down_reports_when_project_is_not_checked_out(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+
+    class FakeGit:
+        def __init__(self, root: Path):
+            self.root = root
+
+        def unmaterialize_paths(self, paths: list[str]) -> set[str]:
+            return set()
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["down", "camera"])
+
+    assert result.exit_code == 0
+    assert "camera is not checked out" in result.stdout
 
 
 def test_up_materializes_requested_project_before_reading_dependencies(
