@@ -822,9 +822,7 @@ path = "mavlink_comm"
                     )
             return set(paths)
 
-    paths, order, materialized = _materialize_dependency_graph(
-        tmp_path, FakeGit(), "gesture_control"
-    )
+    paths, order = _materialize_dependency_graph(tmp_path, FakeGit(), "gesture_control")
 
     assert calls == [
         ["gesture_control"],
@@ -836,4 +834,3 @@ path = "mavlink_comm"
         "mavlink_comm",
         "gesture_control",
     ]
-    assert materialized == {"camera", "gesture_control", "mavlink_comm"}

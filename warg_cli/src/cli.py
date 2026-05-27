@@ -35,7 +35,7 @@ GITHUB_SSH_DOCS_URL = (
 
 @app.callback()
 def root(
-    version: Optional[bool] = typer.Option(
+    _: Optional[bool] = typer.Option(
         None,
         "--version",
         "-v",
@@ -152,9 +152,7 @@ def up(
     try:
         git = GitAdapter(root)
         with console.status(f"Materializing [bold]{project}[/bold]..."):
-            paths, setup_order, materialized = _materialize_dependency_graph(
-                root, git, project
-            )
+            paths, setup_order = _materialize_dependency_graph(root, git, project)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -375,9 +373,7 @@ def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
             commands = ", ".join(project.ci[pipeline])
             console.print(f"  - {project.name}: {commands}")
 
-        exit_code = run_ci_pipeline(
-            registry, runnable_projects, pipeline, CommandRunner()
-        )
+        exit_code = run_ci_pipeline(runnable_projects, pipeline, CommandRunner())
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -387,18 +383,17 @@ def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
 
 def _materialize_dependency_graph(
     root: Path, git: GitAdapter, project_name: str
-) -> tuple[list[str], list[Project], set[str]]:
+) -> tuple[list[str], list[Project]]:
     requested_paths = {_path_for_project(root, project_name)}
-    materialized: set[str] = set()
 
     while True:
-        materialized.update(git.materialize_paths(sorted(requested_paths)))
+        git.materialize_paths(sorted(requested_paths))
         registry = Registry(root)
         order, discovered_paths = _discover_dependency_order(registry, project_name)
         missing_paths = discovered_paths - requested_paths
         if not missing_paths:
             paths = sorted(requested_paths)
-            return paths, order, materialized
+            return paths, order
         requested_paths.update(missing_paths)
 
 

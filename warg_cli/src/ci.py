@@ -21,7 +21,6 @@ def affected_projects(registry: Registry, changed_files: list[Path]) -> list[Pro
 
 
 def run_ci_pipeline(
-    registry: Registry,
     projects: list[Project],
     pipeline: str,
     runner: CommandRunner,

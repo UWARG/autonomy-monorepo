@@ -11,48 +11,34 @@ class GitAdapter:
     def __init__(self, root: Path | None):
         self.root = root
 
-    @classmethod
-    def clone(cls, repository: str, destination: str | None = None) -> None:
-        command = ["git", "clone", repository]
+    @staticmethod
+    def clone(repository: str, destination: str | None = None) -> None:
+        args: list[str] = ["clone", repository]
         if destination:
-            command.append(destination)
-
-        cls._run_clone_command(command)
-
-    @classmethod
-    def clone_sparse(cls, repository: str, destination: str | None = None) -> None:
-        command = ["git", "clone", "--filter=blob:none", "--sparse"]
-        command.append(repository)
-        if destination:
-            command.append(destination)
-
-        cls._run_clone_command(command)
+            args.append(destination)
+        GitAdapter._git_with_cwd(*args)
 
     @staticmethod
-    def _run_clone_command(command: list[str]) -> None:
-        result = subprocess.run(
-            command,
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if result.returncode != 0:
-            message = result.stderr.strip() or result.stdout.strip()
-            raise GitError(f"{' '.join(command)} failed: {message}")
+    def clone_sparse(repository: str, destination: str | None = None) -> None:
+        args: list[str] = ["clone", "--filter=blob:none", "--sparse", repository]
+        if destination:
+            args.append(destination)
+        GitAdapter._git_with_cwd(*args)
 
     def sparse_checkout_enabled(self) -> bool:
-        result = self._run("config", "--bool", "core.sparseCheckout", check=False)
+        result = self._git_in_repo(
+            "config", "--bool", "core.sparseCheckout", check=False
+        )
         return result.returncode == 0 and result.stdout.strip() == "true"
 
     def enable_sparse_checkout(self) -> None:
-        self._run("sparse-checkout", "init", "--cone")
+        self._git_in_repo("sparse-checkout", "init", "--cone")
 
     def set_sparse_paths(self, paths: list[str]) -> None:
-        self._run("sparse-checkout", "set", *paths)
+        self._git_in_repo("sparse-checkout", "set", *paths)
 
     def current_sparse_paths(self) -> set[str]:
-        result = self._run("sparse-checkout", "list", check=False)
+        result = self._git_in_repo("sparse-checkout", "list", check=False)
         if result.returncode != 0:
             return set()
         return {line.strip() for line in result.stdout.splitlines() if line.strip()}
@@ -75,7 +61,7 @@ class GitAdapter:
 
     def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
         separator = "..." if merge_base else ".."
-        result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
+        result = self._git_in_repo("diff", "--name-only", f"{base}{separator}HEAD")
         return [
             Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
@@ -116,10 +102,20 @@ class GitAdapter:
 
         return lines
 
-    def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def _git_in_repo(
+        self, *args: str, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
+        return GitAdapter._git_with_cwd(*args, cwd=self.root, check=check)
+
+    @staticmethod
+    def _git_with_cwd(
+        *args: str,
+        cwd: Path | None = None,
+        check: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
-            cwd=self.root,
+            cwd=cwd,
             check=False,
             text=True,
             stdout=subprocess.PIPE,
@@ -132,7 +128,7 @@ class GitAdapter:
         return result
 
     def _config_value(self, key: str) -> str | None:
-        result = self._run("config", "--get", key, check=False)
+        result = self._git_in_repo("config", "--get", key, check=False)
         if result.returncode != 0:
             return None
         value = result.stdout.strip()
