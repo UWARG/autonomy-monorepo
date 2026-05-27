@@ -1,5 +1,4 @@
 from pymavlink import mavutil
-import socket
 import os
 from pathlib import Path
 import logging
