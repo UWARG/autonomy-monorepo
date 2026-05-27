@@ -41,3 +41,10 @@ class PositionMessage:
 @dataclass
 class AttitudeMessage:
     """Data class for an attitude message."""
+    time_boot_ms: int = 0
+    roll: float = 0.0
+    pitch: float = 0.0
+    yaw: float = 0.0
+    rollspeed: float = 0.0
+    pitchspeed: float = 0.0
+    yawspeed: float = 0.0
