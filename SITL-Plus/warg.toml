@@ -7,7 +7,7 @@ depends_on = []
 setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
-run = "uv run python -m sitl_plus.main"
+run = "uv run python -m main"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
