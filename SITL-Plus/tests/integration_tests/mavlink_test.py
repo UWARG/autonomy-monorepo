@@ -4,15 +4,17 @@ import os
 from pathlib import Path
 import logging
 import time
+
+
 logging.basicConfig(level=logging.INFO)
-PORT=5762
+PORT=5761
 
 #to do, implement mission load and send waypoints to the vehicle
 def main():
     conn=mavutil.mavlink_connection(f"tcp:172.21.106.31:{PORT}") 
     conn.wait_heartbeat()
     print(f"Heartbeat from vehicle: {conn.target_system} {conn.target_component}")
-    mission_file=Path.joinpath(Path(__file__).parent,"mission_load.waypoints")
+    mission_file=os.path.abspath(Path.joinpath(Path(__file__).parent.parent.parent,"src","mission_load.waypoints"))
     lines=[]
     with open(mission_file, "r") as file:
         for line in file:

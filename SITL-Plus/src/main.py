@@ -107,7 +107,6 @@ def physics_step(pwm_in,camera=None):
     return time_now, to_tuple(gyro), to_tuple(accel), to_tuple(position), (roll, pitch, yaw), to_tuple(velocity)
 
 
-# --- UDP communication setup ---
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 9002))
 sock.settimeout(0.5) #0.5 seconds is the maximum time to wait for a packet so frame does not get missed
