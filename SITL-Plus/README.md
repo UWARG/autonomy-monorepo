@@ -5,9 +5,11 @@ cd autonomy-monorepo
 git submodule update --init --recursive
 
 terminal 1
-cd SITL-Plus
-warg setup
-warg run SITL-Plus run -- --vehicle iris
+warg run SITL-Plus run
 
 terminal 2
-docker compose up ardupilot
+warg run SITL-Plus airside
+
+terminal 3
+warg run SITL-Plus groundside
+
