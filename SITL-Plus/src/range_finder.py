@@ -7,6 +7,7 @@ import pybullet as p
 
 import constants
 import state
+prev_state=state.update
 
 
 class Range_Finder():
@@ -36,7 +37,12 @@ class Range_Finder():
             (coordinates[2]-ray_from[2])**2
         )
     def range_thread(self):
+        global prev_state
         while True:
+            time.sleep(0.1)
+            while True:
+                if state.update!=prev_state:
+                    break
+            prev_state=state.update
             self.update()
-            time.sleep(1/constants.RANGE_FINDER_FPS)
             state.airside_socket.sendto(struct.pack("f",self.range),('127.0.0.1', 8001))

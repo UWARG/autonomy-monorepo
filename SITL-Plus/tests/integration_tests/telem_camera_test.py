@@ -6,7 +6,7 @@ import struct
 import numpy as np
 import time
 import threading
-
+import constants
 
 logging.basicConfig(level=logging.INFO)
 HOST = '127.0.0.1'
@@ -41,7 +41,7 @@ def main():
             depth_buffer=np.frombuffer(depth_data, np.uint8)
             depth_array=0.01*np.array(cv2.imdecode(depth_buffer, cv2.IMREAD_UNCHANGED))
             middle=(rgb_image.shape[0]//2, rgb_image.shape[1]//2)
-            middle_depth=float((depth_array[middle[0],middle[1]]))
+            middle_depth=float((depth_array[middle[0],middle[1]]))-constants.CAMERA_OFFSET
             cv2.imshow("camera_stream", rgb_image)
 
             if frame_count % print_interval == 0:

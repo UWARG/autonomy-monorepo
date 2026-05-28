@@ -141,7 +141,15 @@ logging.info("Created camera")
 range_finder=Range_Finder()
 logging.info("Created range finder")
 
+def update_camera_range_finder():
+    while True:
+        time.sleep(1/constants.CAMERA_FPS)
+        state.update+=1
+
+
 def main():
+    update_thread=threading.Thread(target=update_camera_range_finder,daemon=True)
+    update_thread.start()
 
     global RATE_HZ
     global TIME_STEP

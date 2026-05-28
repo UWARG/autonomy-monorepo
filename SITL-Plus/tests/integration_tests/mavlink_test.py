@@ -21,24 +21,30 @@ groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 groundside_socket.settimeout(100)
 frame_count=0
 print_interval=1000
+latest_range=0
 
+def range_finder_thread():
+    global latest_range
+    while True:
+        data_range, _ = range_finder_socket.recvfrom(65535)
+        latest_range=struct.unpack("f", data_range[:4])[0]
 
-
-def camera_range_finder_thread():
+def camera_thread():
     while True:
         global frame_count
-        data_range, _ = range_finder_socket.recvfrom(65535)
-        range=struct.unpack("f", data_range[:4])[0]
         data_camera,_=camera_socket.recvfrom(65535)
         rgb_length, depth_length, far, near = struct.unpack("QQff", data_camera[:24])
-        header=struct.pack("QQfff",rgb_length,depth_length,float(range),float(far),float(near))              
-        groundside_socket.sendto(header+data_camera+data_range, ('127.0.0.1', 7000))
-        logging.info(f"Sent {len(data_range)} bytes of range finder data and {len(data_camera)} bytes of camera data")
+        data_camera=data_camera[24:]
+        header=struct.pack("QQfff",rgb_length,depth_length,float(latest_range),float(far),float(near))              
+        groundside_socket.sendto(header+data_camera, ('127.0.0.1', 7000))
+        logging.info(f"Sent {len(data_camera)} bytes of camera data")
 
 
 def main():
-    thread_camera_range_finder=threading.Thread(target=camera_range_finder_thread,daemon=True)
-    thread_camera_range_finder.start()
+    thread_range_finder=threading.Thread(target=range_finder_thread,daemon=True)
+    thread_camera=threading.Thread(target=camera_thread,daemon=True)
+    thread_range_finder.start()
+    thread_camera.start()
     conn=mavutil.mavlink_connection(f"tcp:172.21.106.31:{PORT}") 
     conn.wait_heartbeat()
     print(f"Heartbeat from vehicle: {conn.target_system} {conn.target_component}")

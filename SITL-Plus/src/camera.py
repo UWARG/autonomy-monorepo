@@ -6,9 +6,9 @@ import cv2
 import numpy as np
 import pybullet as p
 
-import constants
 import state
-
+import constants
+prev_state=state.update
 
 class Camera():
 
@@ -22,7 +22,7 @@ class Camera():
         z=R[:,2] #up = +z
         local_direction=R@np.array(self.direction)
         
-        self.view_matrix=p.computeViewMatrix(np.array(pos)+0.5*np.array(local_direction), #camera position, 0.5 offset makes camera depth 0.5 off from range finder
+        self.view_matrix=p.computeViewMatrix(np.array(pos)+constants.CAMERA_OFFSET*np.array(local_direction), #camera position, 0.5 offset makes camera depth 0.5 off from range finder
         np.array(pos)+2*np.array(local_direction), # look at
         np.array(z)) #up vector
 
@@ -46,7 +46,12 @@ class Camera():
         self.depth_img=None
         self.seg_img=None
     def update(self):
-        time.sleep(1/constants.CAMERA_FPS)
+        global prev_state
+        while True:
+            time.sleep(0.1)
+            if state.update!=prev_state:
+                break
+        prev_state=state.update
         self._get_view_matrix()
         self.projection_matrix=p.computeProjectionMatrixFOV(self.fov,self.aspect,self.near,self.far)
 
