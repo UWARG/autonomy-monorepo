@@ -20,18 +20,22 @@ class Camera():
         x=R[:,0]
         y=R[:,1]
         z=R[:,2] #up = +z
+        if self.direction == [0,0,-1] or self.direction == [0,0,1]:
+            up_vector=[1,0,0]
+        else:
+            up_vector=[0,0,1]
         local_direction=R@np.array(self.direction)
-        
-        self.view_matrix=p.computeViewMatrix(np.array(pos)+constants.CAMERA_OFFSET*np.array(local_direction), #camera position, 0.5 offset makes camera depth 0.5 off from range finder
-        np.array(pos)+2*np.array(local_direction), # look at
-        np.array(z)) #up vector
+        cam_pos=np.array(pos)+constants.CAMERA_OFFSET*np.array(local_direction)
+        self.view_matrix=p.computeViewMatrix(cam_pos, #camera position, 0.5 offset makes camera depth 0.5 off from range finder
+        cam_pos+np.array(local_direction), # look at
+        np.array(up_vector)) #up vector
 
 
-    def __init__(self,attached_to_object,port,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1]):
+    def __init__(self,attached_to_object,port,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1],depth_map:bool=True):
         self.attached_to_object=attached_to_object
         self.direction=direction
         self.port=port
-
+        self.depth_map=depth_map
         self._get_view_matrix()
 
 
@@ -55,8 +59,8 @@ class Camera():
 
     def camera_thread(self):
         while True:
-            self.capture_image()
             self.update()
+            self.capture_image()
             rgba_array = np.reshape(self.rgb_img, (self.width, self.height, 4)).astype(np.uint8)
             rgb_array=cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
             ok,rgb_bytes=cv2.imencode(
@@ -70,15 +74,18 @@ class Camera():
             rgb_bytes=rgb_bytes.tobytes()
             real_depth=100*self.far * self.near / (self.far - (self.far - self.near) * np.array(self.depth_img))
             depth_array=np.reshape(real_depth, (self.width, self.height)).astype(np.uint16)
-            ok,depth_bytes=cv2.imencode(
-                ".png",
-                np.array(depth_array),
-                [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
-                )
-            if not ok:
-                logging.error("Failed to encode depth image")
-                continue
-            depth_bytes=depth_bytes.tobytes()
+            if not self.depth_map:
+                depth_bytes=b""
+            else:
+                ok,depth_bytes=cv2.imencode(
+                    ".png",
+                    np.array(depth_array),
+                    [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
+                    )
+                if not ok:
+                    logging.error("Failed to encode depth image")
+                    continue
+                depth_bytes=depth_bytes.tobytes()
 
             #if needed in future, uncomment
             """

@@ -10,8 +10,6 @@ import sensor_ports
 
 logging.basicConfig(level=logging.INFO)
 PORT=5761
-RANGE_FINDER_PORT=8001
-CAMERA_PORT=8000
 groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 groundside_socket.settimeout(100)
 frame_count=0

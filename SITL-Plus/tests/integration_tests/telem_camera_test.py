@@ -39,8 +39,13 @@ def camera_thread(port):
             depth_array=0.01*np.array(cv2.imdecode(depth_buffer, cv2.IMREAD_UNCHANGED))
             middle=(rgb_image.shape[0]//2, rgb_image.shape[1]//2)
             middle_depth=float((depth_array[middle[0],middle[1] ]))
-            cv2.imshow(str(port), rgb_image)
 
+            cv2.imshow(str(port), rgb_image)
+            if depth_length > 0:
+                arr_min=np.min(depth_array)
+                arr_max=np.max(depth_array)
+                normalized_array=(depth_array-arr_min)/(arr_max-arr_min)
+                cv2.imshow(str(port)+"_depth_map", normalized_array)
             if frame_count % PRINT_INTERVAL == 0:
                 logging.info(f"Received {rgb_length} bytes of rgb data and {depth_length} and middle depth:"
                 f"{middle_depth}" if middle_depth<100 else f"nothing within range of {near} to {far}")
