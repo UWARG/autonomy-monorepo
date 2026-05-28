@@ -11,6 +11,7 @@ import socket
 import struct
 import time
 from pathlib import Path
+import sensor_ports
 import pybullet as p
 import pybullet_data
 import logging
@@ -45,7 +46,10 @@ p.setTimeStep(TIME_STEP)
 p.setGravity(0, 0, -GRAVITY_MSS)
 p.setRealTimeSimulation(0)
 p.setAdditionalSearchPath(pybullet_data.getDataPath())
-p.configureDebugVisualizer(p.COV_ENABLE_GUI,1)
+if len(sensor_ports.CAMERA_PORTS)<2:
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI,1)
+else:
+    p.configureDebugVisualizer(p.COV_ENABLE_GUI,0)
 
 # --- Load environment ---
 ENV_ID=p.loadURDF("plane.urdf")
@@ -60,6 +64,8 @@ time_now = 0.0
 last_velocity = None
 vehicle = None
 
+cameras=[]
+range_finders=[]
 
 def vector_to_AP(vec):
     return Vector3(vec[0], -vec[1], -vec[2])
@@ -74,7 +80,7 @@ def quaternion_to_AP(q):
     return Quaternion([q[3], q[0], -q[1], -q[2]])
 
 
-def physics_step(pwm_in,camera=None):
+def physics_step(pwm_in):
     global time_now, last_velocity
     vehicle.update(pwm_in)
     p.stepSimulation()
@@ -126,19 +132,26 @@ for joint_number in range(number_of_joints):
     print(" %s : %s" % (info[0], info[1]))
 
 # --- Main loop ---
-
-new_camera=Camera(  
+for key,value in sensor_ports.CAMERA_PORTS.items():
+    cameras.append(Camera(  
                     attached_to_object=state.robot_id,
-                    fps=RATE_HZ,
-                    direction=[0,0,-1],
-                    fov=constants.CAMERA_FOV,
-                    near=constants.CAMERA_NEAR,
-                    far=constants.CAMERA_FAR,
-                    height=224,
-                    width=224)
-logging.info("Created camera")
+                    port=key,
+                    direction=value["direction"],
+                    fov=value["fov"],
+                    near=value["near"],
+                    far=value["far"],
+                    height=value["height"],
+                    width=value["width"]
+                    ))
+    
+for key,value in sensor_ports.RANGE_FINDER_PORTS.items():
+    range_finders.append(Range_Finder(
+                    port=key,
+                    direction=value["direction"],
+                    dist=value["dist"]
+                    ))
 
-range_finder=Range_Finder()
+logging.info("Created camera")
 logging.info("Created range finder")
 
 def update_camera_range_finder():
@@ -159,17 +172,15 @@ def main():
     global frame_time
     global print_frame_count
     global vehicle
-    global new_camera
     global sock
 
     logging.info("Starting main loop")
-    if new_camera:
-        thread_camera=threading.Thread(target=new_camera.camera_thread,daemon=True)
+    for camera in cameras:
+        thread_camera=threading.Thread(target=camera.camera_thread,daemon=True)
         thread_camera.start()
-    if range_finder:
+    for range_finder in range_finders:
         thread_range_finder=threading.Thread(target=range_finder.range_thread,daemon=True)
         thread_range_finder.start()
-    print(os.getcwd())
 
     #define some objects
     objects=[
@@ -232,7 +243,7 @@ def main():
 
         frame_count += 1
 
-        phys_time, gyro, accel, pos, euler, velo = physics_step(pwm,new_camera)
+        phys_time, gyro, accel, pos, euler, velo = physics_step(pwm)
 
         json_data = {
             "timestamp": phys_time,

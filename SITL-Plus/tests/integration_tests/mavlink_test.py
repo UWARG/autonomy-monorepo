@@ -5,46 +5,55 @@ import socket
 import logging
 import time
 import struct
-import sys
 import threading
+import sensor_ports
 
 logging.basicConfig(level=logging.INFO)
 PORT=5761
 RANGE_FINDER_PORT=8001
 CAMERA_PORT=8000
-camera_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-camera_socket.bind(("", 8000))
-range_finder_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-range_finder_socket.bind(("", 8001))
-
 groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 groundside_socket.settimeout(100)
 frame_count=0
 print_interval=1000
-latest_range=0
 
-def range_finder_thread():
-    global latest_range
-    while True:
-        data_range, _ = range_finder_socket.recvfrom(65535)
-        latest_range=struct.unpack("f", data_range[:4])[0]
 
-def camera_thread():
+def range_finder_thread(port):
+    range_finder_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    range_finder_socket.bind(('', port-sensor_ports.GROUNDSIDE_OFFSET))
+    range_finder_socket.settimeout(0.5)
     while True:
-        global frame_count
-        data_camera,_=camera_socket.recvfrom(65535)
-        rgb_length, depth_length, far, near = struct.unpack("QQff", data_camera[:24])
-        data_camera=data_camera[24:]
-        header=struct.pack("QQfff",rgb_length,depth_length,float(latest_range),float(far),float(near))              
-        groundside_socket.sendto(header+data_camera, ('127.0.0.1', 7000))
-        logging.info(f"Sent {len(data_camera)} bytes of camera data")
+        try:
+            data_range, _ = range_finder_socket.recvfrom(65535)
+            latest_range=struct.unpack("f", data_range[:4])[0]
+            groundside_socket.sendto(struct.pack("f",latest_range), ('127.0.0.1', port))
+        except OSError:
+            continue
+
+def camera_thread(port):
+    camera_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    camera_socket.bind(('', port-sensor_ports.GROUNDSIDE_OFFSET))
+    camera_socket.settimeout(0.5)
+    while True:
+        try:
+            global frame_count
+            data_camera,_=camera_socket.recvfrom(65535)
+            rgb_length, depth_length, far, near = struct.unpack("QQff", data_camera[:24])
+            data_camera=data_camera[24:]
+            header=struct.pack("QQff",rgb_length,depth_length,float(far),float(near))              
+            groundside_socket.sendto(header+data_camera, ('127.0.0.1', port))
+        except OSError:
+            continue
+
 
 
 def main():
-    thread_range_finder=threading.Thread(target=range_finder_thread,daemon=True)
-    thread_camera=threading.Thread(target=camera_thread,daemon=True)
-    thread_range_finder.start()
-    thread_camera.start()
+    for key,value in sensor_ports.CAMERA_PORTS.items():
+        thread_camera=threading.Thread(target=camera_thread,args=(value["port"]+sensor_ports.GROUNDSIDE_OFFSET,),daemon=True)
+        thread_camera.start()
+    for key,value in sensor_ports.RANGE_FINDER_PORTS.items():
+        thread_range_finder=threading.Thread(target=range_finder_thread,args=(value["port"]+sensor_ports.GROUNDSIDE_OFFSET,),daemon=True)
+        thread_range_finder.start()
     conn=mavutil.mavlink_connection(f"tcp:172.21.106.31:{PORT}") 
     conn.wait_heartbeat()
     print(f"Heartbeat from vehicle: {conn.target_system} {conn.target_component}")
@@ -192,9 +201,6 @@ def main():
         msg=conn.recv_match(type="HEARTBEAT",blocking=True,timeout=1)
         if msg is not None:
             print(f"Heartbeat from vehicle: {msg.get_type()}")
-        
-    conn.close()
-    print("Airside simulation started")
 
 if __name__ == "__main__":
     main()

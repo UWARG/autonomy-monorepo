@@ -27,10 +27,10 @@ class Camera():
         np.array(z)) #up vector
 
 
-    def __init__(self,attached_to_object,fps=60,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1]):
+    def __init__(self,attached_to_object,port,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1]):
         self.attached_to_object=attached_to_object
-        self.fps=fps
         self.direction=direction
+        self.port=port
 
         self._get_view_matrix()
 
@@ -46,14 +46,9 @@ class Camera():
         self.depth_img=None
         self.seg_img=None
     def update(self):
-        global prev_state
-        while True:
-            time.sleep(0.1)
-            if state.update!=prev_state:
-                break
-        prev_state=state.update
         self._get_view_matrix()
         self.projection_matrix=p.computeProjectionMatrixFOV(self.fov,self.aspect,self.near,self.far)
+        time.sleep(1/constants.CAMERA_FPS)
 
     def capture_image(self):
         self.rgb_img,self.depth_img,self.seg_img=p.getCameraImage(self.width,self.height,self.view_matrix,self.projection_matrix,renderer=p.ER_BULLET_HARDWARE_OPENGL)[2:5]
@@ -98,4 +93,4 @@ class Camera():
             seg_bytes=seg_bytes.tobytes()
             """
             udp_header=struct.pack("QQff",len(rgb_bytes),len(depth_bytes),self.far,self.near)
-            state.airside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))
+            state.airside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', self.port))

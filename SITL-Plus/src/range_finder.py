@@ -11,7 +11,8 @@ prev_state=state.update
 
 
 class Range_Finder():
-    def __init__(self,direction=[0,0,-1],dist=100):
+    def __init__(self,port,direction=[0,0,-1],dist=100):
+        self.port=port
         self.direction=direction
         self.dist=dist
     
@@ -37,12 +38,7 @@ class Range_Finder():
             (coordinates[2]-ray_from[2])**2
         )
     def range_thread(self):
-        global prev_state
         while True:
-            time.sleep(0.1)
-            while True:
-                if state.update!=prev_state:
-                    break
-            prev_state=state.update
+            time.sleep(1/constants.RANGE_FINDER_FPS)
             self.update()
-            state.airside_socket.sendto(struct.pack("f",self.range),('127.0.0.1', 8001))
+            state.airside_socket.sendto(struct.pack("f",self.range),('127.0.0.1', self.port))
