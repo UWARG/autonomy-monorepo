@@ -17,3 +17,6 @@ path = "mav_comms"
 
 [projects.ims]
 path = "ims"
+
+[projects.airside]
+path = "airside"

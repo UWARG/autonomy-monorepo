@@ -64,7 +64,7 @@ root README.
 - `warg_cli`: developer CLI for materializing projects, inspecting manifests,
   and running project-defined commands. See [warg_cli/README.md](warg_cli/README.md).
 
-- `kernel`: scheduler and state-management library for building airside autonomy projects.See [kernel/README.md](kernel/README.md).
+- `kernel`: scheduler and state-management library for building airside autonomy projects. See [kernel/README.md](kernel/README.md).
 
 -  `IMS`: Intelligent Monitoring System, a dashboard displaying MAVLink message feed, drone state, and live camera feed.
 
@@ -73,3 +73,5 @@ root README.
 - `Utils`: Shared enums and dataclasses used across all Airside modules. 
 
 - `Mav_comms`: Wrapper around pymavlink.
+
+- `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
