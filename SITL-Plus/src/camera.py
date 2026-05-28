@@ -17,10 +17,13 @@ class Camera():
         R=p.getMatrixFromQuaternion(orn)
         R=np.reshape(R,(3,3))
         #forward = +x left = +y
+        x=R[:,0]
+        y=R[:,1]
         z=R[:,2] #up = +z
+        local_direction=R@np.array(self.direction)
         
-        self.view_matrix=p.computeViewMatrix(np.array(pos), #camera position
-        np.array(pos)+2*np.array(self.direction), # look at
+        self.view_matrix=p.computeViewMatrix(np.array(pos)+0.5*np.array(local_direction), #camera position, 0.5 offset makes camera depth 0.5 off from range finder
+        np.array(pos)+2*np.array(local_direction), # look at
         np.array(z)) #up vector
 
 
@@ -90,4 +93,4 @@ class Camera():
             seg_bytes=seg_bytes.tobytes()
             """
             udp_header=struct.pack("QQff",len(rgb_bytes),len(depth_bytes),self.far,self.near)
-            state.groundside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))
+            state.airside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', 8000))

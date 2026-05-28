@@ -18,6 +18,7 @@ import threading
 from pymavlink.quaternion import Quaternion
 from pymavlink.rotmat import Vector3
 
+
 from camera import Camera
 from range_finder import Range_Finder
 from object import Object
@@ -106,8 +107,8 @@ sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.bind(('', 9002))
 sock.settimeout(0.5) #0.5 seconds is the maximum time to wait for a packet so frame does not get missed
 
-state.groundside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-state.groundside_socket.settimeout(0.1)
+state.airside_socket=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+state.airside_socket.settimeout(0.1)
 
 last_SITL_frame = -1
 connected = False
@@ -129,6 +130,7 @@ for joint_number in range(number_of_joints):
 new_camera=Camera(  
                     attached_to_object=state.robot_id,
                     fps=RATE_HZ,
+                    direction=[0,0,-1],
                     fov=constants.CAMERA_FOV,
                     near=constants.CAMERA_NEAR,
                     far=constants.CAMERA_FAR,
@@ -159,13 +161,15 @@ def main():
     if range_finder:
         thread_range_finder=threading.Thread(target=range_finder.range_thread,daemon=True)
         thread_range_finder.start()
+    print(os.getcwd())
 
     #define some objects
     objects=[
         Object("r2d2.urdf",position=[4,6,0],orientation=[0,0,math.pi/2]),
-        Object("cartpole.urdf",position=[0,3,0],orientation=[0,0,0]),
         Object("sphere_small.urdf",position=[2,2,0],orientation=[math.pi/2,0,0],scale=5),
-
+        Object("barrel",position=[2,2,3],orientation=[0,0,0],scale=1,radius=0.5,height=1),
+        Object("sphere",position=[1,1,3],orientation=[0,0,0],scale=1,radius=0.5),
+        Object("hoop",position=[-3,1,3],orientation=[math.pi/2,0,0],scale=1,radius=1),
     ]
     for obj in objects:
         obj.initialize()
@@ -197,6 +201,13 @@ def main():
             RATE_HZ = frame_rate_hz
             TIME_STEP = 1.0 / RATE_HZ
             p.setTimeStep(TIME_STEP)
+
+
+        #fast reset
+        keys=p.getKeyboardEvents()
+        for key_code, event_state in keys.items():
+            if key_code == ord('q') and event_state & p.KEY_WAS_TRIGGERED:
+                frame_number=0
 
         if frame_number < last_SITL_frame-MISSED_FRAMES_ALLOWED: #to protect against out of order frames (usually skips at most 4 on 800 fps, adjust based on fps)
             print(f"frame_number: {frame_number} last_SITL_frame: {last_SITL_frame}")
