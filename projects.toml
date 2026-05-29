@@ -20,3 +20,9 @@ path = "ims"
 
 [projects.airside]
 path = "airside"
+
+[projects.gesture_control]
+path = "gesture_control"
+
+[projects.target_tracking]
+path = "target_tracking"
