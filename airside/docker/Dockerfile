@@ -16,15 +16,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
+COPY camera/ /monorepo/camera/
+RUN pip install numpy
+
 WORKDIR /ros_ws
 
-COPY src/ src/
+COPY airside/src/ src/
 
 RUN source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
   && colcon build --symlink-install
 
-COPY docker/airside_entrypoint.sh /entrypoint.sh
+COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

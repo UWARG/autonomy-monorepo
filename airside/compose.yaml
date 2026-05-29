@@ -1,8 +1,8 @@
 services:
   airside:
     build:
-      context: .
-      dockerfile: docker/Dockerfile
+      context: ..
+      dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
@@ -10,3 +10,4 @@ services:
     restart: unless-stopped
     volumes:
       - ./src:/ros_ws/src
+      - ../camera:/monorepo/camera
