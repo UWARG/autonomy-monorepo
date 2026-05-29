@@ -16,10 +16,6 @@ class Camera():
         pos,orn=p.getBasePositionAndOrientation(self.attached_to_object)
         R=p.getMatrixFromQuaternion(orn)
         R=np.reshape(R,(3,3))
-        #forward = +x left = +y
-        x=R[:,0]
-        y=R[:,1]
-        z=R[:,2] #up = +z
         if self.direction == [0,0,-1] or self.direction == [0,0,1]:
             up_vector=[1,0,0]
         else:
@@ -31,7 +27,7 @@ class Camera():
         np.array(up_vector)) #up vector
 
 
-    def __init__(self,attached_to_object,port,fov=60,near=0.1,far=100.0,height=224,width=224,direction=[0,0,-1],depth_map:bool=True):
+    def __init__(self,attached_to_object,port,fov=60,near=1,far=100.0,height=224,width=224,direction=[0,0,-1],depth_map:bool=True):
         self.attached_to_object=attached_to_object
         self.direction=direction
         self.port=port
