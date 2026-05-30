@@ -1,6 +1,5 @@
 from .constants import MAVLINK_TCP_HOST, MAVLINK_TCP_PORT
 from pymavlink import mavutil
-import time
 class MavConnection: 
 
     def __init__(
