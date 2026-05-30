@@ -17,7 +17,13 @@ from errors import GitError
 from git_adapter import GitAdapter
 from github_adapter import GitHubAdapter
 from models import Project
-from registry import Registry, expand_dependents, find_repo_root, load_project_manifest
+from registry import (
+    Registry,
+    expand_dependents,
+    find_repo_root,
+    find_repo_root_or_none,
+    load_project_manifest,
+)
 from runner import CommandRunner
 
 
@@ -122,6 +128,16 @@ def info(project: str) -> None:
     console.print("Commands:")
     for name in selected.commands:
         console.print(f"  - {name}")
+
+
+@app.command()
+def doctor() -> None:
+    """Print Git config, SSH environment, and remote access diagnostics."""
+    console.print("[bold]Git repository access[/bold]")
+    root = find_repo_root_or_none()
+    git = GitAdapter(root)
+    for line in git.repository_access_diagnostics():
+        console.print(f"  - {line}")
 
 
 @app.command()
