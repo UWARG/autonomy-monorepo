@@ -4,13 +4,27 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from cli import _materialize_dependency_graph, app
+from cli import _materialize_dependency_graph, _project_version, app
 from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
 
 
 runner = CliRunner()
+
+
+def test_version_long_option() -> None:
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == _project_version()
+
+
+def test_version_short_option() -> None:
+    result = runner.invoke(app, ["-v"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == _project_version()
 
 
 def test_list_projects_from_repo_root(fixture_repo: Path, monkeypatch) -> None:
