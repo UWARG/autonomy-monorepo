@@ -541,51 +541,7 @@ def test_ci_skips_affected_projects_without_pipeline(
     assert "No affected projects define [ci].pr" in result.stdout
 
 
-def test_bare_command_runs_current_project_manifest_command(
-    fixture_repo: Path, monkeypatch
-) -> None:
-    monkeypatch.chdir(fixture_repo / "camera")
-    calls = []
-
-    class FakeRunner:
-        def run(
-            self, project: Project, command_name: str, passthrough: list[str]
-        ) -> int:
-            calls.append((project.name, command_name, passthrough))
-            return 0
-
-    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
-
-    result = runner.invoke(app, ["test", "--", "--fix"])
-
-    assert result.exit_code == 0
-    assert calls == [("camera", "test", ["--fix"])]
-
-
-def test_bare_command_finds_project_manifest_from_nested_directory(
-    fixture_repo: Path, monkeypatch
-) -> None:
-    nested = fixture_repo / "camera" / "src" / "camera"
-    nested.mkdir(parents=True)
-    monkeypatch.chdir(nested)
-    calls = []
-
-    class FakeRunner:
-        def run(
-            self, project: Project, command_name: str, passthrough: list[str]
-        ) -> int:
-            calls.append((project.name, command_name, passthrough))
-            return 0
-
-    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
-
-    result = runner.invoke(app, ["test:unit"])
-
-    assert result.exit_code == 0
-    assert calls == [("camera", "test:unit", [])]
-
-
-def test_unknown_bare_command_still_reports_no_such_command(
+def test_unknown_top_level_command_reports_no_such_command(
     fixture_repo: Path, monkeypatch
 ) -> None:
     monkeypatch.chdir(fixture_repo / "camera")
