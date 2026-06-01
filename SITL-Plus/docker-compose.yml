@@ -1,0 +1,9 @@
+services:
+  sitl-plus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 5761:5761
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
