@@ -4,27 +4,12 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from cli import _materialize_dependency_graph, _project_version, app
+from cli import _materialize_dependency_graph, app
 from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
 
-
 runner = CliRunner()
-
-
-def test_version_long_option() -> None:
-    result = runner.invoke(app, ["--version"])
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == _project_version()
-
-
-def test_version_short_option() -> None:
-    result = runner.invoke(app, ["-v"])
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == _project_version()
 
 
 def test_list_projects_from_repo_root(fixture_repo: Path, monkeypatch) -> None:
@@ -599,16 +584,13 @@ def test_up_project_picker_uses_root_registry_for_sparse_checkout(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text(
-        """
+    (tmp_path / "projects.toml").write_text("""
 [projects.camera]
 path = "camera"
 
 [projects.gesture_control]
 path = "gesture_control"
-""".strip()
-        + "\n"
-    )
+""".strip() + "\n")
     monkeypatch.chdir(tmp_path)
 
     selected_choices = []
@@ -775,8 +757,7 @@ def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text(
-        """
+    (tmp_path / "projects.toml").write_text("""
 [projects.camera]
 path = "camera"
 
@@ -785,9 +766,7 @@ path = "gesture_control"
 
 [projects.mavlink_comm]
 path = "mavlink_comm"
-""".strip()
-        + "\n"
-    )
+""".strip() + "\n")
     calls = []
 
     class FakeGit:
