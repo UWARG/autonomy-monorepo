@@ -1,5 +1,5 @@
-from abstract_camera import AbstractCamera
-from frame import CameraFrame
+from .abstract_camera import AbstractCamera
+from .frame import CameraFrame
 
 
 class SimCamera(AbstractCamera):

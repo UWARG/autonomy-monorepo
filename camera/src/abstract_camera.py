@@ -6,7 +6,7 @@ is being used.
 
 import abc
 
-from frame import CameraFrame
+from .frame import CameraFrame
 
 class AbstractCamera(abc.ABC): 
     """Abstract Camera class that all cameras must inherit from."""
@@ -16,7 +16,7 @@ class AbstractCamera(abc.ABC):
 
     def start(self) -> bool: 
         """Initializes the camera, returns True on Success."""
-        pass
+        return False
     
     def stop(self) -> None: 
         """Stop the Camera and release any resources."""
