@@ -10,4 +10,4 @@ services:
     restart: unless-stopped
     volumes:
       - ./src:/ros_ws/src
-      - ../camera:/monorepo/camera
+      - ..:/monorepo

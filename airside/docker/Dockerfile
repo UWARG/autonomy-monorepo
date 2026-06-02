@@ -17,6 +17,7 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
   && rosdep update --rosdistro humble
 
 COPY camera/ /monorepo/camera/
+COPY utils/ /monorepo/utils/
 RUN pip install numpy
 
 WORKDIR /ros_ws

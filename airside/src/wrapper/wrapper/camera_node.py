@@ -4,8 +4,8 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-from abstract_camera import AbstractCamera  # noqa: E402
-from sim import SimCamera  # noqa: E402
+from camera.src.abstract_camera import AbstractCamera
+from camera.src.sim import SimCamera
 
 
 class CameraNode(Node):
