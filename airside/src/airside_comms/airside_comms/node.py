@@ -6,6 +6,8 @@ import threading
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from utils.src.utils import AttitudeMessage
+from utils.src.utils import PositionMessage
 
 
 class AirsideCommsNode(Node):
@@ -21,7 +23,13 @@ class AirsideCommsNode(Node):
 
     def _on_camera(self, msg: Image) -> None:
         """Callback for camera images, sends them to the IMS ground station."""
-        
+
+    def _on_attitude(self, msg: AttitudeMessage) -> None:
+        """Callback for attitude messages, sends them to the IMS ground station."""
+
+    def _on_position(self, msg: PositionMessage) -> None:
+        """Callback for position messages, sends them to the IMS ground station."""
+
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
     node = AirsideCommsNode()
