@@ -80,6 +80,7 @@ def main():
         param_value=1,
         param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32
     )
+    time.sleep(5)
     conn.mav.param_set_send(
         target_system=conn.target_system,
         target_component=conn.target_component,
