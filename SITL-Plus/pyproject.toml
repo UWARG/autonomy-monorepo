@@ -10,7 +10,7 @@ dependencies = [
     "numpy>=2.0.2",
     "opencv-python>=4.13.0.92",
     "pybullet>=3.2.7",
-    "pymavlink>=2.4.49",
+    "pymavlink>=2.4.49"
 ]
 
 [project.urls]

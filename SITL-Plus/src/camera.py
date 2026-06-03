@@ -1,6 +1,7 @@
 import logging
 import struct
 import time
+import os
 
 import cv2
 import numpy as np
@@ -9,7 +10,9 @@ import pybullet as p
 import state
 import constants
 prev_state=state.update
-
+HOST=os.getenv("SENSOR_HOST")
+if not HOST:
+    raise ValueError("SENSOR_HOST environment variable is not set")
 class Camera():
 
     def _get_view_matrix(self):
@@ -96,4 +99,4 @@ class Camera():
             seg_bytes=seg_bytes.tobytes()
             """
             udp_header=struct.pack("QQff",len(rgb_bytes),len(depth_bytes),self.far,self.near)
-            state.airside_socket.sendto(udp_header+rgb_bytes+depth_bytes,('127.0.0.1', self.port))
+            state.airside_socket.sendto(udp_header+rgb_bytes+depth_bytes, (HOST, self.port)) # 127.0.0.1 is the localhost address 172.17.0.1 is the docker container address

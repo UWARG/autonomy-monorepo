@@ -23,6 +23,7 @@ def range_finder_thread(port):
     while True:
         try:
             data_range, _ = range_finder_socket.recvfrom(65535)
+            logging.info(f"Received {len(data_range)} bytes of range data")
             latest_range=struct.unpack("f", data_range[:4])[0]
             groundside_socket.sendto(struct.pack("f",latest_range), ('127.0.0.1', port))
         except OSError:
@@ -36,6 +37,7 @@ def camera_thread(port):
         try:
             global frame_count
             data_camera,_=camera_socket.recvfrom(65535)
+            logging.info(f"Received {len(data_camera)} bytes of camera data")
             rgb_length, depth_length, far, near = struct.unpack("QQff", data_camera[:24])
             data_camera=data_camera[24:]
             header=struct.pack("QQff",rgb_length,depth_length,float(far),float(near))              
@@ -52,7 +54,7 @@ def main():
     for key,value in sensor_ports.RANGE_FINDER_PORTS.items():
         thread_range_finder=threading.Thread(target=range_finder_thread,args=(value["port"]+sensor_ports.GROUNDSIDE_OFFSET,),daemon=True)
         thread_range_finder.start()
-    conn=mavutil.mavlink_connection(f"tcp:172.21.106.31:{PORT}") 
+    conn=mavutil.mavlink_connection(f"tcp:127.0.0.1:{PORT}") 
     conn.wait_heartbeat()
     print(f"Heartbeat from vehicle: {conn.target_system} {conn.target_component}")
     mission_file=os.path.abspath(Path.joinpath(Path(__file__).parent.parent.parent,"src","mission_load.waypoints"))

@@ -4,10 +4,14 @@ import time
 
 import numpy as np
 import pybullet as p
+import os
 
 import constants
 import state
 prev_state=state.update
+HOST=os.getenv("SENSOR_HOST")
+if not HOST:
+    raise ValueError("SENSOR_HOST environment variable is not set")
 
 
 class Range_Finder():
@@ -41,4 +45,4 @@ class Range_Finder():
         while True:
             time.sleep(1/constants.RANGE_FINDER_FPS)
             self.update()
-            state.airside_socket.sendto(struct.pack("f",self.range),('127.0.0.1', self.port))
+            state.airside_socket.sendto(struct.pack("f",self.range),(HOST, self.port)) # 127.0.0.1 is the localhost address 172.17.0.1 is the docker container address

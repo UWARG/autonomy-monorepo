@@ -49,6 +49,7 @@ WORKDIR /app
 
 EXPOSE 5761/tcp
 
+
 USER root
 COPY . /app/
 RUN chown -R devuser:devuser /app &&\
@@ -56,6 +57,5 @@ RUN chown -R devuser:devuser /app &&\
 
 USER devuser
 RUN uv sync --locked
-
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
