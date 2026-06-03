@@ -20,29 +20,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     xvfb \
+    apt-utils \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-COPY . /app
-
 WORKDIR /app/src
 
-RUN git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git
+RUN useradd -m -s /bin/bash devuser && \
+    echo "devuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R devuser:devuser /app
+
+USER devuser
+ENV USER=devuser
+ENV HOME=/home/devuser
+ENV LOGNAME=devuser
+
+RUN git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git ardupilot && \
+      cd ardupilot && \
+      Tools/environment_install/install-prereqs-ubuntu.sh -y;
 
 WORKDIR /app/src/ardupilot
-
-RUN Tools/environment_install/install-prereqs-ubuntu.sh -y
-
-RUN git submodule update --init --recursive
-
-RUN . ~/.profile
+RUN bash -lc 'source /home/devuser/venv-ardupilot/bin/activate && \
+    ./waf configure --board sitl && \
+    ./waf copter -j2'
 
 WORKDIR /app
 
+EXPOSE 5761/tcp
+
+USER root
+COPY . /app/
+RUN chown -R devuser:devuser /app &&\
+    chmod +x /app/docker/entrypoint.sh
+
+USER devuser
 RUN uv sync --locked
 
-RUN chmod +x /docker/entrypoint.sh
 
-ENTRYPOINT ["/docker/entrypoint.sh"]
-
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

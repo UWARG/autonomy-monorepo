@@ -5,5 +5,15 @@ services:
       dockerfile: Dockerfile
     ports:
       - 5761:5761
+      - 14550:14550
     environment:
       - DEBIAN_FRONTEND=noninteractive
+      - DISPLAY=${DISPLAY}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+    volumes:
+      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
+      - "/mnt/wslg:/mnt/wslg:rw"
+      - ./logs:/app/logs
+      - ./src/ardupilot/Tools/autotest/tilecache/srtm:/home/devuser/.tilecache/SRTM3:rw
+    stdin_open: true
+    tty: true
