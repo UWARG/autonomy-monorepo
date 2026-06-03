@@ -66,3 +66,46 @@ class OakD(AbstractCamera):
         except Exception as e:
             logging.error(f"OAK-D camera failed to initialize: {e}")
             return False
+
+    def capture_frame(self) -> CameraFrame | None:
+        # initialization check
+        if self._rgb_queue is None or self._depth_queue is None:
+            logging.warning("OAK-D queues not initialized")
+            return None
+
+        try:
+            rgb_frame = self._rgb_queue.get().getCvFrame()
+            depth_frame = self._depth_queue.get().getFrame()
+            centre_depth = self.sample_centre_depth(depth_frame)
+
+            return CameraFrame(
+                rgb=rgb_frame,
+                depth=depth_frame,
+                rgb_down=None,
+                centre_depth=centre_depth,
+            )
+
+        except Exception as e:
+            logging.error(f"OAK-D frame capture failed: {e}")
+            return None
+    
+    def sample_centre_depth(self, depth_frame: np.ndarray) -> float:
+        if depth_frame is None:
+            return math.nan
+
+        cy, cx = depth_frame.shape[0] // 2, depth_frame.shape[1] // 2
+        depth_value = depth_frame[cy, cx]
+
+        # convert to meters since OAK-D returns depth in millimeters
+        if depth_value == 0:
+            return math.nan
+    
+        return float(depth_value) / 1000.0
+
+    def stop(self) -> None:
+        if self._device is not None:
+            self._device.close()
+            self._device = None
+            logging.info("OAK-D device stopped")
+
+
