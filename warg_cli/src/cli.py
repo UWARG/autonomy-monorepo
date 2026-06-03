@@ -1,13 +1,9 @@
 from __future__ import annotations
 
+from importlib.metadata import version as package_version
 from pathlib import Path
 import re
 from typing import Optional
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib
 
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
@@ -279,15 +275,8 @@ def _load_repo_root() -> Path:
 def _show_version(version: bool | None) -> None:
     if not version:
         return
-    console.print(_project_version())
+    console.print(package_version("warg-cli"))
     raise typer.Exit()
-
-
-def _project_version() -> str:
-    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
-    with pyproject.open("rb") as file:
-        metadata = tomllib.load(file)
-    return str(metadata["project"]["version"])
 
 
 def _resolve_repository(
