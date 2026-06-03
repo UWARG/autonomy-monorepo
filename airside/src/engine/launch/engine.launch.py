@@ -17,5 +17,11 @@ def generate_launch_description() -> LaunchDescription:
                 name="engine_manager",
                 output="screen",
             ),
+            Node(
+                package="airside_comms",
+                executable="airside_comms",
+                name="airside_comms",
+                output="screen",
+            ),
         ]
     )
