@@ -41,6 +41,15 @@ Materialize a project and its dependencies:
 warg up gesture_control
 ```
 
+Unload a project from sparse checkout:
+
+```bash
+warg down gesture_control
+```
+
+Projects that depend on the unloaded project are unloaded too, with a warning.
+Pass `--include-dependencies` to also unload checked-out dependencies.
+
 Inspect a project's manifest metadata:
 
 ```bash
@@ -71,8 +80,9 @@ run = "uv run python -m gesture_control"
 lint = "uv run ruff check ."
 ```
 
-`warg up <project>` runs `setup` for newly materialized projects and their
-dependencies. Use `warg up <project> --force` to rerun setup commands.
+`warg up <project>` runs `setup` for the project and its dependencies every
+time, keeping already-materialized projects in sync with their current setup
+commands.
 
 ## Development
 

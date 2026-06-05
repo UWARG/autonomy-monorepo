@@ -1,0 +1,12 @@
+name = "target_tracking"
+description = "following target."
+
+depends_on = ["camera", "mavlink_comm"]
+
+[commands]
+setup = "uv sync"
+test = "uv run pytest"
+"test:unit" = "uv run pytest tests/unit"
+"test:integration" = "uv run pytest tests/integration"
+run = "uv run python -m target_tracking"
+lint = "uv run ruff check ."

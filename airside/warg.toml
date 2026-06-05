@@ -1,0 +1,16 @@
+name = "airside"
+description = "ROS 2 Humble workspace for airside autonomy."
+
+depends_on = []
+
+[commands]
+setup            = "docker compose build"
+build            = "docker compose build"
+compose-up       = "docker compose up -d"
+compose-down     = "docker compose down"
+logs             = "docker compose logs -f"
+test             = "echo 'Tests are not implemented yet'"
+shell            = "docker compose run --rm airside bash"
+
+[ci]
+pr = ["test"]
