@@ -1,0 +1,13 @@
+services:
+  airside-prec:
+    build:
+      context: ..
+      dockerfile: airside/docker/Dockerfile
+    image: warg/airside:latest
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    command: ros2 launch engine engine.launch.py
+    restart: unless-stopped
+    volumes:
+      - ./src:/ros_ws/src
+      - ..:/monorepo
