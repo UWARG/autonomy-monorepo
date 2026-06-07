@@ -48,21 +48,11 @@ docker compose run --rm airside bash
 
 ## Adding a monorepo library
 
-To expose a new top-level monorepo package (e.g. `camera/`) inside the container, add four lines across these files:
+To expose a new monorepo library (e.g. `camera/`) inside the container, add the following line to the dockerfile:
 
 **`airside/docker/Dockerfile`**
 ```dockerfile
 COPY camera/ /monorepo/camera/
-```
-
-**`airside/docker/airside_entrypoint.sh`** - append to the `PYTHONPATH` export:
-```bash
-:/monorepo/camera/src
-```
-
-**`airside/compose.yaml`** - under `volumes:`:
-```yaml
-- ../camera:/monorepo/camera
 ```
 
 ## Configuration

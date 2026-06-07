@@ -1,5 +1,5 @@
-name = "kernel"
-description = "WARG autonomy airside kernel - scheduler and state management"
+name = "gnc"
+description = "Guidance, Navigation, and Control module"
 
 depends_on = []
 

@@ -14,11 +14,18 @@ from models import Project, ProjectEntry
 
 
 def find_repo_root(start: Path | None = None) -> Path:
+    root = find_repo_root_or_none(start)
+    if root is None:
+        raise ManifestError("Could not find a Git repository root.")
+    return root
+
+
+def find_repo_root_or_none(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     for path in (current, *current.parents):
         if (path / ".git").exists():
             return path
-    raise ManifestError("Could not find a Git repository root.")
+    return None
 
 
 class Registry:

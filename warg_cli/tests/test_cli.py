@@ -9,7 +9,6 @@ from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
 
-
 runner = CliRunner()
 
 
@@ -31,6 +30,59 @@ def test_info_shows_commands(fixture_repo: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert "camera" in result.stdout
     assert "test:unit" in result.stdout
+
+
+def test_doctor_prints_repository_access_diagnostics(
+    fixture_repo: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(fixture_repo)
+    roots = []
+
+    class FakeGit:
+        def __init__(self, root: Path | None):
+            self.root = root
+            roots.append(root)
+
+        def repository_access_diagnostics(self) -> list[str]:
+            return [
+                "remote.origin.url: git@github.com:UWARG/autonomy-monorepo.git",
+                "git ls-remote --exit-code origin HEAD: ok",
+            ]
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert roots == [fixture_repo]
+    assert "Git repository access" in result.stdout
+    assert "remote.origin.url" in result.stdout
+    assert "git ls-remote --exit-code origin HEAD: ok" in result.stdout
+
+
+def test_doctor_runs_outside_git_repo(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    roots = []
+
+    class FakeGit:
+        def __init__(self, root: Path | None):
+            self.root = root
+            roots.append(root)
+
+        def repository_access_diagnostics(self) -> list[str]:
+            return [
+                "Git repository: not found",
+                "ssh -T -o BatchMode=yes git@github.com: ok",
+            ]
+
+    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+
+    result = runner.invoke(app, ["doctor"])
+
+    assert result.exit_code == 0
+    assert roots == [None]
+    assert "Git repository: not found" in result.stdout
+    assert "ssh -T -o BatchMode=yes git@github.com: ok" in result.stdout
 
 
 def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
@@ -173,9 +225,7 @@ def test_clone_full_uses_normal_clone(monkeypatch) -> None:
     )
 
     assert result.exit_code == 0
-    assert calls == [
-        ("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")
-    ]
+    assert calls == [("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")]
     assert "Cloned full repository" in result.stdout
     assert "Only root files are checked out" not in result.stdout
 
@@ -476,51 +526,7 @@ def test_ci_skips_affected_projects_without_pipeline(
     assert "No affected projects define [ci].pr" in result.stdout
 
 
-def test_bare_command_runs_current_project_manifest_command(
-    fixture_repo: Path, monkeypatch
-) -> None:
-    monkeypatch.chdir(fixture_repo / "camera")
-    calls = []
-
-    class FakeRunner:
-        def run(
-            self, project: Project, command_name: str, passthrough: list[str]
-        ) -> int:
-            calls.append((project.name, command_name, passthrough))
-            return 0
-
-    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
-
-    result = runner.invoke(app, ["test", "--", "--fix"])
-
-    assert result.exit_code == 0
-    assert calls == [("camera", "test", ["--fix"])]
-
-
-def test_bare_command_finds_project_manifest_from_nested_directory(
-    fixture_repo: Path, monkeypatch
-) -> None:
-    nested = fixture_repo / "camera" / "src" / "camera"
-    nested.mkdir(parents=True)
-    monkeypatch.chdir(nested)
-    calls = []
-
-    class FakeRunner:
-        def run(
-            self, project: Project, command_name: str, passthrough: list[str]
-        ) -> int:
-            calls.append((project.name, command_name, passthrough))
-            return 0
-
-    monkeypatch.setattr("cli.CommandRunner", FakeRunner)
-
-    result = runner.invoke(app, ["test:unit"])
-
-    assert result.exit_code == 0
-    assert calls == [("camera", "test:unit", [])]
-
-
-def test_unknown_bare_command_still_reports_no_such_command(
+def test_unknown_top_level_command_reports_no_such_command(
     fixture_repo: Path, monkeypatch
 ) -> None:
     monkeypatch.chdir(fixture_repo / "camera")
@@ -578,16 +584,13 @@ def test_up_project_picker_uses_root_registry_for_sparse_checkout(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text(
-        """
+    (tmp_path / "projects.toml").write_text("""
 [projects.camera]
 path = "camera"
 
 [projects.gesture_control]
 path = "gesture_control"
-""".strip()
-        + "\n"
-    )
+""".strip() + "\n")
     monkeypatch.chdir(tmp_path)
 
     selected_choices = []
@@ -754,8 +757,7 @@ def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text(
-        """
+    (tmp_path / "projects.toml").write_text("""
 [projects.camera]
 path = "camera"
 
@@ -764,9 +766,7 @@ path = "gesture_control"
 
 [projects.mavlink_comm]
 path = "mavlink_comm"
-""".strip()
-        + "\n"
-    )
+""".strip() + "\n")
     calls = []
 
     class FakeGit:

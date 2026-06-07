@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib.metadata import version as package_version
 from pathlib import Path
 import re
 from typing import Optional
@@ -9,7 +10,6 @@ from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
 from rich.table import Table
-from typer.core import TyperGroup, click
 
 from ci import affected_projects, run_ci_pipeline
 from errors import WargError
@@ -17,30 +17,30 @@ from errors import GitError
 from git_adapter import GitAdapter
 from github_adapter import GitHubAdapter
 from models import Project
-from registry import Registry, expand_dependents, find_repo_root, load_project_manifest
+from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
 from runner import CommandRunner
 
-
-class WargGroup(TyperGroup):
-    def resolve_command(
-        self, context: click.Context, args: list[str]
-    ) -> tuple[str | None, click.Command | None, list[str]]:
-        try:
-            return super().resolve_command(context, args)
-        except click.UsageError as error:
-            exit_code = _run_current_project_command(args)
-            if exit_code is None:
-                raise error
-            raise click.exceptions.Exit(exit_code) from None
-
-
-app = typer.Typer(cls=WargGroup, no_args_is_help=True, add_completion=False)
+app = typer.Typer(no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
 console = Console()
 GITHUB_SSH_DOCS_URL = (
     "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
 )
+
+
+@app.callback()
+def root(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        callback=lambda value: _show_version(value),
+        is_eager=True,
+        help="Show the WARG CLI version and exit.",
+    ),
+) -> None:
+    pass
 
 
 @app.command()
@@ -122,6 +122,16 @@ def info(project: str) -> None:
     console.print("Commands:")
     for name in selected.commands:
         console.print(f"  - {name}")
+
+
+@app.command()
+def doctor() -> None:
+    """Print Git config, SSH environment, and remote access diagnostics."""
+    console.print("[bold]Git repository access[/bold]")
+    root = find_repo_root_or_none()
+    git = GitAdapter(root)
+    for line in git.repository_access_diagnostics():
+        console.print(f"  - {line}")
 
 
 @app.command()
@@ -262,6 +272,13 @@ def _load_repo_root() -> Path:
         raise typer.Exit(1) from error
 
 
+def _show_version(version: bool | None) -> None:
+    if not version:
+        return
+    console.print(package_version("warg-cli"))
+    raise typer.Exit()
+
+
 def _resolve_repository(
     repository: str, organization: str, include_archived: bool
 ) -> str:
@@ -355,33 +372,6 @@ def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
         raise typer.Exit(1) from error
     if exit_code != 0:
         raise typer.Exit(exit_code)
-
-
-def _run_current_project_command(args: list[str]) -> int | None:
-    if not args:
-        return None
-
-    command, *passthrough = args
-    if passthrough and passthrough[0] == "--":
-        passthrough = passthrough[1:]
-    project = _load_current_project()
-    if project is None or command not in project.commands:
-        return None
-
-    try:
-        return CommandRunner().run(project, command, passthrough)
-    except WargError as error:
-        console.print(f"[red]Error:[/red] {error}")
-        return 1
-
-
-def _load_current_project() -> Project | None:
-    current = Path.cwd().resolve()
-    for path in (current, *current.parents):
-        manifest = path / "warg.toml"
-        if manifest.exists():
-            return load_project_manifest(manifest)
-    return None
 
 
 def _materialize_dependency_graph(

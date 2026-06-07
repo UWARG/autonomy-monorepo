@@ -1,0 +1,14 @@
+name = "perception"
+description = "Perception module - computer vision and target tracking algorithms"
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+build = "uv build"
+test = "uv run --extra dev pytest"
+lint = "uv run --extra dev ruff check ."
+
+[ci]
+pr = ["lint", "test"]
+main = ["test", "build"]
