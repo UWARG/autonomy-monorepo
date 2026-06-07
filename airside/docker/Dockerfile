@@ -24,7 +24,8 @@ WORKDIR /ros_ws
 
 COPY airside/src/ src/
 
-RUN source /opt/ros/humble/setup.bash \
+RUN apt-get update \
+  && source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
   && colcon build --symlink-install
 
