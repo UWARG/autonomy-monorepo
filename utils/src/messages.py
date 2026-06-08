@@ -5,24 +5,24 @@ These are the wire format — used by airside_comms to encode and ims/server to 
 Separate from types.py (plain dataclasses) which are used internally on the RPi.
 """
 
-from typing import Optional, Union
+from typing import Union
 
 import msgspec
 
 
 class AttitudePayload(msgspec.Struct):
-    roll: Optional[float] = None
-    pitch: Optional[float] = None
-    yaw: Optional[float] = None
-    rollspeed: Optional[float] = None
-    pitchspeed: Optional[float] = None
-    yawspeed: Optional[float] = None
+    roll: float
+    pitch: float
+    yaw: float
+    rollspeed: float
+    pitchspeed: float
+    yawspeed: float
 
 
 class PositionPayload(msgspec.Struct):
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    alt: Optional[float] = None
+    lat: float
+    lon: float
+    alt: float
 
 
 class CameraPayload(msgspec.Struct):
