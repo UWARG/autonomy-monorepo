@@ -26,9 +26,7 @@ class PositionPayload(msgspec.Struct):
 
 
 class CameraPayload(msgspec.Struct):
-    width: int
-    height: int
-    encoding: str
+    """Payload for camera data - Currently unscoped"""
 
 
 class HealthPayload(msgspec.Struct):
