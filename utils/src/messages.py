@@ -58,8 +58,6 @@ class HealthMessage(msgspec.Struct, tag_field="type", tag="health"):
 class LogMessage(msgspec.Struct, tag_field="type", tag="log"):
     payload: LogPayload
 
-
-# Union of all valid airside messages — used by the decoder
 AirsideMessage = Union[
     AttitudeMessage,
     PositionMessage,

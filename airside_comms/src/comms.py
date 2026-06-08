@@ -27,25 +27,19 @@ class AirsideComms:
 
     def send_attitude(self, attitude) -> None:
         """Encode and send an AttitudeMessage to IMS."""
-        self._send(encode_attitude(attitude))
 
     def send_position(self, position) -> None:
         """Encode and send a PositionMessage to IMS."""
-        self._send(encode_position(position))
 
     def send_camera(self, width: int, height: int, encoding: str) -> None:
         """Encode and send camera frame metadata to IMS."""
-        self._send(encode_camera(width, height, encoding))
 
     def send_health(self, healthy: bool) -> None:
         """Encode and send a health status to IMS."""
-        self._send(encode_health(healthy))
 
     def send_log(self, message: str) -> None:
         """Encode and send a log message to IMS."""
-        self._send(encode_log(message))
 
     def _send(self, message: str) -> None:
         """Send a raw JSON string to IMS."""
-        if self._ws is not None:
-            self._ws.send(message)
+
