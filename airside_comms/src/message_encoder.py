@@ -1,6 +1,5 @@
 """
 Encodes utils dataclasses into JSON bytes for transmission to IMS.
-Uses msgspec for fast serialization and schema enforcement.
 All messages use the envelope: {"type": "...", "payload": {...}}
 """
 

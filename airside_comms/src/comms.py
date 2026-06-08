@@ -1,6 +1,5 @@
 """
-AirsideComms — standalone WebSocket client that streams airside data to IMS.
-No ROS2 dependency. Can be wrapped by any middleware.
+AirsideComms — Streams airside data to IMS.
 """
 
 from websockets.sync.client import connect as ws_connect
