@@ -6,9 +6,10 @@ from mavros_msgs.srv import CommandBool
 from mavros_msgs.srv import SetMode
 from mavros_msgs.srv import CommandTOL
 from tf2_msgs.msg import TFMessage
-from geometry_msgs.msg import Pose, Point, Quaternion, Header
+from geometry_msgs.msg import Pose, Point, Quaternion
+from std_msgs.msg import Header
 
-TAG_ID = ""
+TAG_ID = "36h11_1"
 
 class MavrosNode(Node):
     def __init__(self):
@@ -19,7 +20,7 @@ class MavrosNode(Node):
 
         self.state_subscriber = self.create_subscription(State, "mavros/state", self.state_callback, 10)
         self.local_pos_pub = self.create_publisher(PoseStamped, "mavros/setpoint_position/local",10)
-        self.apriltag_subscriber = self.create_subscription(TFMessage,"",self.apriltag_callback,10) # run to see what topic apriltag node publishes to
+        self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) # run to see what topic apriltag node publishes to
 
         while not self.setmode_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for setmode service...")
@@ -29,14 +30,23 @@ class MavrosNode(Node):
             self.get_logger().info("Waiting for arming service...")
         self.get_logger().info("All services ready")
 
+
+    def state_callback(self, msg: State):
+        if msg.mode != "GUIDED":
+            self.get_logger().info("Not in GUIDED mode")
+            return
+        if msg.armed:
+            self.get_logger().info("Armed")
+            return
+        if not msg.armed:
+            self.get_logger().info("Not armed")
+
     def apriltag_callback(self, msg: TFMessage):
+        apriltag = None
         if len(msg.detections) == 0:
             self.get_logger().info("No apriltag detected")
             return
-        for detection in msg.transforms:
-            if detection.child_frame_id == TAG_ID:
-                apriltag=detection
-                break
+        apriltag=msg.transforms[0]
         if apriltag is None:
             self.get_logger().info("Apriltag not found")
             return

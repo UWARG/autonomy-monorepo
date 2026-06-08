@@ -24,14 +24,17 @@ RUN pip install numpy
 
 WORKDIR /ros_ws
 
-COPY airside/src/ src/
+COPY airside_prec/src/ src/
 
 RUN source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
   && colcon build --symlink-install
 
-COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY airside_prec/docker/airside_entrypoint.sh /airside_entrypoint.sh
+RUN chmod +x /airside_entrypoint.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
+
+
+ENTRYPOINT ["/airside_entrypoint.sh"]
 CMD ["bash"]

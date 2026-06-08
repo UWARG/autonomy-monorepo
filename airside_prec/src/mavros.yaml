@@ -1,0 +1,7 @@
+mavros:
+  ros__parameters:
+      plugin_denylist:
+        - 'cellular_status'
+        - 'vision_pose_estimate'
+        - 'mocap_pose_estimate'
+        - 'companion_process_status'

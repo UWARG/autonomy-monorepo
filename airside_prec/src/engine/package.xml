@@ -11,6 +11,7 @@
 
   <depend>rclpy</depend>
   <depend>mavros</depend>
+  <depend>apriltag_ros</depend>
   <depend>sensor_msgs</depend>
 
   <exec_depend>launch</exec_depend>

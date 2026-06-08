@@ -22,9 +22,10 @@ def generate_launch_description() -> LaunchDescription:
                 package="mavros",
                 executable="mavros_node",
                 name="mavros",
-                parameters=[{
-                    "fcu_url": "serial:///dev/ttyUSB0:57600", #udp://:14500 for sitl
-                }],
+                parameters=[
+                    {"plugin_allowlist": ["sys_status","command","setpoint_position","imu","mission"]},
+                    {"fcu_url": "udp://:14550@"}, #udp://:14500@ for sitl or serial:///dev/ttyUSB0:57600 for real hardware
+                ],
                 output="screen",
             ),
             Node(

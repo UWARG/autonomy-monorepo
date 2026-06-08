@@ -2,7 +2,7 @@ services:
   airside-prec:
     build:
       context: ..
-      dockerfile: airside/docker/Dockerfile
+      dockerfile: airside_prec/docker/Dockerfile
     image: warg/airside:latest
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
