@@ -14,11 +14,11 @@ socket.onopen = () => {
 }
 
 socket.onmessage = (event) => {
-  const message = JSON.parse(event);
+  const message = JSON.parse(event.data);
   const { type, payload } = message;
 
   if (subscribers[type]) {
-    subscribers[type].foreach(callback => callback(payload));
+    subscribers[type].forEach(callback => callback(payload));
   }
 }
 
