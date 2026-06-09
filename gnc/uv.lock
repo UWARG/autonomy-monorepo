@@ -31,6 +31,9 @@ wheels = [
 name = "gnc"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "utils" },
+]
 
 [package.optional-dependencies]
 dev = [
@@ -43,6 +46,7 @@ dev = [
 requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
+    { name = "utils", directory = "../utils" },
 ]
 provides-extras = ["dev"]
 
@@ -226,3 +230,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/72/94/1a15dd82efb362ac8
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548", size = 44614, upload-time = "2025-08-25T13:49:24.86Z" },
 ]
+
+[[package]]
+name = "utils"
+version = "0.1.0"
+source = { directory = "../utils" }
+
+[package.metadata]
+requires-dist = [{ name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" }]
+provides-extras = ["dev"]

@@ -6,7 +6,13 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+  "utils",
+]
+
+[tool.uv.sources]
+utils = { path = "../utils" }
+
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/gnc"
@@ -21,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", ".."]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]

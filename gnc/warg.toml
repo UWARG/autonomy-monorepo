@@ -1,7 +1,7 @@
 name = "gnc"
 description = "Guidance, Navigation, and Control module"
 
-depends_on = []
+depends_on = ["utils"]
 
 [commands]
 setup = "uv sync"
