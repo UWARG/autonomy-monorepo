@@ -19,20 +19,37 @@ class MavConnection:
 
     def send_heartbeat(self) -> bool: 
         """Send a heartbeat message to maintain the connection."""
-
+        self.master.mav.heartbeat_send(
+                                        mavutil.mavlink.MAV_TYPE_GCS,        
+                                        mavutil.mavlink.MAV_AUTOPILOT_INVALID, 
+                                        0, 0, 0
+                                    )
+        
     def receive_heartbeat(self) -> bool: 
         """Wait for a heartbeat message from the drone to confirm connection."""
+        while(not self.master.wait_heartbeat()):
+            pass
+        print ("Heartbeat received from drone.")
+        return True
+
 
     def connect(self) -> bool: 
         """Establish a connection to the MAVLink server."""
     
-        connection_string = f"tcp:{self.host}:{self.port}"
+        connection_string = f"{self.host}:{self.port}"
        
 
         try:
-            self.master = mavutil.mavlink_connection(connection_string, baud=self.baud_rate)
-            self.master.wait_heartbeat()  # blocks until heartbeat received, raises on timeout
+            self.master = mavutil.mavlink_connection(connection_string)
+              # blocks until heartbeat received, raises on timeout
+            receive_hearbeat_success = self.receive_heartbeat()
+
+            #TO DO: currently timer never returns false, maybe add watchdog timer to prevent infinite loop
+            if not receive_hearbeat_success:
+                print("Failed to receive heartbeat from drone.")
+                return False
             return True
+        
         except Exception as e:
             print(f"Error occurred while connecting to MAVLink server: {e}")
             return False
