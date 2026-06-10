@@ -1,7 +1,6 @@
 from .abstract_camera import AbstractCamera
 from .frame import CameraFrame
 import cv2
-import cv_bridge
 
 
 class Arducam(AbstractCamera):
