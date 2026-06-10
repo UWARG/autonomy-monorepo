@@ -1,5 +1,5 @@
 """
-To create a new behavior, copy this file, rename it, and fill in the three lifecycle methods.
+To create a new behavior, copy this file, rename it, and fill in the lifecycle methods.
 """
 
 from __future__ import annotations

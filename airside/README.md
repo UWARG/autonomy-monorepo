@@ -69,7 +69,7 @@ The engine is built with [py_trees_ros](https://py-trees-ros.readthedocs.io/en/l
 
 #### Adding a behavior
 
-1. Copy `src/engine/engine/behaviors/template.py`, rename it, and implement the three lifecycle methods.
+1. Copy `src/engine/engine/behaviors/template.py`, rename it, and implement the lifecycle methods.
 2. Add the new behavior as a child of the root (or a composite) in `create_root()` inside `manager.py`.
 
 #### Behavior lifecycle

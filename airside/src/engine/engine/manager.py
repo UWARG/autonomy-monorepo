@@ -11,14 +11,15 @@ import py_trees_ros
 import rclpy
 from engine.behaviors.read_camera import ReadCameraBehavior
 
-TICK_PERIOD_MS: float = 500.0 # Tree clock speed
-UNICODE_TREE_DEBUG: bool = True # Whether or not to print the tree with Unicode characters on every tick
+TICK_PERIOD_MS: float = 500.0  # Tree clock speed
+UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
 
 
 def create_root() -> py_trees.behaviour.Behaviour:
     root = py_trees.composites.Sequence(name="Root", memory=False)
     root.add_child(ReadCameraBehavior(name="ReadCamera"))
     return root
+
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
@@ -48,7 +49,7 @@ def main(args: list[str] | None = None) -> None:
     try:
         if tree.node is not None:
             rclpy.spin(tree.node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException): #type: ignore
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  #type: ignore[attr-defined]
         pass
     finally:
         tree.shutdown()
