@@ -6,6 +6,7 @@ depends_on = []
 [commands]
 setup            = "docker compose build"
 build            = "docker compose build"
+run              = "docker compose up"
 compose-up       = "docker compose up -d"
 compose-down     = "docker compose down"
 logs             = "docker compose logs -f"

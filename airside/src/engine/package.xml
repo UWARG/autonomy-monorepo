@@ -12,6 +12,9 @@
   <depend>rclpy</depend>
   <depend>mavros</depend>
   <depend>sensor_msgs</depend>
+  <depend>py_trees</depend>
+  <depend>py_trees_ros</depend>
+  <depend>py_trees_ros_interfaces</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
