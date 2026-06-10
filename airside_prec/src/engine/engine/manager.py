@@ -27,7 +27,7 @@ class ManagerNode(Node):
 
 
         while not self.setmode_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info("Waiting for setmode service...")
+            self.get_logger().info(self.setmode_client.srv_name)
         while not self.takeoff_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for takeoff service...")
         while not self.arming_client.wait_for_service(timeout_sec=1.0):
