@@ -17,7 +17,7 @@ def generate_launch_description() -> LaunchDescription:
                 plugin="mavros::router::Router",
                 name="mavros_router",
                 parameters=[
-                    {"fcu_urls": ["serial:///dev/ttyAMA0:57600"]}, #udp://:14500@ for sitl or serial:///dev/ttyUSB0:57600 for real hardware
+                    {"fcu_urls": ["serial:///dev/serial0:57600"]},
                     {"uas_urls": ["/uas1"]},
                 ],
                 extra_arguments=[{"use_intra_process_comms": True}],
