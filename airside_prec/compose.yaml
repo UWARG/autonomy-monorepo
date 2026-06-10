@@ -11,3 +11,5 @@ services:
     volumes:
       - ./src:/ros_ws/src
       - ..:/monorepo
+    devices:
+      - /dev/video0:/dev/video0
