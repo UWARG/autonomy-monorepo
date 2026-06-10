@@ -4,8 +4,8 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
-from camera.src.abstract_camera import AbstractCamera
-from camera.src.sim import SimCamera
+from camera import AbstractCamera
+from camera import SimCamera
 
 
 class CameraNode(Node):

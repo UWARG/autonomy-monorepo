@@ -16,7 +16,7 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "py_trees", "py_trees_ros"],
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
