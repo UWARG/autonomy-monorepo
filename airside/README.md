@@ -48,11 +48,12 @@ docker compose run --rm airside bash
 
 ## Adding a monorepo library
 
-To expose a new monorepo library (e.g. `camera/`) inside the container, add the following line to the dockerfile:
+To expose a new monorepo library (e.g. `camera/`) inside the container, add the following lines to the dockerfile:
 
 **`airside/docker/Dockerfile`**
 ```dockerfile
 COPY camera/ /monorepo/camera/
+RUN pip install /monorepo/camera
 ```
 
 ## Configuration

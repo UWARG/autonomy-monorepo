@@ -30,7 +30,7 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install --no-deps /monorepo/camera /monorepo/utils
+RUN pip install /monorepo/camera /monorepo/utils
 
 COPY airside/src/ src/
 
