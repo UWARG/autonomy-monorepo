@@ -13,5 +13,5 @@ services:
       - ..:/monorepo
     devices:
       - /dev/video0:/dev/video0
-      - "/dev/serial0:/dev/serial0"
+      - /dev/serial0:/dev/serial0
 

@@ -22,4 +22,4 @@ class Arducam(AbstractCamera):
         ret, frame = self.cap.read()
         if not ret:
             return None
-        return CameraFrame(rgb=frame)
+        return CameraFrame(rgb=frame,depth=None,rgb_down=None)
