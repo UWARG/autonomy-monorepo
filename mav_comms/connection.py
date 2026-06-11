@@ -1,5 +1,6 @@
 from .constants import MAVLINK_TCP_HOST, MAVLINK_TCP_PORT
 from pymavlink import mavutil
+import time
 class MavConnection: 
 
     def __init__(
@@ -12,6 +13,8 @@ class MavConnection:
         self.port = port 
         self.baud_rate = baud_rate
         self.master = None
+        self.heartbeat_interval = 1 
+        self.heartbeat_timeout = 5 
 
     def is_connected(self) -> bool: 
         """Check if the MAVLink connection is active."""
@@ -25,26 +28,27 @@ class MavConnection:
                                         0, 0, 0
                                     )
         
-    def receive_heartbeat(self) -> bool: 
+    def receive_heartbeat(self) -> bool:
         """Wait for a heartbeat message from the drone to confirm connection."""
-        while(not self.master.wait_heartbeat()):
-            pass
-        print ("Heartbeat received from drone.")
-        return True
+        start_time = time.time()
+        while time.time() - start_time < self.heartbeat_timeout:
+            if self.master.wait_heartbeat(timeout=self.heartbeat_interval):
+                print("Heartbeat received from drone.")
+                return True
+        print("Timed out waiting for heartbeat from drone.")
+        return False
 
 
     def connect(self) -> bool: 
         """Establish a connection to the MAVLink server."""
     
-        connection_string = f"{self.host}:{self.port}"
+        connection_string = f"/dev/ttyAMA0"
        
 
         try:
             self.master = mavutil.mavlink_connection(connection_string)
-              # blocks until heartbeat received, raises on timeout
             receive_hearbeat_success = self.receive_heartbeat()
 
-            #TO DO: currently timer never returns false, maybe add watchdog timer to prevent infinite loop
             if not receive_hearbeat_success:
                 print("Failed to receive heartbeat from drone.")
                 return False
