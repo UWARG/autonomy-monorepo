@@ -15,4 +15,5 @@ services:
       - /dev/video0:/dev/video0
       - /dev/serial0:/dev/serial0
     privileged: true
+  image: airside-prec:0.1.0
 
