@@ -13,13 +13,13 @@ TAG_ID = "36h11_1"
 class ManagerNode(Node):
     def __init__(self):
         super().__init__("mavros_comms")
-        self.arming_client = self.create_client(CommandBool, "/mavros/cmd/arming")
-        self.setmode_client = self.create_client(SetMode, "/mavros/set_mode")
-        self.takeoff_client = self.create_client(CommandTOL, "/mavros/cmd/takeoff")
+        self.arming_client = self.create_client(CommandBool, "/mavros/UAS1/cmd/arming")
+        self.setmode_client = self.create_client(SetMode, "/mavros/UAS1/set_mode")
+        self.takeoff_client = self.create_client(CommandTOL, "/mavros/UAS1/cmd/takeoff")
 
-        self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros/landing_target/raw",10)
+        self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros/UAS1/landing_target/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) # run to see what topic apriltag node publishes to
-        self.rc_subscriber = self.create_subscription(RCIn, "/mavros/rc/in", self.rc_callback, 10)
+        self.rc_subscriber = self.create_subscription(RCIn, "/mavros/UAS1/rc/in", self.rc_callback, 10)
 
         self.create_timer(0.1, self.precision_landing_timer_callback)
         self.landing=False
