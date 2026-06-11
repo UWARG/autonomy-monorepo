@@ -73,7 +73,7 @@ class ManagerNode(Node):
     def apriltag_callback(self, msg: TFMessage):
         apriltag = None
         if len(msg.transforms) == 0:
-            self.get_logger().info("No apriltag detected")
+            self.get_logger().info("No transforms detected")
             return
         apriltag=msg.transforms[0]
         if apriltag is None:
