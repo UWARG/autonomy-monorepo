@@ -1,7 +1,7 @@
 name = "gesture_control"
 description = "Gesture control pipeline for camera-based command input."
 
-depends_on = ["camera", "mavlink_comm"]
+depends_on = ["camera", "mav_comms"]
 
 [commands]
 setup = "uv sync"
