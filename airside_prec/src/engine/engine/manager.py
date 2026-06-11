@@ -13,9 +13,9 @@ TAG_ID = "36h11_1"
 class ManagerNode(Node):
     def __init__(self):
         super().__init__("mavros_comms")
-        self.arming_client = self.create_client(CommandBool, "/mavros/UAS1/cmd/arming")
-        self.setmode_client = self.create_client(SetMode, "/mavros/UAS1/set_mode")
-        self.takeoff_client = self.create_client(CommandTOL, "/mavros/UAS1/cmd/takeoff")
+        self.arming_client = self.create_client(CommandBool, "/mavros_container/arming")
+        self.setmode_client = self.create_client(SetMode, "/set_mode")
+        self.takeoff_client = self.create_client(CommandTOL, "/mavros_container/takeoff")
 
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros/UAS1/landing_target/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) # run to see what topic apriltag node publishes to
@@ -27,7 +27,7 @@ class ManagerNode(Node):
 
 
         while not self.setmode_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().info(self.setmode_client.srv_name)
+            self.get_logger().info("Waiting for set mode service...")
         while not self.takeoff_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for takeoff service...")
         while not self.arming_client.wait_for_service(timeout_sec=1.0):

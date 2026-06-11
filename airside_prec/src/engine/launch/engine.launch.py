@@ -35,7 +35,9 @@ def generate_launch_description() -> LaunchDescription:
                     {"system_id": 1},
                     {"target_system_id": 1},
                 ],
-                extra_arguments=[{"use_intra_process_comms": True}],
+                extra_arguments=[{"use_intra_process_comms": True},
+                                 {"log_level":"WARN"}
+                ],
             ),
         ],
         output="screen",
