@@ -42,7 +42,7 @@ class MavConnection:
     def connect(self) -> bool: 
         """Establish a connection to the MAVLink server."""
     
-        connection_string = f"/dev/ttyAMA0"
+        connection_string = "/dev/ttyAMA0"
        
 
         try:
