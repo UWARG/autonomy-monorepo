@@ -19,7 +19,7 @@ class ManagerNode(Node):
 
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros/UAS1/landing_target/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) # run to see what topic apriltag node publishes to
-        self.rc_subscriber = self.create_subscription(RCIn, "/mavros/UAS1/rc/in", self.rc_callback, 10)
+        self.rc_subscriber = self.create_subscription(RCIn, "/mavros_container/in", self.rc_callback, 10)
 
         self.create_timer(0.1, self.precision_landing_timer_callback)
         self.landing=False
@@ -36,7 +36,7 @@ class ManagerNode(Node):
 
 
     def precision_landing_timer_callback(self):
-        if self.landing:
+        if True: #replace with self.landing 
             if self.last_apriltag is None:
                 self.get_logger().info("No apriltag detected")
                 return
@@ -44,9 +44,10 @@ class ManagerNode(Node):
             apriltag.header.stamp=self.get_clock().now().to_msg()
             apriltag.frame=9 # BODY_NED = FRD = 9
             apriltag.type=2 # vision_fiducial = 2
-            apriltag.pose.position.x=-self.last_apriltag.transform.translation.y
+            #apriltag coordinate system to FRD
+            apriltag.pose.position.x=self.last_apriltag.transform.translation.z
             apriltag.pose.position.y=self.last_apriltag.transform.translation.x
-            apriltag.pose.position.z=self.last_apriltag.transform.translation.z
+            apriltag.pose.position.z=self.last_apriltag.transform.translation.y
             apriltag.distance=math.sqrt(
                 self.last_apriltag.transform.translation.y**2+
                 self.last_apriltag.transform.translation.x**2+
@@ -119,6 +120,7 @@ def main(args=None):
         raise RuntimeError("Failed to takeoff")
     """
     try:
+        node.get_logger().info("Starting manager node")
         rclpy.spin(node)
     finally:
         node.destroy_node()

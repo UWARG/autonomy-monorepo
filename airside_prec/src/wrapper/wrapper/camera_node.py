@@ -15,7 +15,7 @@ from ament_index_python.packages import get_package_share_directory
 
 class CameraNode(Node):
     TOPIC = "camera/image"
-    PUBLISH_HZ = 2.0
+    PUBLISH_HZ = 10.0
     WIDTH = 640
     HEIGHT = 480
 

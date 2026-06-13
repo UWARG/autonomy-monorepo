@@ -34,9 +34,11 @@ def generate_launch_description() -> LaunchDescription:
                     {"plugin_denylist": ["*"]},
                     {"system_id": 1},
                     {"target_system_id": 1},
+                    {"landing_target.listen_lt": True},
+                    {"landing_target.tf.listen": False},
+                    {"landing_target.mav_frame": "BODY_NED"}
                 ],
                 extra_arguments=[{"use_intra_process_comms": True},
-                                 {"log_level":"WARN"}
                 ],
             ),
         ],

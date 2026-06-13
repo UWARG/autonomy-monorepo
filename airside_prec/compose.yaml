@@ -9,15 +9,11 @@ services:
     image: uwarg/airside-prec:0.1.3
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-wayland-0}
-      DISPLAY: ${DISPLAY:-:0}
     command: ros2 launch engine engine.launch.py
     restart: unless-stopped
     volumes:
       - ./src:/ros_ws/src
       - ..:/monorepo
-      - /mnt/wslg/.X11-unix:/tmp/.X11-unix
-      - /mnt/wslg:/mnt/wslg
     devices:
       - /dev/video0:/dev/video0
       - /dev/ttyAMA0:/dev/ttyAMA0
