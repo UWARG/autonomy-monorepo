@@ -55,3 +55,4 @@ class CameraType(Enum):
     OPENCV = 0
     PICAM2 = 1
     ARDUCAMIR = 2
+    OAK_D = 3

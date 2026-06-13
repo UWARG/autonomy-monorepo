@@ -59,7 +59,7 @@ class Plane:
 
 @dataclass
 class Target:
-    """Data class for a detected target with a colour and local position."""
+    """Data class for a target."""
 
     colour: Colours
     location: Coordinate
