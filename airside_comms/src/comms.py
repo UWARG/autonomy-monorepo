@@ -43,11 +43,11 @@ class AirsideComms:
     def send_log(self, message: str) -> None:
         """Encode and send a log message to IMS."""
 
-    def _send(self, message: str) -> None:
+    def send_json(self, message: str) -> None:
         """Send a raw JSON string to IMS."""
 
     def start_receiving(self, on_message) -> None:
         """Start a background thread that calls for each incoming message."""
 
-    def _receive_loop(self) -> None:
+    def receive_loop(self) -> None:
         """Loop to continuously receive messages"""
