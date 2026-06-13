@@ -2,6 +2,8 @@
 AirsideComms — Streams airside data to IMS.
 """
 
+import threading
+
 from websockets.sync.client import connect as ws_connect
 
 from .message_encoder import encode_attitude, encode_position, encode_camera, encode_health, encode_log
@@ -13,6 +15,8 @@ class AirsideComms:
     def __init__(self, url: str) -> None:
         self._url = url
         self._ws = None
+        self._receiver_thread = None
+        self._on_message = None
 
     def connect(self) -> None:
         """Open the WebSocket connection to IMS."""
@@ -42,3 +46,8 @@ class AirsideComms:
     def _send(self, message: str) -> None:
         """Send a raw JSON string to IMS."""
 
+    def start_receiving(self, on_message) -> None:
+        """Start a background thread that calls for each incoming message."""
+
+    def _receive_loop(self) -> None:
+        """Loop to continuously receive messages"""
