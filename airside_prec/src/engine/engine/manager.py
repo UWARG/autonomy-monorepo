@@ -53,10 +53,10 @@ class ManagerNode(Node):
                 self.last_apriltag.transform.translation.x**2+
                 self.last_apriltag.transform.translation.z**2
             )
-            apriltag.pose.orientation.x=0
-            apriltag.pose.orientation.y=0
-            apriltag.pose.orientation.z=0
-            apriltag.pose.orientation.w=1
+            apriltag.pose.orientation.x=0.0
+            apriltag.pose.orientation.y=0.0
+            apriltag.pose.orientation.z=0.0
+            apriltag.pose.orientation.w=1.0
             self.precision_landing_pub.publish(apriltag)
         
 
