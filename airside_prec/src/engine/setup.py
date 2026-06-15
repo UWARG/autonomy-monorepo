@@ -17,7 +17,8 @@ setup(
         (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
         (f"share/{package_name}", ["../apriltag.yaml"]),
         (f"share/{package_name}", ["../mavros.yaml"]),
-        (f"share/{package_name}",["../camera_info.yaml"])
+        (f"share/{package_name}",["../camera_info.yaml"]),
+        (f"share/{package_name}",["../pluginlists.yaml"])
     ],
     install_requires=["setuptools"],
     zip_safe=True,
