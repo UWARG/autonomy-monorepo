@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-mavros-extras \
     ros-humble-cv-bridge \
     ros-humble-apriltag-ros \
+    ros-humble-rqt-image-view \
   && rm -rf /var/lib/apt/lists/*
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \

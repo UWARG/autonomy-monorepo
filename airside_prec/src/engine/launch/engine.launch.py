@@ -1,11 +1,55 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch_ros.actions import ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 import os
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description() -> LaunchDescription:
+    container=ComposableNodeContainer(
+        name="mavros_container",
+        namespace="",
+        package="rclcpp_components",
+        executable="component_container_mt",
+        composable_node_descriptions=[
+            ComposableNode(
+                package="mavros",
+                plugin="mavros::router::Router",
+                name="mavros_router",
+                parameters=[
+                    {"fcu_urls": ["serial:///dev/ttyAMA0:115200"]},
+                    {"uas_urls": ["/uas1"]},
+                ],
+                extra_arguments=[{"use_intra_process_comms": True}],
+            ),
+            ComposableNode(
+                package="mavros",
+                plugin="mavros::uas::UAS",
+                name="UAS1",
+                namespace="mavros",
+                parameters=[
+                    {"tgt_system_id": 1},
+                    {"tgt_component_id": 1},
+                    {"uas_url":"/uas1"},
+                    {"fcu_protocol": "v2.0"},
+                    {"plugin_allowlist": ["sys_status", "command", "setpoint_position", "imu", "mission","rc_io","landing_target"]},
+                    {"plugin_denylist": ["*"]},
+                    {"system_id": 1},
+                    {"target_system_id": 1},
+                    {"landing_target.listen_lt": True},
+                    {"landing_target.tf.listen": False},
+                    {"landing_target.mav_frame": "BODY_NED"}
+                ],
+                extra_arguments=[{"use_intra_process_comms": True},
+                ],
+            ),
+        ],
+        output="screen",
+        arguments=["--ros-args", "--log-level", "DEBUG"],
+    )
     return LaunchDescription(
         [
+            container,
             Node(
                 package="wrapper",
                 executable="camera",
@@ -19,16 +63,6 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             Node(
-                package="mavros",
-                executable="mavros_node",
-                name="mavros",
-                parameters=[
-                    {"plugin_allowlist": ["sys_status","command","setpoint_position","imu","mission"]},
-                    {"fcu_url": "udp://:14550@"}, #udp://:14500@ for sitl or serial:///dev/ttyUSB0:57600 for real hardware
-                ],
-                output="screen",
-            ),
-            Node(
                 package="apriltag_ros",
                 executable="apriltag_node",
                 name="apriltag",
@@ -39,11 +73,5 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[os.path.join(get_package_share_directory("engine"),"apriltag.yaml")],
                 output="screen",
             ),
-            Node(
-                package="wrapper",
-                executable="mavros_comms",
-                name="mavros_comms",
-                output="screen",
-            )
            ]
     )
