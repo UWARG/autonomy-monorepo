@@ -28,6 +28,8 @@ def generate_launch_description() -> LaunchDescription:
                 name="UAS1",
                 namespace="mavros",
                 parameters=[
+                    {"tgt_system_id": 1},
+                    {"tgt_component_id": 1},
                     {"uas_url":"/uas1"},
                     {"fcu_protocol": "v2.0"},
                     {"plugin_allowlist": ["sys_status", "command", "setpoint_position", "imu", "mission","rc_io","landing_target"]},
