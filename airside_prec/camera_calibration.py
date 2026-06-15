@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--squares-x", type=int, default=9, help="Inner corners along x")
     parser.add_argument("--squares-y", type=int, default=6, help="Inner corners along y")
     parser.add_argument("--square-size", type=float, default=0.025, help="Square size in meters")
-    parser.add_argument("--camera", type=int, default=1, help="Camera device index")
+    parser.add_argument("--camera", type=int, default=0, help="Camera device index")
     parser.add_argument("--min-samples", type=int, default=20, help="Min frames before calibrating")
     parser.add_argument("--output", type=str, default="camera_info.yaml", help="Output YAML file")
     return parser.parse_args()
