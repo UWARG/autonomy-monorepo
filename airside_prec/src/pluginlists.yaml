@@ -1,0 +1,12 @@
+/**:
+  ros__parameters:
+    plugin_denylist:
+      - '*'
+    plugin_allowlist:
+      - sys_status
+      - command
+      - setpoint_position
+      - imu
+      - mission
+      - rc_io
+      - landing_target
