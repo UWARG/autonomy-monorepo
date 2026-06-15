@@ -17,7 +17,7 @@ class ManagerNode(Node):
         self.setmode_client = self.create_client(SetMode, "/set_mode")
         self.takeoff_client = self.create_client(CommandTOL, "/mavros_container/takeoff")
 
-        self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros/UAS1/landing_target/raw",10)
+        self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) 
         self.rc_subscriber = self.create_subscription(RCIn, "/mavros_container/in", self.rc_callback, 10)
 

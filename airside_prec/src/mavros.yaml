@@ -1,0 +1,6 @@
+/mavros_container:
+  ros__parameters:
+    listen_lt: true
+    mav_frame: BODY_NED
+    land_target_type: VISION_FIDUCIAL
+    tf.listen: false

@@ -11,6 +11,9 @@ def generate_launch_description() -> LaunchDescription:
         namespace="",
         package="rclcpp_components",
         executable="component_container_mt",
+        parameters=[
+                os.path.join(get_package_share_directory("engine"), "mavros.yaml"),
+            ],
         composable_node_descriptions=[
             ComposableNode(
                 package="mavros",
@@ -29,7 +32,6 @@ def generate_launch_description() -> LaunchDescription:
                 namespace="mavros",
                 parameters=[
                     os.path.join(get_package_share_directory("engine"), "pluginlists.yaml"),
-                    os.path.join(get_package_share_directory("engine"), "mavros.yaml"),
                 ],
                 extra_arguments=[{"use_intra_process_comms": True},
                 ],
