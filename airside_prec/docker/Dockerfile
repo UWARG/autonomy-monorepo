@@ -14,6 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-cv-bridge \
     ros-humble-apriltag-ros \
     ros-humble-rqt-image-view \
+    ros-humble-camera-calibration \
+    ros-humble-usb-cam \
   && rm -rf /var/lib/apt/lists/*
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \

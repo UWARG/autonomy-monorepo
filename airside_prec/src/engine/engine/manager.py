@@ -42,12 +42,13 @@ class ManagerNode(Node):
                 return
             apriltag=LandingTarget()
             apriltag.header.stamp=self.get_clock().now().to_msg()
-            apriltag.frame=9 # BODY_NED = FRD = 9
+            apriltag.frame=12
             apriltag.type=2 # vision_fiducial = 2
             #apriltag coordinate system to FRD
             apriltag.pose.position.x=self.last_apriltag.transform.translation.z
             apriltag.pose.position.y=self.last_apriltag.transform.translation.x
             apriltag.pose.position.z=self.last_apriltag.transform.translation.y
+            apriltag.pose.position_
             apriltag.distance=math.sqrt(
                 self.last_apriltag.transform.translation.y**2+
                 self.last_apriltag.transform.translation.x**2+
