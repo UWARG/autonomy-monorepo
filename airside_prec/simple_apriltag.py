@@ -26,9 +26,14 @@ while True:
     results=detector.detect(gray)
     if results:
         for result in results:
+            c = result.corners
+            sides = [np.linalg.norm(c[i] - c[(i+1)%4]) for i in range(4)]
+            side_px = np.mean(sides)
+            fx = camera_matrix[0, 0]
+            Z_est = fx * h / side_px
             success,rvec,tvec=cv2.solvePnP(object_points,result.corners,camera_matrix,dist_coeffs)
             if success:
-                print(tvec, f"tag id: {result.tag_id}")
+                print(tvec, f"tag id: {result.tag_id} Z_est: {Z_est}")
             #cv2.rectangle(frame,tuple(result.corners[0].astype(int)),tuple(result.corners[2].astype(int)),(0,255,0),2)
     #cv2.imshow("frame",frame)
     if cv2.waitKey(1) & 0xFF==ord('q'):
