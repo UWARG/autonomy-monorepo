@@ -39,7 +39,7 @@ class ManagerNode(Node):
         while not self.request_rc.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for request rc service...")
         self.get_logger().info("All services ready")
-        self.rc_future=self.request_rc.call_async(MessageInterval.Request(message_rate=100000,message_id=35))
+        self.rc_future=self.request_rc.call_async(MessageInterval.Request(message_rate=10.0,message_id=35))
         rclpy.spin_until_future_complete(self,self.rc_future)
         if self.rc_future.result().success:
             self.get_logger().info("RC message interval set to 100000")
