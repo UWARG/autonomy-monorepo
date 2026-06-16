@@ -7,6 +7,7 @@ from mavros_msgs.srv import CommandTOL
 from tf2_msgs.msg import TFMessage
 from mavros_msgs.msg import RCIn
 from mavros_msgs.msg import LandingTarget
+from mavros_msgs.srv import MessageInterval
 
 
 TAG_ID = "36h11_1"
@@ -18,8 +19,11 @@ class ManagerNode(Node):
         self.takeoff_client = self.create_client(CommandTOL, "/mavros_container/takeoff")
 
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
-        self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10) 
+        self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
         self.rc_subscriber = self.create_subscription(RCIn, "/mavros_container/in", self.rc_callback, 10)
+
+        self.request_rc=self.create_client(MessageInterval,"/set_message_interval")
+
 
         self.create_timer(0.1, self.precision_landing_timer_callback)
         self.landing=False
@@ -32,7 +36,16 @@ class ManagerNode(Node):
             self.get_logger().info("Waiting for takeoff service...")
         while not self.arming_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().info("Waiting for arming service...")
+        while not self.request_rc.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for request rc service...")
         self.get_logger().info("All services ready")
+        self.rc_future=self.request_rc.call_async(MessageInterval.Request(message_rate=100000,message_id=35))
+        rclpy.spin_until_future_complete(self,self.rc_future)
+        if self.rc_future.result().success:
+            self.get_logger().info("RC message interval set to 100000")
+        else:
+            self.get_logger().error("Failed to set RC message interval")
+
 
 
     def precision_landing_timer_callback(self):
