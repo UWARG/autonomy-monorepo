@@ -31,8 +31,8 @@ distortion_coefficients:
   - 0.0
   rows: 1
 distortion_model: rational_polynomial
-image_height: 720
-image_width: 1280
+height: 720
+width: 1280
 projection_matrix:
   cols: 4
   data:
