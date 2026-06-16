@@ -11,7 +11,7 @@ def _make_comms(recv_return):
     return MavComms(connection=conn), conn
 
 
-def test_receive_attitude_populates_dataclass():
+def test_receive_attitude_returns_populated_message():
     fake_msg = SimpleNamespace(
         time_boot_ms=12345,
         roll=0.5,
@@ -22,28 +22,26 @@ def test_receive_attitude_populates_dataclass():
         yawspeed=0.3,
     )
     comms, conn = _make_comms(fake_msg)
-    out = AttitudeMessage()
 
-    ok = comms.receive_attitude(out)
+    result = comms.receive_attitude()
 
-    assert ok is True
+    assert result == AttitudeMessage(
+        time_boot_ms=12345,
+        roll=0.5,
+        pitch=-0.25,
+        yaw=1.0,
+        rollspeed=0.1,
+        pitchspeed=0.2,
+        yawspeed=0.3,
+    )
     conn.master.recv_match.assert_called_once_with(
         type="ATTITUDE",
         blocking=True,
         timeout=1.0,
     )
-    assert out.time_boot_ms == 12345
-    assert (out.roll, out.pitch, out.yaw) == (0.5, -0.25, 1.0)
-    assert out.rollspeed == 0.1
-    assert out.pitchspeed == 0.2
-    assert out.yawspeed == 0.3
 
 
-def test_receive_attitude_returns_false_on_timeout():
+def test_receive_attitude_returns_none_on_timeout():
     comms, _ = _make_comms(recv_return=None)
-    out = AttitudeMessage()
 
-    ok = comms.receive_attitude(out)
-
-    assert ok is False
-    assert out == AttitudeMessage()
+    assert comms.receive_attitude() is None
