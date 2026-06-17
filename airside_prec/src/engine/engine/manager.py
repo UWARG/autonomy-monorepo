@@ -33,7 +33,7 @@ class ManagerNode(Node):
         self.get_logger().info("All services ready")
 
     def precision_landing_timer_callback(self):
-        if True: #replace with self.landing 
+        if self.landing: 
             if self.last_apriltag is None:
                 self.get_logger().info("No apriltag detected")
                 return
