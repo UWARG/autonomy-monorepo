@@ -9,6 +9,7 @@ from mavros_msgs.msg import RCIn
 from mavros_msgs.msg import LandingTarget
 from mavros_msgs.srv import MessageInterval
 from mavros_msgs.msg import Mavlink
+import struct
 
 TAG_ID = "36h11_1"
 class ManagerNode(Node):
@@ -17,7 +18,7 @@ class ManagerNode(Node):
 
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
-        self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/mavros_source", self.rc_callback, 10)
+        self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/uas1/mavros_source", self.rc_callback, 10)
 
         self.request_rc=self.create_client(MessageInterval,"/set_message_interval")
 
@@ -64,19 +65,26 @@ class ManagerNode(Node):
 
     def rc_callback(self, msg: Mavlink):
 
-        if msg.msgid!=65 or msg.msgid!=35:
+        if msg.msgid!=65:
             return
-        print(msg)
-        """
+        payload_bytes=bytearray()
+        for val in msg.payload64:
+            payload_bytes.extend(struct.pack("<Q",val&0xFFFFFFFFFFFFFFFF))
+        data=payload_bytes.unpack("<I 18H B B")
+        msg.channels=data[1:19]
+        
         if not msg.channels:
             self.get_logger().info("No channels received")
             return
         if msg.channels[0]>1500:
             self.landing=True
             self.set_mode("LAND") # Set ardupilot pland param to 1
-        if msg.channels[0]<1500:
+            self.get_logger().info("Landing requested")
+        if msg.channels[0]<=1500:
             self.landing=False
-        """
+            self.set_mode("LOITER")
+            self.get_logger().info("Landing cancelled")
+    
 
 
     def apriltag_callback(self, msg: TFMessage):
