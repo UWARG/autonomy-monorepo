@@ -43,8 +43,9 @@ class ManagerNode(Node):
             apriltag.type=2 # vision_fiducial = 2
             #apriltag coordinate system to FRD
             apriltag.pose.position.x=self.last_apriltag.transform.translation.z
-            apriltag.pose.position.y=self.last_apriltag.transform.translation.x
-            apriltag.pose.position.z=self.last_apriltag.transform.translation.y
+            # for some reason y and z are negated when recieved on mission planner
+            apriltag.pose.position.y=-self.last_apriltag.transform.translation.x
+            apriltag.pose.position.z=-self.last_apriltag.transform.translation.y
             apriltag.distance=math.sqrt(
                 self.last_apriltag.transform.translation.y**2+
                 self.last_apriltag.transform.translation.x**2+
