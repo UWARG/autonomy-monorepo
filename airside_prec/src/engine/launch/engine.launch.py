@@ -38,7 +38,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
         ],
         output="screen",
-        arguments=["--ros-args", "--log-level", "DEBUG"],
+        arguments=["--ros-args", "--log-level", "INFO"],
     )
     return LaunchDescription(
         [

@@ -18,7 +18,7 @@ class ManagerNode(Node):
 
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
-        self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/uas1/mavros_source", self.rc_callback, 10)
+        self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/uas1/mavlink_source", self.rc_callback, 10)
 
         self.request_rc=self.create_client(MessageInterval,"/set_message_interval")
 
