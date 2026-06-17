@@ -46,7 +46,7 @@ def encode_position(position) -> bytes:
 
 
 def encode_camera() -> bytes:
-    """Encodes camera data into CameraMessage format. Currently unscoped."""
+    """Encodes camera data into CameraMessage format"""
 
 def encode_health(healthy: bool) -> bytes:
     return _encoder.encode(

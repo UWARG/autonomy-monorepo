@@ -46,7 +46,7 @@ class AirsideComms:
     def send_json(self, message: str) -> None:
         """Send a raw JSON string to IMS."""
 
-    def start_receiving(self, on_message) -> None:
+    def start_receiving(self) -> None:
         """Start a background thread that calls for each incoming message."""
 
     def receive_loop(self) -> None:
