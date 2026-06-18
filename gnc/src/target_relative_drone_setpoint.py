@@ -2,10 +2,10 @@ from utils.src.types import Vector3D, Quaternion, Pose, Rotation
 import math 
 
 def target_relative_drone_setpoint( 
-    drone_pose: Pose, 
-    target_vector3d: Vector3D, 
+    target_position: Vector3D, 
     target_orientation: Quaternion|float, 
-    distance: float 
+    distance: float,
+    drone_pose: Pose = Pose(Vector3D(0, 0, 0), Quaternion(1, 0, 0, 0))
 ) -> Pose: 
     """
     Calculates the target setpoint pose relative to the drone's current pose.
@@ -14,24 +14,17 @@ def target_relative_drone_setpoint(
     of the target wall (computed from the target's orientation). The drone 
     is oriented to face the wall (rotating 180 degrees relative to the wall normal).
     
-    Parameters:
-    -----------
-    drone_pose : Pose
-        The current global pose of the drone.
-    target_vector3d : Vector3D
-        The global 3D position of the target.
-    target_orientation : Quaternion | float
-        The orientation of the target (either as a Quaternion or a float yaw angle in radians).
-    distance : float
-        The distance from the target to place the setpoint. (Should be in the same metric as the pose)
+    Args:
+        drone_pose : The current global pose of the drone. Default is set to (0, 0, 0) in drome frame. (in meters)
+        target_position : The global 3D position of the target.
+        target_orientation : The orientation of the target (either as a Quaternion or a float yaw angle in radians).
+        distance : The distance from the target to place the setpoint. (in meters)
         
     Returns:
-    --------
-    Pose
-        The setpoint pose in the drone's relative coordinate frame.
+        The setpoint pose in the drone's relative coordinate frame. 
     """
     #We construct the setpoint in global coordinates from the target 
-    t_v = target_vector3d
+    t_v = target_position
     t_o = Quaternion( 
         w=math.cos(target_orientation / 2), 
         x=0.0, 
@@ -62,19 +55,3 @@ def target_relative_drone_setpoint(
     relative_pose =  drone_pose.convert_to_relative(Pose(g_v, g_o))
 
     return relative_pose 
-
-
-    
-
-
-
-    
-
-
-
-
-
-
-
-
-    
