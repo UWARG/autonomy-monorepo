@@ -1,7 +1,0 @@
-**/__pycache__
-**/.pytest_cache
-**/.venv
-**/.git
-**/build
-**/logs
-src/ardupilot
