@@ -18,7 +18,6 @@ TAG_ID = "36h11_1"
 class ManagerNode(Node):
     def __init__(self):
         super().__init__("mavros_comms")
-        self.set_mode_client=self.create_client(SetMode,"/set_mode")
         self.mavlink_qos=QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=10)
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
@@ -28,34 +27,32 @@ class ManagerNode(Node):
         self.landing=False
         self.last_apriltag=None
 
-        while not self.set_mode_client.wait_for_service(timeout_sec=10):
-            self.get_logger().info("Waiting for set mode service...")
-        self.get_logger().info("All services ready")
 
     def precision_landing_timer_callback(self):
-        if self.landing: 
-            if self.last_apriltag is None:
-                self.get_logger().info("No apriltag detected")
-                return
-            apriltag=LandingTarget()
-            apriltag.header.stamp=self.get_clock().now().to_msg()
-            apriltag.frame=12
-            apriltag.type=2 # vision_fiducial = 2
-            #apriltag coordinate system to FRD
-            apriltag.pose.position.x=self.last_apriltag.transform.translation.z
-            # for some reason y and z are negated when recieved on mission planner
-            apriltag.pose.position.y=-self.last_apriltag.transform.translation.x
-            apriltag.pose.position.z=-self.last_apriltag.transform.translation.y
-            apriltag.distance=math.sqrt(
-                self.last_apriltag.transform.translation.y**2+
-                self.last_apriltag.transform.translation.x**2+
-                self.last_apriltag.transform.translation.z**2
-            )
-            apriltag.pose.orientation.x=0.0
-            apriltag.pose.orientation.y=0.0
-            apriltag.pose.orientation.z=0.0
-            apriltag.pose.orientation.w=1.0
-            self.precision_landing_pub.publish(apriltag)
+        if not self.landing:
+            return 
+        if self.last_apriltag is None:
+            self.get_logger().info("No apriltag detected")
+            return
+        apriltag=LandingTarget()
+        apriltag.header.stamp=self.get_clock().now().to_msg()
+        apriltag.frame=12
+        apriltag.type=2 # vision_fiducial = 2
+        #apriltag coordinate system to FRD
+        apriltag.pose.position.x=self.last_apriltag.transform.translation.z
+        # for some reason y and z are negated when recieved on mission planner
+        apriltag.pose.position.y=-self.last_apriltag.transform.translation.x
+        apriltag.pose.position.z=-self.last_apriltag.transform.translation.y
+        apriltag.distance=math.sqrt(
+            self.last_apriltag.transform.translation.y**2+
+            self.last_apriltag.transform.translation.x**2+
+            self.last_apriltag.transform.translation.z**2
+        )
+        apriltag.pose.orientation.x=0.0
+        apriltag.pose.orientation.y=0.0
+        apriltag.pose.orientation.z=0.0
+        apriltag.pose.orientation.w=1.0
+        self.precision_landing_pub.publish(apriltag)
         
 
     def rc_callback(self, msg: Mavlink):
@@ -79,9 +76,6 @@ class ManagerNode(Node):
         if want_landing != self.landing:
             self.get_logger().info(f"Landing {want_landing}")
             self.landing = want_landing
-            self.set_mode_async("LAND" if want_landing else "LOITER")
-    
-
 
     def apriltag_callback(self, msg: TFMessage):
         apriltag = None
@@ -93,42 +87,11 @@ class ManagerNode(Node):
             self.get_logger().info("Apriltag not found")
             return
         self.last_apriltag = apriltag
-    
-    def set_mode_async(self, mode: str):
-        if self._mode_change_pending:
-            return
-        req = SetMode.Request()
-        req.custom_mode = mode
-        future = self.set_mode_client.call_async(req)
-        self._mode_change_pending = True
-        future.add_done_callback(self._on_set_mode_done)
-
-    def _on_set_mode_done(self, future):
-        self._mode_change_pending = False
-
-    def takeoff(self, altitude: float):
-        req=CommandTOL.Request()
-        req.altitude=altitude
-        future = self.takeoff_client.call_async(req)
-        rclpy.spin_until_future_complete(self,future)
-        return future.result().success
-
             
 
 def main(args=None):
     rclpy.init(args=args)
     node = ManagerNode()
-    """
-    result=node.set_mode("GUIDED")
-    if not result:
-        raise RuntimeError("Failed to set mode")
-    result=node.arm()
-    if not result:
-        raise RuntimeError("Failed to arm vehicle")
-    result=node.takeoff(10)
-    if not result:
-        raise RuntimeError("Failed to takeoff")
-    """
     try:
         node.get_logger().info("Starting manager node")
         rclpy.spin(node)
