@@ -20,8 +20,37 @@ BLOCKER: you still need the .blob model file. Keep its path CONFIGURABLE
 
 import logging
 import math
+from dataclasses import dataclass
 
-from detections import Detection
+
+@dataclass
+class Detection:
+    """A single detected target.
+
+    Kept inside this file (instead of a shared detections.py) so the OAK-D
+    perception work stays self-contained. The team can promote this to a
+    shared type later, once the ArduCam side agrees on the same contract.
+
+    Conventions to lock (ArduCam must match these later):
+      - bbox is in PIXELS of the RGB frame, corner coords (x1, y1, x2, y2).
+      - depth is metres; NaN when unknown.
+    """
+
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+    confidence: float
+    label: int  # class id from the model
+
+    depth: float = math.nan
+
+    @property
+    def center(self) -> tuple[float, float]:
+        """Pixel center (u, v) of the bbox. Handy for target localization."""
+        # TODO(you): return the midpoint of the box.
+        raise NotImplementedError
 
 
 class OakDPerception:
@@ -33,8 +62,6 @@ class OakDPerception:
     HEIGHT = 640
 
     def __init__(self, blob_path: str) -> None:
-        # TODO(you): store blob_path. Also init the same handles oakd.py keeps:
-        #   self._pipeline, self._device, and a detection queue handle.
         self._blob_path = blob_path
         self._pipeline = None
         self._device = None
@@ -45,33 +72,52 @@ class OakDPerception:
         import depthai as dai  # noqa: F401  (imported lazily like in oakd.py)
 
         try:
-            # 1. Create the pipeline (dai.Pipeline()).
+            self._pipeline = dai.Pipeline()
 
-            # 2. Create the RGB ColorCamera, set preview size to WIDTH/HEIGHT,
-            #    setInterleaved(False). The spatial detection network wants
-            #    BGR planar input - check the DepthAI docs for the exact
-            #    color order / interleaving the YoloSpatialDetectionNetwork needs.
+            # RGB stream
+            cam_rgb = self._pipeline.create(dai.node.ColorCamera)
+            cam_rgb.setPreviewSize(self.WIDTH, self.HEIGHT)
+            cam_rgb.setInterleaved(False)
+            cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
 
-            # 3. Recreate the stereo depth half from oakd.py (mono left + mono
-            #    right + StereoDepth). The spatial network needs the depth map,
-            #    so set stereo.setDepthAlign(dai.CameraBoardSocket.RGB) so depth
-            #    lines up with the RGB frame the boxes are measured in.
+            xout_rgb = self._pipeline.create(dai.node.XLinkOut)
+            xout_rgb.setStreamName("rgb")
+            cam_rgb.preview.link(xout_rgb.input)
 
-            # 4. Create the detection node:
-            #       det = pipeline.create(dai.node.YoloSpatialDetectionNetwork)
-            #       det.setBlobPath(self._blob_path)
-            #       det.setConfidenceThreshold(...)
-            #    Then set the YOLO-specific decoding params that MUST match how
-            #    the model was trained/exported:
-            #       setNumClasses, setCoordinateSize, setAnchors,
-            #       setAnchorMasks, setIouThreshold
-            #    And the spatial params:
-            #       setDepthLowerThreshold / setDepthUpperThreshold (mm),
-            #       setBoundingBoxScaleFactor
+            # Stereo depth stream
+            mono_left = self._pipeline.create(dai.node.MonoCamera)
+            mono_right = self._pipeline.create(dai.node.MonoCamera)
+            stereo = self._pipeline.create(dai.node.StereoDepth)
+            stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
 
-            # 5. Link inputs:
-            #       cam_rgb.preview -> det.input
-            #       stereo.depth    -> det.inputDepth
+            mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+            mono_left.setBoardSocket(dai.CameraBoardSocket.LEFT)
+            mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+            mono_right.setBoardSocket(dai.CameraBoardSocket.RIGHT)
+
+            mono_left.out.link(stereo.left)
+            mono_right.out.link(stereo.right)
+
+            # Detection node
+            det = self._pipeline.create(dai.node.YoloSpatialDetectionNetwork)
+            det.setBlobPath(self._blob_path)
+
+            # Set to 0.5 for now
+            det.setConfidenceThreshold(0.5)
+
+            # Waiting for test model to set these params
+            det.setNumClasses(4)
+            det.setCoordinateSize(1)
+            det.setAnchors([])
+            det.setAnchorMasks({})
+
+            # Set to random values for now
+            det.setDepthLowerThreshold(100)
+            det.setDepthUpperThreshold(10000)
+            det.setBoundingBoxScaleFactor(0.5)
+
+            cam_rgb.preview.link(det.input)
+            stereo.depth.link(det.inputDepth)
 
             # 6. Create XLinkOut("detections") and link det.out -> xout.input.
 
