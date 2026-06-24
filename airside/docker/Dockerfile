@@ -21,11 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling
-
-RUN pip install --no-cache-dir rerun-sdk
-
-RUN pip install --no-cache-dir depthai
+RUN pip install --upgrade pip packaging hatchling \
+--no-cache-dir rerun-sdk \
+--no-cache-dir depthai
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
