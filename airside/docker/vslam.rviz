@@ -1,0 +1,57 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: true
+      Frame Timeout: 15
+      Marker Scale: 0.3
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+    - Class: rviz_default_plugins/Path
+      Name: Path
+      Enabled: true
+      Topic:
+        Value: /visual_slam/tracking/slam_path
+      Color: 0; 200; 0
+      Line Width: 0.02
+    - Class: rviz_default_plugins/Odometry
+      Name: Odometry
+      Enabled: true
+      Topic:
+        Value: /visual_slam/tracking/odometry
+      Keep: 100
+      Shape:
+        Arrow Length: 0.3
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Map Landmarks
+      Enabled: true
+      Topic:
+        Value: /visual_slam/vis/landmarks_cloud
+      Size (m): 0.03
+      Color Transformer: FlatColor
+      Color: 100; 180; 255
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Observations
+      Enabled: true
+      Topic:
+        Value: /visual_slam/vis/observations_cloud
+      Size (m): 0.02
+      Color Transformer: FlatColor
+      Color: 255; 150; 0
+  Global Options:
+    Fixed Frame: odom
+    Background Color: 20; 20; 20
+    Frame Rate: 30
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 5
+      Pitch: 0.6
+      Yaw: 0.8

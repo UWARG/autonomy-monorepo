@@ -18,9 +18,14 @@ RUN curl -sSL https://isaac.download.nvidia.com/isaac-ros/repos.key \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-isaac-ros-visual-slam \
+    ros-humble-sensor-msgs-py \
   && rm -rf /var/lib/apt/lists/*
 
+RUN pip install --no-cache-dir rerun-sdk
+
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
+
+COPY airside/docker/rerun_bridge.py /rerun_bridge.py
 
 # Expects stereo image topics — remap as needed for your camera driver:
 #   visual_slam/image_0       (left  rectified)

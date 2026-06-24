@@ -18,3 +18,14 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: all
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
     restart: unless-stopped
+
+  visualize:
+    image: warg/vslam:latest
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      RERUN_VIEWER_HOST: ${RERUN_VIEWER_HOST:?set RERUN_VIEWER_HOST to your dev machine IP}
+    command: ["/bin/bash", "-lc", "python3 /rerun_bridge.py"]
+    restart: unless-stopped
+    depends_on:
+      - vslam

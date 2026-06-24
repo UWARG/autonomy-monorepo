@@ -84,6 +84,45 @@ The VSLAM service (`Dockerfile.vslam`) installs `ros-humble-isaac-ros-visual-sla
 
 These topics must be provided by a camera driver running on the same ROS domain (e.g. the `depthai_ros_driver` for OAK-D). Remap the driver's output topics onto the names above, or pass `image_topic_name_` launch arguments to the VSLAM node.
 
+### Visualization
+
+The `visualize` service (`docker/rerun_bridge.py`) streams VSLAM topics to a [Rerun](https://rerun.io) viewer running on your dev machine over TCP — no graphics forwarding or X11 needed.
+
+**1. Install the Rerun viewer on your dev machine:**
+
+```bash
+pip install rerun-sdk
+```
+
+**2. Start the viewer in listen mode:**
+
+```bash
+rerun
+```
+
+**3. Set your dev machine's IP and start the stack:**
+
+```bash
+RERUN_VIEWER_HOST=<your-dev-machine-ip> docker compose -f compose.yaml -f compose.jetson.yaml up -d
+```
+
+The bridge streams these entities into the Rerun timeline:
+
+| Entity | Topic | Description |
+| --------------------------------- | -------------------------------------------- | ---------------------- |
+| `vslam/map/landmarks` (blue) | `/visual_slam/vis/landmarks_cloud` | Built map point cloud |
+| `vslam/map/observations` (orange) | `/visual_slam/vis/observations_cloud` | Current frame features |
+| `vslam/path` (green) | `/visual_slam/tracking/slam_path` | Trajectory so far |
+| `vslam/pose` | `/visual_slam/tracking/odometry` | Camera pose transform |
+
+**RViz2 (alternative):** If you have ROS 2 Humble on your dev machine and it is on the same network as the Jetson, set `ROS_DOMAIN_ID` to match and run:
+
+```bash
+rviz2 -d airside/docker/vslam.rviz
+```
+
+`vslam.rviz` pre-loads the TF tree, path, odometry, map landmarks, and observation cloud displays.
+
 ## Adding a monorepo library
 
 To expose a new monorepo library (e.g. `camera/`) inside the container, add the following lines to the dockerfile:
