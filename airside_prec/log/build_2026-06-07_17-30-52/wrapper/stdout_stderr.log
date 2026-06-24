@@ -1,0 +1,36 @@
+running develop
+Removing /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper.egg-link (link to .)
+running egg_info
+writing ../../build/wrapper/wrapper.egg-info/PKG-INFO
+writing dependency_links to ../../build/wrapper/wrapper.egg-info/dependency_links.txt
+writing entry points to ../../build/wrapper/wrapper.egg-info/entry_points.txt
+writing requirements to ../../build/wrapper/wrapper.egg-info/requires.txt
+writing top-level names to ../../build/wrapper/wrapper.egg-info/top_level.txt
+reading manifest file '../../build/wrapper/wrapper.egg-info/SOURCES.txt'
+writing manifest file '../../build/wrapper/wrapper.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build
+creating /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib
+creating /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper
+copying wrapper/camera_node.py -> /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper
+copying wrapper/comms.py -> /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper
+copying wrapper/__init__.py -> /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper
+running install
+running install_lib
+creating /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper
+copying /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper/camera_node.py -> /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper
+copying /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper/comms.py -> /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper
+copying /home/vincent/autonomy-monorepo/airside_prec/build/wrapper/build/lib/wrapper/__init__.py -> /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper
+byte-compiling /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper/camera_node.py to camera_node.cpython-311.pyc
+byte-compiling /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper/comms.py to comms.cpython-311.pyc
+byte-compiling /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper/__init__.py to __init__.cpython-311.pyc
+running install_data
+copying resource/wrapper -> /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/share/ament_index/resource_index/packages
+copying package.xml -> /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/share/wrapper
+running install_egg_info
+Copying ../../build/wrapper/wrapper.egg-info to /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/python3.11/site-packages/wrapper-0.1.0-py3.11.egg-info
+running install_scripts
+Installing camera script to /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/wrapper
+Installing mavros_comms script to /home/vincent/autonomy-monorepo/airside_prec/install/wrapper/lib/wrapper
+writing list of installed files to '/home/vincent/autonomy-monorepo/airside_prec/build/wrapper/install.log'

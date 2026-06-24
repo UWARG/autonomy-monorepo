@@ -1,0 +1,23 @@
+running egg_info
+writing ../../build/engine/engine.egg-info/PKG-INFO
+writing dependency_links to ../../build/engine/engine.egg-info/dependency_links.txt
+writing entry points to ../../build/engine/engine.egg-info/entry_points.txt
+writing requirements to ../../build/engine/engine.egg-info/requires.txt
+writing top-level names to ../../build/engine/engine.egg-info/top_level.txt
+reading manifest file '../../build/engine/engine.egg-info/SOURCES.txt'
+writing manifest file '../../build/engine/engine.egg-info/SOURCES.txt'
+running build
+running build_py
+running install
+running install_lib
+running install_data
+copying ../apriltag.yaml -> /home/vincent/autonomy-monorepo/airside_prec/install/engine/share/engine
+running install_egg_info
+removing '/home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages/engine-0.1.0-py3.11.egg-info' (and everything under it)
+Copying ../../build/engine/engine.egg-info to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages/engine-0.1.0-py3.11.egg-info
+running install_scripts
+Installing apriltag script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+Installing camera script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+Installing manager script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+Installing mavros_comms script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+writing list of installed files to '/home/vincent/autonomy-monorepo/airside_prec/build/engine/install.log'

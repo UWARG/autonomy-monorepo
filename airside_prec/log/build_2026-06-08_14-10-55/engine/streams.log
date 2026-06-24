@@ -1,0 +1,27 @@
+[1.020s] Invoking command in '/home/vincent/autonomy-monorepo/airside_prec/src/engine': CONDA_PROMPT_MODIFIER=(ros_env) DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/vincent/autonomy-monorepo/airside_prec/build/engine/prefix_override:/home/vincent/miniforge3/envs/ros_env/lib/python3.11/site-packages/colcon_core/task/python/colcon_distutils_commands:/home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages:${PYTHONPATH} /home/vincent/miniforge3/envs/ros_env/bin/python3.11 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/engine build --build-base /home/vincent/autonomy-monorepo/airside_prec/build/engine/build install --record /home/vincent/autonomy-monorepo/airside_prec/build/engine/install.log --single-version-externally-managed install_data
+[1.227s] running egg_info
+[1.228s] writing ../../build/engine/engine.egg-info/PKG-INFO
+[1.230s] writing dependency_links to ../../build/engine/engine.egg-info/dependency_links.txt
+[1.231s] writing entry points to ../../build/engine/engine.egg-info/entry_points.txt
+[1.231s] writing requirements to ../../build/engine/engine.egg-info/requires.txt
+[1.231s] writing top-level names to ../../build/engine/engine.egg-info/top_level.txt
+[1.231s] reading manifest file '../../build/engine/engine.egg-info/SOURCES.txt'
+[1.233s] writing manifest file '../../build/engine/engine.egg-info/SOURCES.txt'
+[1.234s] running build
+[1.234s] running build_py
+[1.234s] running install
+[1.234s] running install_lib
+[1.236s] running install_data
+[1.236s] copying package.xml -> /home/vincent/autonomy-monorepo/airside_prec/install/engine/share/engine
+[1.237s] copying launch/engine.launch.py -> /home/vincent/autonomy-monorepo/airside_prec/install/engine/share/engine/launch
+[1.238s] copying ../apriltag.yaml -> /home/vincent/autonomy-monorepo/airside_prec/install/engine/share/engine
+[1.239s] running install_egg_info
+[1.241s] removing '/home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages/engine-0.1.0-py3.11.egg-info' (and everything under it)
+[1.242s] Copying ../../build/engine/engine.egg-info to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages/engine-0.1.0-py3.11.egg-info
+[1.244s] running install_scripts
+[1.266s] Installing apriltag script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+[1.266s] Installing camera script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+[1.266s] Installing manager script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+[1.266s] Installing mavros_comms script to /home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/engine
+[1.267s] writing list of installed files to '/home/vincent/autonomy-monorepo/airside_prec/build/engine/install.log'
+[1.313s] Invoked command in '/home/vincent/autonomy-monorepo/airside_prec/src/engine' returned '0': CONDA_PROMPT_MODIFIER=(ros_env) DEBUGINFOD_URLS=https://debuginfod.ubuntu.com PYTHONPATH=/home/vincent/autonomy-monorepo/airside_prec/build/engine/prefix_override:/home/vincent/miniforge3/envs/ros_env/lib/python3.11/site-packages/colcon_core/task/python/colcon_distutils_commands:/home/vincent/autonomy-monorepo/airside_prec/install/engine/lib/python3.11/site-packages:${PYTHONPATH} /home/vincent/miniforge3/envs/ros_env/bin/python3.11 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/engine build --build-base /home/vincent/autonomy-monorepo/airside_prec/build/engine/build install --record /home/vincent/autonomy-monorepo/airside_prec/build/engine/install.log --single-version-externally-managed install_data

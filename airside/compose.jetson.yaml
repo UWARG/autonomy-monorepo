@@ -3,6 +3,7 @@ services:
     runtime: nvidia
     network_mode: host
     environment:
+      RERUN_VIEWER_HOST: ${RERUN_VIEWER_HOST:-127.0.0.1}
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: all
 
