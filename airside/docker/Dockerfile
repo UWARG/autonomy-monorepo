@@ -25,6 +25,8 @@ RUN pip install --upgrade pip packaging hatchling
 
 RUN pip install --no-cache-dir rerun-sdk
 
+RUN pip install --no-cache-dir depthai
+
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
 WORKDIR /ros_ws
