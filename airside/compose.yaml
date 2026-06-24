@@ -1,6 +1,7 @@
 services:
   airside:
-    build:
+    privileged: true
+    build:  
       context: ..
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
