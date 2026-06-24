@@ -3,9 +3,10 @@ from __future__ import annotations
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+import rerun as rr
 
 from camera.src.abstract_camera import AbstractCamera
-from camera.src.sim import SimCamera
+from camera.src.oakd import OakDCamera
 
 
 class CameraNode(Node):
@@ -17,7 +18,7 @@ class CameraNode(Node):
     def __init__(self) -> None:
         super().__init__("camera_node")
 
-        self._camera: AbstractCamera = SimCamera()
+        self._camera: AbstractCamera = OakDCamera()
         self._camera.initialize_camera()
 
         self._publisher = self.create_publisher(Image, self.TOPIC, 10)
@@ -31,7 +32,10 @@ class CameraNode(Node):
 
     def _publish_frame(self) -> None:
         frame = self._camera.capture_frame()
-
+        if frame is None:
+            self.get_logger().error("Failed to capture frame")
+            return
+        rr.log("camera/image", rr.Image(frame.rgb))
         msg = Image()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "camera"

@@ -10,6 +10,12 @@ import py_trees
 import py_trees_ros
 import rclpy
 from engine.behaviors.read_camera import ReadCameraBehavior
+import rerun as rr
+import os
+
+viewer_host = os.environ.get("RERUN_VIEWER_HOST", "127.0.0.1")
+rr.init("airside", spawn=False)
+rr.connect_tcp(f"{viewer_host}:9876")
 
 TICK_PERIOD_MS: float = 500.0  # Tree clock speed
 UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
