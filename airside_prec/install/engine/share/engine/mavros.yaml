@@ -1,6 +1,0 @@
-ros__parameters:
-    plugin_blacklist:
-      - 'cellular_status'
-      - 'vision_pose_estimate'
-      - 'mocap_pose_estimate'
-      - 'companion_process_status'
