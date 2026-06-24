@@ -7,8 +7,10 @@
 ```text
 airside/
 ├── compose.yaml
+├── compose.jetson.yaml       # Jetson Orin override (GPU runtime + VSLAM service)
 ├── docker/
 │   ├── Dockerfile
+│   ├── Dockerfile.vslam      # Isaac ROS Visual SLAM (Jetson only)
 │   └── airside_entrypoint.sh
 ├── src/
 │   ├── engine/
@@ -45,6 +47,42 @@ docker compose down
 docker compose logs -f
 docker compose run --rm airside bash
 ```
+
+## Jetson Orin Nano
+
+`compose.jetson.yaml` is a Docker Compose override that enables the NVIDIA container runtime and adds the Isaac ROS Visual SLAM service. Use it on the Jetson Orin Nano in addition to the base compose file.
+
+### Jetson prerequisites
+
+- JetPack 6 installed on the Jetson
+- `nvidia-container-toolkit` configured as the default Docker runtime (included with JetPack)
+
+### Running on Jetson
+
+```bash
+docker compose -f compose.yaml -f compose.jetson.yaml up -d
+```
+
+This starts two services:
+
+- **airside** — the behavior tree engine, with GPU access via the NVIDIA runtime
+- **vslam** — Isaac ROS Visual SLAM node, publishing odometry on `/visual_slam/tracking/odometry`
+
+Both services use `network_mode: host` so ROS 2 DDS topic discovery works across containers without extra configuration.
+
+### Isaac ROS Visual SLAM
+
+The VSLAM service (`Dockerfile.vslam`) installs `ros-humble-isaac-ros-visual-slam` from NVIDIA's Isaac ROS apt repository. It uses the GPU (cuVSLAM) and subscribes to rectified stereo image topics:
+
+| Topic                        | Description                  |
+| ---------------------------- | ---------------------------- |
+| `visual_slam/image_0`        | Left rectified image         |
+| `visual_slam/image_1`        | Right rectified image        |
+| `visual_slam/camera_info_0`  | Left camera calibration      |
+| `visual_slam/camera_info_1`  | Right camera calibration     |
+| `visual_slam/imu`            | IMU data (optional)          |
+
+These topics must be provided by a camera driver running on the same ROS domain (e.g. the `depthai_ros_driver` for OAK-D). Remap the driver's output topics onto the names above, or pass `image_topic_name_` launch arguments to the VSLAM node.
 
 ## Adding a monorepo library
 

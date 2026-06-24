@@ -1,0 +1,31 @@
+FROM ros:humble-ros-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+SHELL ["/bin/bash", "-lc"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg \
+  && rm -rf /var/lib/apt/lists/*
+
+# Isaac ROS apt repo — verify key/URL at https://nvidia-isaac-ros.github.io/getting_started/index.html
+RUN curl -sSL https://isaac.download.nvidia.com/isaac-ros/repos.key \
+      | gpg --dearmor -o /usr/share/keyrings/isaac-ros.gpg \
+  && echo "deb [signed-by=/usr/share/keyrings/isaac-ros.gpg] \
+      https://isaac.download.nvidia.com/isaac-ros/release-3 jammy release-3.0" \
+      > /etc/apt/sources.list.d/isaac-ros.list
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-isaac-ros-visual-slam \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
+
+# Expects stereo image topics — remap as needed for your camera driver:
+#   visual_slam/image_0       (left  rectified)
+#   visual_slam/image_1       (right rectified)
+#   visual_slam/camera_info_0
+#   visual_slam/camera_info_1
+#   visual_slam/imu           (optional)
+CMD ["ros2", "launch", "isaac_ros_visual_slam", "isaac_ros_visual_slam.launch.py"]
