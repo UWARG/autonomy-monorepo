@@ -41,11 +41,12 @@ class OakDCamera(AbstractCamera):
           depth=None,
           rgb_down=None,
       )
-    def stop(self) -> None:
-      if self._pipeline is not None:
-        self._pipeline.stop()
-        self._pipeline = None
-        self._video_queue = None
+
+  def stop(self) -> None:
+    if self._pipeline is not None:
+      self._pipeline.stop()
+      self._pipeline = None
+      self._video_queue = None
 
   def _build_pipeline(self) -> dai.Pipeline:
     try:
