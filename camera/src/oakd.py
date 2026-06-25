@@ -32,7 +32,8 @@ class OakDCamera(AbstractCamera):
           self._rgb_queue = self._device.getOutputQueue("rgb", maxSize=4, blocking=False)
           self._depth_queue = self._device.getOutputQueue("depth", maxSize=4, blocking=False)
           return True
-      except Exception:
+      except Exception as e:
+          self.get_logger().error(f"{e}")
           self.stop()
           return False
   def capture_frame(self) -> CameraFrame | None:
