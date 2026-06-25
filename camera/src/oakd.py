@@ -1,7 +1,4 @@
 from __future__ import annotations
-from inspect import _GetMembersPredicateTypeGuard
-import math
-import numpy as np
 from .abstract_camera import AbstractCamera
 from .frame import CameraFrame
 try:
