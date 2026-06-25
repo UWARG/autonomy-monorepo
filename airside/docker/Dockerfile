@@ -23,6 +23,7 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
 
 RUN pip install --upgrade pip packaging hatchling \
 --no-cache-dir rerun-sdk \
+--no-cache-dir depthai==2.26.1
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
