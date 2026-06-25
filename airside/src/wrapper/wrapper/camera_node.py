@@ -34,7 +34,8 @@ class CameraNode(Node):
             f"using {type(self._camera).__name__}."
         )
         rr.init("camera", spawn=False)
-        rr.connect_tcp(f"{os.environ.get("RERUN_VIEWER_HOST", "127.0.0.1")}:9870")
+        host=os.environ.get("RERUN_VIEWER_HOST", "127.0.0.1")
+        rr.connect_tcp(f"{host}:9870")
 
     def _publish_frame(self) -> None:
         frame = self._camera.capture_frame()
