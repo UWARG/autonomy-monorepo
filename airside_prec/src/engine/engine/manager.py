@@ -85,6 +85,7 @@ class ManagerNode(Node):
         apriltag=msg.transforms[0]
         if apriltag is None:
             self.get_logger().info("Apriltag not found")
+            self.last_apriltag = None
             return
         self.last_apriltag = apriltag
             
