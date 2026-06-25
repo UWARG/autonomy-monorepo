@@ -12,7 +12,4 @@ services:
     volumes:
       - ./src:/ros_ws/src
       - ..:/monorepo
-    devices:
       - /dev/bus/usb:/dev/bus/usb
-    device_cgroup_rules:
-      - 'c 189:* rwm'
