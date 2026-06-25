@@ -82,7 +82,7 @@ class OakDCamera(AbstractCamera):
       mono_left.setBoardSocket(dai.CameraBoardSocket.CAM_B)
       mono_right.setBoardSocket(dai.CameraBoardSocket.CAM_C)
       stereo = pipeline.create(dai.node.StereoDepth)
-      stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+      stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.DEFAULT)
       mono_left.out.link(stereo.left)
       mono_right.out.link(stereo.right)
       xout_rgb = pipeline.create(dai.node.XLinkOut)
