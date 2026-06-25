@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 import rerun as rr
+import os
 
 from camera.src.abstract_camera import AbstractCamera
 from camera.src.oakd import OakDCamera
@@ -20,6 +21,9 @@ class CameraNode(Node):
 
         self._camera: AbstractCamera = OakDCamera()
         self._camera.initialize_camera()
+        if not self._camera.initialize_camera():
+            self.get_logger().error("Failed to initialize camera")
+            return
 
         self._publisher = self.create_publisher(Image, self.TOPIC, 10)
         self._frame_id = 0
@@ -29,6 +33,8 @@ class CameraNode(Node):
             f"Camera node ready - publishing on '{self.TOPIC}' at {self.PUBLISH_HZ} Hz "
             f"using {type(self._camera).__name__}."
         )
+        rr.init("camera", spawn=False)
+        rr.connect_tcp(f"{os.environ.get("RERUN_VIEWER_HOST", "127.0.0.1")}:9870")
 
     def _publish_frame(self) -> None:
         frame = self._camera.capture_frame()
