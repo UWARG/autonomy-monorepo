@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
-    ros-humble-depthai-ros \
   && rm -rf /var/lib/apt/lists/*
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
@@ -23,7 +22,7 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
 
 RUN pip install --upgrade pip packaging hatchling \
 --no-cache-dir rerun-sdk \
---no-cache-dir depthai==2.26.1
+--no-cache-dir depthai
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
