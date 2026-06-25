@@ -7,6 +7,9 @@ try:
     import depthai as dai
 except ImportError:  # allows importing the module without hardware SDK installed
     dai = None
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 class OakDCamera(AbstractCamera):
   def __init__(
       self,
@@ -33,7 +36,7 @@ class OakDCamera(AbstractCamera):
           self._depth_queue = self._device.getOutputQueue("depth", maxSize=4, blocking=False)
           return True
       except Exception as e:
-          self.get_logger().error(f"{e}")
+          logger.error(f"Failed to initialize camera: {e}")
           self.stop()
           return False
   def capture_frame(self) -> CameraFrame | None:
