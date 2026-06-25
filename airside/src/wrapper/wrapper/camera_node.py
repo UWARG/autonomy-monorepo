@@ -40,6 +40,7 @@ class CameraNode(Node):
         if frame is None:
             self.get_logger().error("Failed to capture frame")
             return
+        rr.set_time_seconds("ros_time", frame.timestamp)
         rr.log("camera/image", rr.Image(frame.rgb))
         msg = Image()
         msg.header.stamp = self.get_clock().now().to_msg()
