@@ -20,7 +20,6 @@ class CameraNode(Node):
         super().__init__("camera_node")
 
         self._camera: AbstractCamera = OakDCamera()
-        self._camera.initialize_camera()
         if not self._camera.initialize_camera():
             self.get_logger().error("Failed to initialize camera")
             return
