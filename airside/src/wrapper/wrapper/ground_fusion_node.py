@@ -9,18 +9,24 @@ from std_msgs.msg import String
 
 
 class GroundFusionNode(Node):
-    IMAGE_TOPIC = "camera/image_raw"
-    RANGE_TOPIC = ""
-    ATTITUDE_TOPIC = ""
-    RC_TOPIC = ""
-    COMM_TOPIC = "airside_comms"
+    IMAGE_TOPIC = "/down/camera/image_raw"
+    RANGE_TOPIC = "/mavros/rangefinder/rangefinder"
+    ATTITUDE_TOPIC = "/mavros/imu/data"
+    RC_TOPIC = "/mavros/rc/in"
+    COMM_TOPIC = "airside_comms/info"
+    FUSED_IMAGE_TOPIC = "airside_comms/image"
     PUBLISH_INTERVAL_S = 0.2
-    RC_TRIGGER_CHANNEL = 4
+
+    #PARAMETER INPUTS FOR RC TRIGGERS 
+    RC_TRIGGER_CHANNELS: int = 4
     RC_TRIGGER_THRESHOLD = 1500
 
-    def __init__(self) -> None:
+    def __init__(self, ) -> None:
         super().__init__("ground_fusion_node")
-
+        self.get_logger().info(
+            f"RC trigger configured channel={self._rc_trigger_channel} threshold={self._rc_trigger_threshold}"
+        )
+        self._last_triggered_channels: list[int] = []
         self._latest_image: Image | None = None
         self._latest_range: Range | None = None
         self._latest_attitude: Imu | None = None
@@ -52,6 +58,7 @@ class GroundFusionNode(Node):
         )
 
         self._publisher = self.create_publisher(String, self.COMM_TOPIC, 10)
+        self._image_publisher = self.create_publisher(Image, self.FUSED_IMAGE_TOPIC, 10)
         self.create_timer(self.PUBLISH_INTERVAL_S, self._publish_if_triggered)
 
         self.get_logger().info(
@@ -88,15 +95,28 @@ class GroundFusionNode(Node):
         self._publisher.publish(message)
         self.get_logger().info("Published fused airside_comms payload")
 
+        if self._latest_image is not None:
+            self._image_publisher.publish(self._latest_image)
+            self.get_logger().info(
+                f"Published triggered image frame to '{self.FUSED_IMAGE_TOPIC}'"
+            )
+
     def _rc_triggered(self) -> bool:
         if self._latest_rc is None:
             return False
 
         channels = self._latest_rc.channels
-        if len(channels) <= self.RC_TRIGGER_CHANNEL:
-            return False
 
-        return channels[self.RC_TRIGGER_CHANNEL] >= self.RC_TRIGGER_THRESHOLD
+        triggered_idxs: list[int] = []
+        # check the configured channel
+        if 0 <= self._rc_trigger_channel < len(channels):
+            val = channels[self._rc_trigger_channel]
+            if val >= self._rc_trigger_threshold:
+                triggered_idxs.append(self._rc_trigger_channel)
+
+        # store for payload
+        self._last_triggered_channels = triggered_idxs
+        return len(triggered_idxs) > 0
 
     def _all_data_ready(self) -> bool:
         return (
@@ -113,22 +133,6 @@ class GroundFusionNode(Node):
         assert self._latest_rc is not None
 
         return {
-            "timestamp": self.get_clock().now().to_msg().sec,
-            # sensor_msgs/Image message fields
-            # https://docs.ros.org/en/humble/api/sensor_msgs/html/msg/Image.html
-            # data not included 
-            "image": {
-                "header": {
-                    "stamp": self._latest_image.header.stamp.sec,
-                    "frame_id": self._latest_image.header.frame_id,
-                },
-                "height": self._latest_image.height,
-                "width": self._latest_image.width,
-                "encoding": self._latest_image.encoding,
-                "is_bigendian": int(self._latest_image.is_bigendian),
-                "step": self._latest_image.step,
-                "data_length": len(self._latest_image.data),
-            },
             # sensor_msgs/Range message fields
             # https://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/Range.html
             "range": {
@@ -170,9 +174,13 @@ class GroundFusionNode(Node):
                 "linear_acceleration_covariance": self._latest_attitude.linear_acceleration_covariance,
             },
             "rc": {
-                "channel": self.RC_TRIGGER_CHANNEL,
-                "value": self._latest_rc.channels[self.RC_TRIGGER_CHANNEL],
-                "triggered": True,
+                "triggered": len(self._last_triggered_channels) > 0,
+                "triggered_channels": self._last_triggered_channels,
+                "triggered_values": [
+                    int(self._latest_rc.channels[i])
+                    for i in self._last_triggered_channels
+                    if i < len(self._latest_rc.channels)
+                ],
             },
         }
 
