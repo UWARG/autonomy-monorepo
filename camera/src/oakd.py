@@ -49,7 +49,7 @@ class OakDCamera(AbstractCamera):
     try:
       pipeline = dai.Pipeline()
       cam=pipeline.create(dai.node.Camera).build()
-      video_out = cam.requestOutput(1920, 1080)
+      video_out = cam.requestOutput(size=(640,480), type=dai.ImgFrame.Type.BGR888p, fps=30)
       self._video_queue = video_out.createOutputQueue(maxSize=4, blocking=False)
       return pipeline
     except Exception as e:
