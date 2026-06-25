@@ -33,8 +33,7 @@ class CameraNode(Node):
             f"using {type(self._camera).__name__}."
         )
         rr.init("camera", spawn=False)
-        host=os.environ.get("RERUN_VIEWER_HOST", "127.0.0.1")
-        rr.connect_grpc(f"{host}:9870")
+        rr.connect_grpc(f"rerun+http://127.0.0.1:9876/proxy")
 
     def _publish_frame(self) -> None:
         frame = self._camera.capture_frame()
