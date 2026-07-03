@@ -38,9 +38,6 @@ class LogPayload(msgspec.Struct):
 
 
 class StatusPayload(msgspec.Struct):
-    """task/state reported as plain strings; state mirrors py_trees.common.Status
-    (RUNNING/SUCCESS/FAILURE/INVALID) since that's what the engine's behaviors produce."""
-
     task: str
     state: str
     text: str
