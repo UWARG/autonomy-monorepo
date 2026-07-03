@@ -12,7 +12,7 @@ const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
 function connect() {
-  if (socket && (socket.readyState != WebSocket.CLOSED))
+  if (socket && (socket.readyState != WebSocket.CLOSED)) return;
 
   socket = new WebSocket(SOCKET_URL);
   socket.onopen = () => {
