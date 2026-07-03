@@ -52,7 +52,10 @@ class AirsideComms:
 
     def send_status(self, task: str, state: str, text: str) -> None:
         """Encode and send a StatusMessage to IMS."""
-        self._ws.send(encode_status(task, state, text))
+        # socket.js parses every incoming message as JSON text, so this must go out as a
+        # text frame - passing the raw encoder bytes straight to send() would send a binary
+        # frame instead, which the browser can't JSON.parse.
+        self._ws.send(encode_status(task, state, text).decode())
 
     def send_json(self, message: str) -> None:
         """Send a raw JSON string to IMS."""

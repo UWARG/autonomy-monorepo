@@ -11,7 +11,9 @@ let reconnectAttempts = 0;
 const BASE_DELAY = 1000;
 
 function connect() {
-  if (socket && (socket.readyState != WebSocket.CLOSED))
+  if (socket && (socket.readyState != WebSocket.CLOSED)) {
+    return;
+  }
 
   socket = new WebSocket(SOCKET_URL);
   socket.onopen = () => {

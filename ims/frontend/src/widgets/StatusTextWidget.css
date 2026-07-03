@@ -1,0 +1,113 @@
+.status-widget {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.status-widget__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-h);
+  }
+}
+
+.status-widget__task {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.status-widget__text {
+  margin: 4px 0 0;
+  font-size: 15px;
+}
+
+.status-widget__empty {
+  margin: 8px 0 0;
+  font-style: italic;
+}
+
+.status-widget__history {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  li {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+  }
+}
+
+.status-widget__history-task {
+  font-family: var(--mono);
+  flex-shrink: 0;
+}
+
+.status-widget__history-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.status-badge--RUNNING {
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+.status-badge--SUCCESS {
+  color: #1a9c5e;
+  background: rgba(26, 156, 94, 0.12);
+}
+.status-badge--FAILURE {
+  color: #e5484d;
+  background: rgba(229, 72, 77, 0.12);
+}
+.status-badge--INVALID {
+  color: var(--text);
+  background: var(--code-bg);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot--RUNNING {
+  background: var(--accent);
+}
+.status-dot--SUCCESS {
+  background: #1a9c5e;
+}
+.status-dot--FAILURE {
+  background: #e5484d;
+}
+.status-dot--INVALID {
+  background: var(--text);
+  opacity: 0.5;
+}
