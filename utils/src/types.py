@@ -10,12 +10,12 @@ from .enums import Colours, Direction
 class Coordinate:
     """Data class for a coordinate in 3D space."""
 
-    x: float
-    y: float
-    z: float
+    lat: float
+    lon: float
+    alt: float
 
     def __str__(self) -> str:
-        return f"({self.x}, {self.y}, {self.z})"
+        return f"({self.lat}, {self.lon}, {self.alt})"
 
 
 @dataclass
@@ -36,7 +36,7 @@ class Quaternion:
 
     w: float
     x: float
-    y: float
+    y: float    
     z: float
 
     def __str__(self) -> str:
@@ -82,16 +82,6 @@ class MappedTarget:
             f"(colour={self.colour}, location={self.location}, "
             f"cardinal_direction={self.direction}, wall_target={self.wall_target})"
         )
-
-
-@dataclass
-class PositionMessage:
-    """Data class for a position message received from MAVLink GLOBAL_POSITION_INT."""
-
-    lat: float
-    lon: float
-    alt: float
-
 
 @dataclass
 class AttitudeMessage:
