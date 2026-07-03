@@ -4,7 +4,9 @@ description = "Intelligent Monitoring System — WebSocket server and React dash
 depends_on = ["utils", "mav_comms", "camera"]
 
 [commands]
-setup = "uv sync"
+setup = "uv sync && pnpm --dir frontend install"
+# TODO: add the IMS server process to Procfile.dev once server/ exposes a runnable backend entry point.
+run = "uv run --extra dev honcho start -f Procfile.dev"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
