@@ -37,6 +37,15 @@ class LogPayload(msgspec.Struct):
     message: str
 
 
+class StatusPayload(msgspec.Struct):
+    """task/state reported as plain strings; state mirrors py_trees.common.Status
+    (RUNNING/SUCCESS/FAILURE/INVALID) since that's what the engine's behaviors produce."""
+
+    task: str
+    state: str
+    text: str
+
+
 class AttitudeMessage(msgspec.Struct, tag_field="type", tag="attitude"):
     payload: AttitudePayload
 
@@ -56,10 +65,15 @@ class HealthMessage(msgspec.Struct, tag_field="type", tag="health"):
 class LogMessage(msgspec.Struct, tag_field="type", tag="log"):
     payload: LogPayload
 
+
+class StatusMessage(msgspec.Struct, tag_field="type", tag="status"):
+    payload: StatusPayload
+
 AirsideMessage = Union[
     AttitudeMessage,
     PositionMessage,
     CameraMessage,
     HealthMessage,
     LogMessage,
+    StatusMessage,
 ]
