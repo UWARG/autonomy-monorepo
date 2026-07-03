@@ -21,9 +21,10 @@ class Detection:
 
     @property
     def center(self) -> tuple[float, float]:
-        x_center = (self.x1 + self.x2)/2
-        y_center = (self.y1 + self.y2)/2
+        x_center = (self.x1 + self.x2) / 2
+        y_center = (self.y1 + self.y2) / 2
         return [x_center, y_center]
+
 
 class OakDPerception:
     """Builds an OAK-D pipeline with spatial object detection."""
@@ -61,7 +62,9 @@ class OakDPerception:
 
             mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
             mono_left.setBoardSocket(dai.CameraBoardSocket.LEFT)
-            mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
+            mono_right.setResolution(
+                dai.MonoCameraProperties.SensorResolution.THE_400_P
+            )
             mono_right.setBoardSocket(dai.CameraBoardSocket.RIGHT)
 
             mono_left.out.link(stereo.left)
@@ -93,7 +96,9 @@ class OakDPerception:
             det.out.link(xout_det.input)
 
             self._device = dai.Device(self._pipeline)
-            self._detection_queue = self._device.getOutputQueue("detections", maxsize=4, blocking=False)
+            self._detection_queue = self._device.getOutputQueue(
+                "detections", maxsize=4, blocking=False
+            )
 
             logging.info("OAK-D perception pipeline initialized")
             return True
@@ -119,15 +124,17 @@ class OakDPerception:
                 depth_mm = d.spatialCoordinates.z
                 depth = math.nan if depth_mm == 0 else float(depth_mm) / 1000.0
 
-                results.append(Detection(
-                    x1=d.xmin * self.WIDTH,
-                    y1=d.ymin * self.HEIGHT,
-                    x2=d.xmax * self.WIDTH,
-                    y2=d.ymax * self.HEIGHT,
-                    confidence=d.confidence,
-                    label=d.label,
-                    depth=depth,
-                ))
+                results.append(
+                    Detection(
+                        x1=d.xmin * self.WIDTH,
+                        y1=d.ymin * self.HEIGHT,
+                        x2=d.xmax * self.WIDTH,
+                        y2=d.ymax * self.HEIGHT,
+                        confidence=d.confidence,
+                        label=d.label,
+                        depth=depth,
+                    )
+                )
 
         except Exception as e:
             logging.error(f"OAK-D detection read failed: {e}")
