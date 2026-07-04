@@ -96,7 +96,7 @@ def telem_thread():
             new_position=[position[0], -position[1], -position[2]]
             quaternion=R.from_euler("xyz", [position[3], position[4], position[5]]).as_quat()
             w,x,y,z=quaternion[3],quaternion[0],quaternion[1],quaternion[2]
-            new_quaternion=[w,x,-y,-z]
+            new_quaternion=[x,-y,-z,w]
             rr.log("drone", rr.Transform3D(translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)))
         except OSError:
             continue
@@ -148,10 +148,11 @@ def main():
         target_system=conn.target_system,
         target_component=conn.target_component,
         param_id=b"SIM_RATE_HZ",
-        param_value=200,
+        param_value=800,
         param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32
     )
     while continue_flag:
+        time.sleep(20)
         continue_flag=False
         conn.mav.mission_clear_all_send(
             target_system=conn.target_system,
@@ -241,7 +242,8 @@ def main():
             logging.error(f"Failed to arm: {ack.result if ack is not None else 'No ack received'}")
             continue_flag=True
             continue
-        time.sleep(10)
+        conn.motors_armed_wait()
+
         conn.mav.command_long_send(
             target_system=conn.target_system,
             target_component=conn.target_component,
@@ -284,8 +286,6 @@ def main():
         else:
             logging.error(f"Failed to start mission: {ack.result if ack is not None else 'No ack received'}")
             continue_flag=True
-        if continue_flag:
-            time.sleep(10)
     logging.info("Starting!")
         
 
