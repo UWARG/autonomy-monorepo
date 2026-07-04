@@ -12,6 +12,7 @@ import cv2
 import rerun as rr
 from scipy.spatial.transform import Rotation as R
 import constants
+import time
 
 logging.basicConfig(level=logging.INFO)
 PORT=5761
@@ -36,9 +37,8 @@ def range_finder_thread(port):
     while True:
         try:
             data_range, _ = range_finder_socket.recvfrom(65535)
-            logging.info(f"Received {len(data_range)} bytes of range data")
             latest_range=struct.unpack("f", data_range[:4])[0]
-            groundside_socket.sendto(struct.pack("f",latest_range), ('127.0.0.1', port+sensor_ports.GROUNDSIDE_OFFSET))
+            rr.log("range_finder", rr.Scalars(latest_range))
         except OSError:
             continue
 
@@ -92,8 +92,12 @@ def telem_thread():
                 logging.error(f"Received no data")
                 continue
             position=struct.unpack("ffffff", telem_data)
+            #need to convert position and quaternion to rerun format
+            new_position=[position[0], -position[1], -position[2]]
             quaternion=R.from_euler("xyz", [position[3], position[4], position[5]]).as_quat()
-            rr.log("drone", rr.Transform3D(translation=[position[0], position[1], position[2]], rotation=rr.Quaternion(xyzw=quaternion)))
+            w,x,y,z=quaternion[3],quaternion[0],quaternion[1],quaternion[2]
+            new_quaternion=[w,x,-y,-z]
+            rr.log("drone", rr.Transform3D(translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)))
         except OSError:
             continue
 def frame_counter():
@@ -102,9 +106,8 @@ def frame_counter():
         time.sleep(1/FRAME_RATE)
         frame_count+=1
 
-
-
 def main():
+    continue_flag=True
     threading.Thread(target=frame_counter,daemon=True).start()
     for key,value in sensor_ports.CAMERA_PORTS.items():
         thread_camera=threading.Thread(target=camera_thread,args=(value["port"],),daemon=True)
@@ -112,7 +115,7 @@ def main():
     for key,value in sensor_ports.RANGE_FINDER_PORTS.items():
         thread_range_finder=threading.Thread(target=range_finder_thread,args=(value["port"],),daemon=True)
         thread_range_finder.start()
-    rr.log("drone",rr.Ellipsoid3D(centers=[0,0,0], half_sizes=[1,1,1],colors=[255,0,0],fill_mode="solid"))
+    rr.log("drone",rr.Boxes3D(centers=[[0,0,0]], half_sizes=[[1,0.5,0.2]],colors=[[255,0,0]],fill_mode="solid"))
     threading.Thread(target=telem_thread,daemon=True).start()
     conn=mavutil.mavlink_connection(f"tcp:127.0.0.1:{PORT}") 
     conn.wait_heartbeat()
@@ -140,136 +143,151 @@ def main():
         param_value=1,
         param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32
     )
-    time.sleep(5)
+    time.sleep(10)
     conn.mav.param_set_send(
         target_system=conn.target_system,
         target_component=conn.target_component,
         param_id=b"SIM_RATE_HZ",
-        param_value=800,
+        param_value=200,
         param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32
     )
-    conn.mav.mission_clear_all_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-    )
-    conn.mav.mission_count_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        count=len(lines),
-        mission_type=mavutil.mavlink.MAV_MISSION_TYPE_MISSION    
-    )
-    for line in lines:
-        print(line)
-        if len(line)==12:
-            result=conn.recv_match(type=["MISSION_REQUEST","MISSION_REQUEST_INT"],blocking=True,timeout=5)
-            if result is None:
-                logging.error(f"Failed to receive mission request: {result}")
+    while continue_flag:
+        continue_flag=False
+        conn.mav.mission_clear_all_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+        )
+        conn.mav.mission_count_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+            count=len(lines),
+            mission_type=mavutil.mavlink.MAV_MISSION_TYPE_MISSION    
+        )
+        for line in lines:
+            print(line)
+            if len(line)==12:
+                result=conn.recv_match(type=["MISSION_REQUEST","MISSION_REQUEST_INT"],blocking=True,timeout=5)
+                if result is None:
+                    logging.error(f"Failed to receive mission request: {result}")
+                    continue_flag=True
+                    continue
+                conn.mav.mission_item_int_send(
+                    target_system=conn.target_system,
+                    target_component=conn.target_component,
+                    seq=int(line[0]),
+                    current=int(line[1]),
+                    frame=int(line[2]),
+                    command=int(line[3]),
+                    param1=float(line[4]),
+                    param2=float(line[5]),
+                    param3=float(line[6]),
+                    param4=float(line[7]),
+                    x=int(float(line[8])*1e7),
+                    y=int(float(line[9])*1e7),
+                    z=float(line[10]),
+                    autocontinue=int(line[11])
+                )
+            else:
+                logging.error(f"Invalid line: {line}")
+                continue_flag=True
                 continue
-            conn.mav.mission_item_int_send(
-                target_system=conn.target_system,
-                target_component=conn.target_component,
-                seq=int(line[0]),
-                current=int(line[1]),
-                frame=int(line[2]),
-                command=int(line[3]),
-                param1=float(line[4]),
-                param2=float(line[5]),
-                param3=float(line[6]),
-                param4=float(line[7]),
-                x=int(float(line[8])*1e7),
-                y=int(float(line[9])*1e7),
-                z=float(line[10]),
-                autocontinue=int(line[11])
-            )
+        if continue_flag:
+            continue
+        message=conn.recv_match(type="MISSION_ACK",blocking=True,timeout=5)
+        if message is not None:
+            logging.info("Mission uploaded")
         else:
-            logging.error(f"Invalid line: {line}")
-
-    message=conn.recv_match(type="MISSION_ACK",blocking=True)
-    if message is not None:
-        logging.info("Mission uploaded")
-    else:
-        logging.error("Failed to upload mission")
-    
-    mode_id=conn.mode_mapping()["LOITER"] #keep as loiter, guided does not work
-    conn.mav.command_long_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        command=mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-        confirmation=0,
-        param1=1,
-        param2=mode_id,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0
-    )
-    ack=conn.recv_match(type="COMMAND_ACK",blocking=True)
-    if ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        logging.info("Mode set")
-    else:
-        logging.error(f"Failed to set mode: {ack.result}")
-    
-    conn.mav.command_long_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        command=mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        confirmation=0,
-        param1=1,
-        param2=0,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0
-    )
-    ack=conn.recv_match(type="COMMAND_ACK",blocking=True)
-    if ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        logging.info("Armed")
-    else:
-        logging.error(f"Failed to arm: {ack.result}")
-    
-    conn.motors_armed_wait()
-    
-    conn.mav.command_long_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        command=mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-        confirmation=0,
-        param1=0,
-        param2=0,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=20
-    )
-    ack=conn.recv_match(type="COMMAND_ACK",blocking=True)
-    if ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        logging.info("Mission started")
-    else:
-        logging.error(f"Failed to takeoff: {ack.result}")
-    time.sleep(10)
-    
-    mode_id=conn.mode_mapping()["AUTO"]
-    conn.mav.command_long_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        command=mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-        confirmation=0,
-        param1=1,
-        param2=mode_id,
-        param3=0,
-        param4=0,
-        param5=0,
-        param6=0,
-        param7=0
-    )
-    ack=conn.recv_match(type="COMMAND_ACK",blocking=True)
-    if ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
-        logging.info("Auto mode set")
-    else:
-        logging.error(f"Failed to start mission: {ack.result}")
+            logging.error("Failed to upload mission")
+            continue_flag=True
+            continue
+        mode_id=conn.mode_mapping()["LOITER"] #keep as loiter, guided does not work
+        conn.mav.command_long_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+            command=mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+            confirmation=0,
+            param1=1,
+            param2=mode_id,
+            param3=0,
+            param4=0,
+            param5=0,
+            param6=0,
+            param7=0
+        )
+        ack=conn.recv_match(type="COMMAND_ACK",blocking=True,timeout=5)
+        if ack is not None and ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            logging.info("Mode set")
+        else:
+            logging.error(f"Failed to set mode: {ack.result if ack is not None else 'No ack received'}")
+            continue_flag=True
+            continue
+        conn.mav.command_long_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+            command=mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            confirmation=0,
+            param1=1,
+            param2=0,
+            param3=0,
+            param4=0,
+            param5=0,
+            param6=0,
+            param7=0
+        )
+        ack=conn.recv_match(type="COMMAND_ACK",blocking=True,timeout=5)
+        if ack is not None and ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            logging.info("Armed")
+        else:
+            logging.error(f"Failed to arm: {ack.result if ack is not None else 'No ack received'}")
+            continue_flag=True
+            continue
+        time.sleep(10)
+        conn.mav.command_long_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+            command=mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            confirmation=0,
+            param1=0,
+            param2=0,
+            param3=0,
+            param4=0,
+            param5=0,
+            param6=0,
+            param7=20
+        )
+        ack=conn.recv_match(type="COMMAND_ACK",blocking=True,timeout=5)
+        if ack is not None and ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            logging.info("Mission started")
+        else:
+            logging.error(f"Failed to takeoff: {ack.result if ack is not None else 'No ack received'}")
+            continue_flag=True
+            continue
+        time.sleep(10)
+        
+        mode_id=conn.mode_mapping()["AUTO"]
+        conn.mav.command_long_send(
+            target_system=conn.target_system,
+            target_component=conn.target_component,
+            command=mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+            confirmation=0,
+            param1=1,
+            param2=mode_id,
+            param3=0,
+            param4=0,
+            param5=0,
+            param6=0,
+            param7=0
+        )
+        ack=conn.recv_match(type="COMMAND_ACK",blocking=True,timeout=5)
+        if ack is not None and ack.result==mavutil.mavlink.MAV_RESULT_ACCEPTED:
+            logging.info("Auto mode set")
+        else:
+            logging.error(f"Failed to start mission: {ack.result if ack is not None else 'No ack received'}")
+            continue_flag=True
+        if continue_flag:
+            time.sleep(10)
+    logging.info("Starting!")
+        
 
 
     while True:

@@ -53,7 +53,7 @@ EXPOSE 5761/tcp
 USER root
 COPY . /app/
 RUN chown -R devuser:devuser /app &&\
-    chmod +x /app/docker/entrypoint.sh
+    chmod +x /app/docker/entrypoint.sh /app/docker/entrypoint_rerun.sh
 
 USER devuser
 RUN uv sync --locked

@@ -39,6 +39,10 @@ RATE_HZ = 800
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
 MISSED_FRAMES_ALLOWED=5
+TELEM_PORT=4000
+HOST=os.getenv("SENSOR_HOST")
+if HOST is None:
+    raise ValueError("SENSOR_HOST is not set")
 
 # --- PyBullet initialization ---
 physicsClient = p.connect(p.DIRECT if args.nogui else p.GUI)
@@ -255,7 +259,11 @@ def main():
             "attitude": euler,
             "velocity": velo
         }
-
+        position=struct.pack("ffffff", pos[0], pos[1], pos[2], euler[0], euler[1], euler[2])
+        telem_data=sock.sendto(position,(HOST, TELEM_PORT))
+        if telem_data == -1:
+            logging.error(f"Failed to send data to {address}")
+            continue
         result=sock.sendto((json.dumps(json_data, separators=(',', ':')) + "\n").encode("ascii"), address)
         if result == -1:
             logging.error(f"Failed to send data to {address}")
