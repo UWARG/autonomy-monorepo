@@ -6,11 +6,7 @@ class MavConnection:
     def __init__(
         self, 
         baud_rate: int,
-        host: str = MAVLINK_TCP_HOST, 
-        port: int = MAVLINK_TCP_PORT, 
     ) -> None: 
-        self.host = host 
-        self.port = port 
         self.baud_rate = baud_rate
         self.master = None
         self.heartbeat_interval = 1 
@@ -20,7 +16,7 @@ class MavConnection:
         """Check if the MAVLink connection is active."""
         return self.master is not None
 
-    def send_heartbeat(self) -> bool: 
+    def send_heartbeat(self) -> None: 
         """Send a heartbeat message to maintain the connection."""
         self.master.mav.heartbeat_send(
                                         mavutil.mavlink.MAV_TYPE_GCS,        
@@ -46,10 +42,10 @@ class MavConnection:
        
 
         try:
-            self.master = mavutil.mavlink_connection(connection_string)
-            receive_hearbeat_success = self.receive_heartbeat()
+            self.master = mavutil.mavlink_connection(connection_string, baud=self.baud_rate)
+            receive_heartbeat_success = self.receive_heartbeat()
 
-            if not receive_hearbeat_success:
+            if not receive_heartbeat_success:
                 print("Failed to receive heartbeat from drone.")
                 return False
             return True
