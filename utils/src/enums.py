@@ -21,5 +21,8 @@ class MavlinkMessageType(Enum):
     """Enum for MAVLink message types."""
 
 
+class MavStatusType(Enum):
+    """Enum for MAVLink STATUSTEXT severity levels (MAV_SEVERITY)."""
+
 class CameraType(Enum):
     """Enum for camera types."""
