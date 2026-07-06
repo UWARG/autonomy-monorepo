@@ -9,7 +9,6 @@ import threading
 import sensor_ports
 import numpy as np
 import cv2
-import rerun as rr
 from scipy.spatial.transform import Rotation as R
 import constants
 import time
@@ -26,8 +25,6 @@ telem_socket.settimeout(0.5)
 frame_count=0
 PRINT_INTERVAL=1000
 images={}
-rr.init("airside")
-rr.connect_grpc()
 
 
 def range_finder_thread(port):
@@ -38,7 +35,6 @@ def range_finder_thread(port):
         try:
             data_range, _ = range_finder_socket.recvfrom(65535)
             latest_range=struct.unpack("f", data_range[:4])[0]
-            rr.log("range_finder", rr.Scalars(latest_range))
         except OSError:
             continue
 
@@ -66,10 +62,9 @@ def camera_thread(port):
             rgb_array=np.frombuffer(rgb_data, np.uint8)
             rgb_image=cv2.imdecode(rgb_array, cv2.IMREAD_COLOR)
             depth_buffer=np.frombuffer(depth_data, np.uint8)
-            depth_array=0.01*np.array(cv2.imdecode(depth_buffer, cv2.IMREAD_UNCHANGED))
+            depth_array=0.01*np.array(cv2.imdecode(depth_buffer, cv2.IMREAD_UNCHANGED))# 0.01 to convert integer back into meters
             middle=(rgb_image.shape[0]//2, rgb_image.shape[1]//2)
             middle_depth=float((depth_array[middle[0],middle[1] ]))
-            rr.log(str(port)+"_rgb_image", rr.Image(rgb_image))
             if depth_length > 0:
                 arr_min=np.min(depth_array)
                 arr_max=np.max(depth_array)
@@ -77,7 +72,6 @@ def camera_thread(port):
                     normalized_array=np.zeros_like(depth_array)
                 else:
                     normalized_array=(depth_array-arr_min)/(arr_max-arr_min)
-                rr.log(str(port)+"_depth_map", rr.DepthImage(normalized_array))
             if frame_count % PRINT_INTERVAL == 0:
                 logging.info(f"Received {rgb_length} bytes of rgb data and {depth_length} and middle depth:"
                 f"{middle_depth}" if middle_depth<100 else f"nothing within range of {near} to {far}")
@@ -92,12 +86,6 @@ def telem_thread():
                 logging.error(f"Received no data")
                 continue
             position=struct.unpack("ffffff", telem_data)
-            #need to convert position and quaternion to rerun format
-            new_position=[position[0], -position[1], -position[2]]
-            quaternion=R.from_euler("xyz", [position[3], position[4], position[5]]).as_quat()
-            w,x,y,z=quaternion[3],quaternion[0],quaternion[1],quaternion[2]
-            new_quaternion=[x,-y,-z,w]
-            rr.log("drone", rr.Transform3D(translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)))
         except OSError:
             continue
 def frame_counter():
@@ -115,7 +103,6 @@ def main():
     for key,value in sensor_ports.RANGE_FINDER_PORTS.items():
         thread_range_finder=threading.Thread(target=range_finder_thread,args=(value["port"],),daemon=True)
         thread_range_finder.start()
-    rr.log("drone",rr.Boxes3D(centers=[[0,0,0]], half_sizes=[[1,0.5,0.2]],colors=[[255,0,0]],fill_mode="solid"))
     threading.Thread(target=telem_thread,daemon=True).start()
     conn=mavutil.mavlink_connection(f"tcp:127.0.0.1:{PORT}") 
     conn.wait_heartbeat()

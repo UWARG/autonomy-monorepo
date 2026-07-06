@@ -16,6 +16,8 @@ import pybullet as p
 import pybullet_data
 import logging
 import threading
+from scipy.spatial.transform import Rotation as R
+import rerun as rr
 from pymavlink.quaternion import Quaternion
 from pymavlink.rotmat import Vector3
 
@@ -68,6 +70,9 @@ time_now = 0.0
 last_velocity = None
 vehicle = None
 
+#rerun
+rr.init("sitl-plus")
+rr.connect_grpc("rerun+http://host.docker.internal:9876/proxy")
 cameras=[]
 range_finders=[]
 
@@ -165,6 +170,7 @@ def update_camera_range_finder():
 
 
 def main():
+    rr.log("drone",rr.Boxes3D(centers=[[0,0,0]], half_sizes=[[1,0.5,0.2]],colors=[[255,0,0]],fill_mode="solid"))
     update_thread=threading.Thread(target=update_camera_range_finder,daemon=True)
     update_thread.start()
 
@@ -259,6 +265,12 @@ def main():
             "attitude": euler,
             "velocity": velo
         }
+        #since we have different coordiante systems for ardupilot and rerun, convert back to rerun format
+        new_position=[pos[0], -pos[1], -pos[2]]
+        quaternion=R.from_euler("xyz", [euler[0], euler[1], euler[2]]).as_quat()
+        w,x,y,z=quaternion[3],quaternion[0],quaternion[1],quaternion[2]
+        new_quaternion=[x,-y,-z,w]
+        rr.log("drone", rr.Transform3D(translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)))
         position=struct.pack("ffffff", pos[0], pos[1], pos[2], euler[0], euler[1], euler[2])
         telem_data=sock.sendto(position,(HOST, TELEM_PORT))
         if telem_data == -1:

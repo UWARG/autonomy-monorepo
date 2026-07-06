@@ -8,6 +8,7 @@ import os
 
 import constants
 import state
+import rerun as rr
 prev_state=state.update
 HOST=os.getenv("SENSOR_HOST")
 if not HOST:
@@ -46,3 +47,4 @@ class Range_Finder():
             time.sleep(1/constants.RANGE_FINDER_FPS)
             self.update()
             state.airside_socket.sendto(struct.pack("f",self.range),(HOST, self.port)) # 127.0.0.1 is the localhost address 172.17.0.1 is the docker container address
+            rr.log(str(self.port) + "_range", rr.Scalars(self.range))

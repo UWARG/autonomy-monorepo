@@ -9,6 +9,7 @@ import pybullet as p
 
 import state
 import constants
+import rerun as rr
 prev_state=state.update
 HOST=os.getenv("SENSOR_HOST")
 if not HOST:
@@ -62,6 +63,7 @@ class Camera():
             self.capture_image()
             rgba_array = np.reshape(self.rgb_img, (self.width, self.height, 4)).astype(np.uint8)
             rgb_array=cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
+            rr.log(str(self.port) + "_rgb_image", rr.Image(rgb_array))
             ok,rgb_bytes=cv2.imencode(
                 ".jpg",
                 rgb_array,
@@ -72,7 +74,8 @@ class Camera():
                 continue
             rgb_bytes=rgb_bytes.tobytes()
             real_depth=100*self.far * self.near / (self.far - (self.far - self.near) * np.array(self.depth_img))
-            depth_array=np.reshape(real_depth, (self.width, self.height)).astype(np.uint16)
+            depth_array=np.reshape(real_depth, (self.width, self.height)).astype(np.uint16) #for sending thru tcp, truncates but its okay cuz the resulting dp are not significant
+            rr.log(str(self.port)+ "_depth_map", rr.DepthImage(0.01*depth_array)) 
             if not self.depth_map:
                 depth_bytes=b""
             else:
