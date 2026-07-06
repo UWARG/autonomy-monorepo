@@ -9,30 +9,57 @@ import abc
 from .frame import CameraFrame
 
 class AbstractCamera(abc.ABC): 
-    """Abstract Camera class that all cameras must inherit from."""
+    """Abstract Camera class that all cameras must inherit from.
 
-    def __init__(self):
-        pass
+    Attributes:
+        res_x: The x resolution of the camera
+        res_y: The y resolution of the camera
+    """
 
-    def start(self) -> bool: 
-        """Initializes the camera, returns True on Success."""
-        return False
-    
-    def stop(self) -> None: 
-        """Stop the Camera and release any resources."""
-        pass
+    def __init__(self, res_x: int, res_y: int):
+        """Basic initializer for all cameras
 
-    def run(self) -> None: 
-        """Main loop for the camera, should be run in a separate thread."""
+        Args:
+            res_x: Defines camera width (x resolution)
+            res_y: Defines camera height (y resolution)
+        """
+        self.res_x = res_x
+        self.res_y = res_y
         pass
 
     @abc.abstractmethod
-    def initialize_camera(self) -> bool: 
-        """Camera specific initialization logic, returns True on Success"""
+    def start(self) -> bool: 
+        """Initializes the camera, returns True on Success.
+
+        This is an abstract method, must be implemented by child classes
+
+        Returns:
+            True if the initialization is success 
+            False is there is a failure
+        """
+        return False
+    
+    @abc.abstractmethod
+    def stop(self) -> bool: 
+        """Stop the Camera and release any resources.
+
+        This is an abstract method, must be implemented by child classes
+
+        Returns:
+            True if the initialization is success 
+            False is there is a failure
+        """
         pass
 
     @abc.abstractmethod
     def capture_frame(self) -> CameraFrame | None: 
-        """Camera specific frame capture logic, returns a CameraFrame or None if capture failed."""
+        """Camera specific frame capture logic, returns a CameraFrame or None if capture failed.
+
+        This is an abstract method, must be implemented by child classes
+
+        Returns:
+            CameraFrame if it successfully captures a frame
+            None if there is an error capturing a frame
+        """
         pass
 
