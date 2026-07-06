@@ -52,7 +52,7 @@ class AbstractCamera(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def capture_frame(self) -> CameraFrame | None: 
+    def capture_frame(self) -> None: 
         """Camera specific frame capture logic, returns a CameraFrame or None if capture failed.
 
         This is an abstract method, must be implemented by child classes
