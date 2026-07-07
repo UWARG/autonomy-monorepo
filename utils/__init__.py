@@ -12,5 +12,6 @@ from .src.types import MappedTarget as MappedTarget
 from .src.types import Plane as Plane
 from .src.types import PositionMessage as PositionMessage
 from .src.types import Quaternion as Quaternion
+from .src.types import RcChannelsMessage as RcChannelsMessage
 from .src.types import Target as Target
 from .src.types import Vector3D as Vector3D

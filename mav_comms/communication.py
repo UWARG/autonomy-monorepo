@@ -2,6 +2,7 @@ from utils import (
     AttitudeMessage,
     MavStatusType,
     PositionMessage,
+    RcChannelsMessage,
 )
 
 from .connection import MavConnection
@@ -18,6 +19,9 @@ class MavComms:
 
     def receive_heading(self) -> float | None:
         """Receive the drone's compass heading in degrees, or None if unavailable."""
+
+    def receive_rc_channels(self, rc_channels: RcChannelsMessage) -> bool:
+        """Receive an RC_CHANNELS message from the drone."""
 
     def send_message(self, text: str, message_type: MavStatusType) -> bool:
         """Send a general-purpose text message to the ground station over STATUSTEXT."""

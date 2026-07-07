@@ -41,3 +41,8 @@ class PositionMessage:
 @dataclass
 class AttitudeMessage:
     """Data class for an attitude message."""
+
+
+@dataclass
+class RcChannelsMessage:
+    """Data class for an RC channels message."""
