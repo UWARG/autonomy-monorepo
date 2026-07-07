@@ -8,7 +8,7 @@ const SOCKET_URL = 'SocketURL-ToBeFilled';
 let socket = null;
 const subscribers = {};
 let reconnectAttempts = 0;
-const RECONNECT_DELAY = 3000;
+const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
 function connect() {
@@ -43,7 +43,7 @@ function connect() {
     reconnectAttempts++;
     setTimeout(() => {
       connect();
-    }, RECONNECT_DELAY);
+    }, RECONNECT_DELAY_MS);
   }
 }
 
