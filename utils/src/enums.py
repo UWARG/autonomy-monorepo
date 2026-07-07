@@ -43,11 +43,12 @@ class Direction(Enum):
 
 class MavlinkMessageType(Enum):
     """Enum for MAVLink message types."""
-
     GLOBAL_POSITION_INT = "GLOBAL_POSITION_INT"
     ATTITUDE = "ATTITUDE"
     RC_CHANNELS = "RC_CHANNELS"
 
+class MavStatusType(Enum):
+    """Enum for MAVLink STATUSTEXT severity levels (MAV_SEVERITY)."""
 
 class CameraType(Enum):
     """Enum for camera device types."""

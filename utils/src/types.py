@@ -85,11 +85,14 @@ class MappedTarget:
 
 @dataclass
 class AttitudeMessage:
-    """Data class for an attitude message received from MAVLink ATTITUDE."""
-
+    """Data class for an attitude message."""
     roll: float
     pitch: float
     yaw: float
     rollspeed: float
     pitchspeed: float
     yawspeed: float
+
+@dataclass
+class RcChannelsMessage:
+    """Data class for an RC channels message."""
