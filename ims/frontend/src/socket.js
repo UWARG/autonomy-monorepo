@@ -8,10 +8,11 @@ const SOCKET_URL = 'SocketURL-ToBeFilled';
 let socket = null;
 const subscribers = {};
 let reconnectAttempts = 0;
-const BASE_DELAY = 1000;
+const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 function connect() {
-  if (socket && (socket.readyState != WebSocket.CLOSED))
+  if (socket && (socket.readyState != WebSocket.CLOSED)) return;
 
   socket = new WebSocket(SOCKET_URL);
   socket.onopen = () => {
@@ -34,13 +35,15 @@ function connect() {
   
   socket.onclose = () => {
     console.warn('Websocket connection closed');
-    //Attempt to reconnect
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.error('Max reconnect attempts reached');
+      return;
+    }
     console.log('Attemping to reconnect...');
-    const delay = BASE_DELAY * Math.pow(2, reconnectAttempts);
-
+    reconnectAttempts++;
     setTimeout(() => {
       connect();
-    }, delay);
+    }, RECONNECT_DELAY_MS);
   }
 }
 
