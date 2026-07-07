@@ -1,6 +1,8 @@
 # SITL-Plus
 
-A hardware-in-the-loop simulation environment using PyBullet for physics, ArduPilot SITL for flight control, and optional Rerun visualization.
+A hardware-in-the-loop simulation environment using PyBullet for physics, ArduPilot SITL for flight control, and Rerun visualization.
+
+![SITL-Plus Rerun demo](gifs/Adobe%20Express%20-%202026-07-07%2000-23-54.gif)
 
 ## Prerequisites
 
@@ -15,14 +17,15 @@ The simulation is split across processes:
 
 | Process | Where it runs | What it does |
 |---|---|---|
-| PyBullet sim (`main.py`) | Docker container | Physics engine, camera & range-finder sensor simulation |
+| PyBullet sim (`main.py`) | Docker container | Physics engine, camera & range-finder simulation, Rerun logging |
 | ArduPilot SITL (`sim_vehicle.py`) | Docker container | Flight controller, MAVLink on TCP port 5761 |
-| Airside (`rerun_airside.py` or `airside.py`) | Host | Receives sensor data from container, drives the mission via MAVLink |
-| Groundside (`rerun_groundside.py` or `groundside.py`) | Host | Receives forwarded range-finder data |
+| Rerun Viewer (`uv run rerun`) | Host | Displays logged sensor data and drone pose |
+| `rerun_airside.py` | Host | Drives the mission via MAVLink |
 
-Sensor data flows over UDP from the container to the host via `host.docker.internal`:
+Sensor data is simulated in the container and logged to Rerun over gRPC via `host.docker.internal`. UDP ports are still used internally:
+
 - Camera frames: ports **6000** (downward) and **6002** (forward)
-- Range finder: port **6004** (forwarded to host port **6005** for groundside)
+- Range finder: port **6004**
 - Telemetry (position/attitude): port **4000**
 
 ## Build
@@ -39,7 +42,7 @@ Two modes are available. Pick one per session.
 
 ### Rerun mode (headless sim + Rerun visualizer)
 
-terminal 1 — start the Rerun viewer (groundside):
+terminal 1 — start the Rerun viewer:
 ```bash
 uv run rerun
 ```
@@ -49,7 +52,7 @@ terminal 2 — start the container (headless PyBullet + ArduPilot SITL, no GUI):
 docker compose --profile rerun up
 ```
 
-terminal 3 — airside mission controller + sensor relay + Rerun logging:
+terminal 3 — mission controller:
 ```bash
 warg run sitl-plus rerun_airside
 ```
@@ -63,14 +66,9 @@ terminal 1 — start the container (PyBullet GUI + MAVProxy with map and console
 docker compose --profile gui up
 ```
 
-terminal 2 — airside mission controller + sensor relay:
+terminal 2 — mission controller:
 ```bash
-warg run sitl-plus airside
-```
-
-terminal 3 — groundside range-finder + camera viewer:
-```bash
-warg run sitl-plus groundside
+warg run sitl-plus rerun_airside
 ```
 
 ## Local SITL (no Docker)
@@ -83,7 +81,7 @@ python3 ./Tools/autotest/sim_vehicle.py -N -v ArduCopter -f quad \
   --out tcpin:0.0.0.0:5761
 ```
 
-Replace `<YOUR_IPV4_ADDR>` with your WSL host's IPv4 address. Also set `SENSOR_HOST` to `127.0.0.1` in your environment when running airside/groundside scripts locally.
+Replace `<YOUR_IPV4_ADDR>` with your WSL host's IPv4 address. Also set `SENSOR_HOST` to `127.0.0.1` in your environment when running `rerun_airside` locally.
 
 ## Logs
 
