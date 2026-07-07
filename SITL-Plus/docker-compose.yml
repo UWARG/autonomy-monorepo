@@ -1,43 +1,16 @@
 services:
-  sitl-plus-rerun:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    entrypoint: ["/app/docker/entrypoint_rerun.sh"]
-    profiles: ["rerun"]
-    ports:
-      - 5761:5761
-      - 14550:14550
-    environment:
-      - DEBIAN_FRONTEND=noninteractive
-      - DISPLAY=${DISPLAY:-host.docker.internal:0}
-      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-host.docker.internal:0}
-      - SENSOR_HOST=host.docker.internal #points to the host machine so run groundside and airside on host machine eg powershell terminal instead of wsl 
-    volumes:
-      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
-      - "/mnt/wslg:/mnt/wslg:rw"
-      - ./logs:/app/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    stdin_open: true
-    tty: true
-    
   sitl-plus:
     build:
       context: .
       dockerfile: Dockerfile
-    profiles: ["gui"]
+    entrypoint: ["/app/docker/entrypoint_rerun.sh"]
     ports:
       - 5761:5761
       - 14550:14550
     environment:
       - DEBIAN_FRONTEND=noninteractive
-      - DISPLAY=${DISPLAY:-host.docker.internal:0}
-      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-host.docker.internal:0}
       - SENSOR_HOST=host.docker.internal #points to the host machine so run groundside and airside on host machine eg powershell terminal instead of wsl 
     volumes:
-      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
-      - "/mnt/wslg:/mnt/wslg:rw"
       - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"

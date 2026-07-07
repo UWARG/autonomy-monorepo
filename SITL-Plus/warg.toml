@@ -8,10 +8,7 @@ setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
 run = "uv run python -m main"
-groundside="uv run python tests/integration_tests/groundside.py"
-airside="uv run python tests/integration_tests/airside.py"
 rerun_airside="uv run python tests/integration_tests/rerun_airside.py"
-rerun_groundside="uv run python tests/integration_tests/rerun_groundside.py"
 lint = "uv run --extra dev ruff check ."
 
 [ci]

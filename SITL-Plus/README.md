@@ -4,13 +4,6 @@ A hardware-in-the-loop simulation environment using PyBullet for physics, ArduPi
 
 ![SITL-Plus Rerun demo](gifs/Adobe%20Express%20-%202026-07-07%2000-23-54.gif)
 
-## Prerequisites
-
-- **Windows 11** with WSL 2
-- **Mac / older Windows**: install an X Server (e.g. [VcXsrv](https://sourceforge.net/projects/vcxsrv/) or [XQuartz](https://www.xquartz.org/)) for the GUI profile
-- **Linux**: works out of the box with the built-in Wayland/X11 display server
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) with WSL 2 backend enabled
-
 ## Architecture
 
 The simulation is split across processes:
@@ -30,43 +23,25 @@ Sensor data is simulated in the container and logged to Rerun over gRPC via `hos
 
 ## Build
 
-Build the image once — both profiles share it:
+Build the image once:
 
 ```bash
-docker compose --profile rerun --profile gui build
+docker compose build
 ```
 
 ## Run
-
-Two modes are available. Pick one per session.
-
-### Rerun mode (headless sim + Rerun visualizer)
 
 terminal 1 — start the Rerun viewer:
 ```bash
 uv run rerun
 ```
 
-terminal 2 — start the container (headless PyBullet + ArduPilot SITL, no GUI):
+terminal 2 — start the container (headless PyBullet + ArduPilot SITL):
 ```bash
-docker compose --profile rerun up
+docker compose up
 ```
 
 terminal 3 — mission controller:
-```bash
-warg run sitl-plus rerun_airside
-```
-
-### GUI mode (PyBullet GUI + MAVProxy map/console)
-
-Requires an X Server on Windows/Mac, or a native display on Linux.
-
-terminal 1 — start the container (PyBullet GUI + MAVProxy with map and console):
-```bash
-docker compose --profile gui up
-```
-
-terminal 2 — mission controller:
 ```bash
 warg run sitl-plus rerun_airside
 ```

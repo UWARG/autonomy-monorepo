@@ -30,7 +30,6 @@ from range_finder import Range_Finder
 logging.basicConfig(level=logging.INFO)
 
 parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
-parser.add_argument("--nogui", default=False, action="store_true", help="disable GUI")
 args = parser.parse_args()
 
 RATE_HZ = 800
@@ -42,7 +41,7 @@ HOST = os.getenv("SENSOR_HOST")
 if HOST is None:
     raise ValueError("SENSOR_HOST is not set")
 
-physicsClient = p.connect(p.DIRECT if args.nogui else p.GUI)
+physicsClient = p.connect(p.DIRECT)
 p.setTimeStep(TIME_STEP)
 p.setGravity(0, 0, -GRAVITY_MSS)
 p.setRealTimeSimulation(0)
