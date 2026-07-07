@@ -5,7 +5,7 @@ All messages use the envelope: {"type": "...", "payload": {...}}
 
 import msgspec
 
-from utils.messages import (
+from utils.src.messages import (
     AttitudeMessage,
     AttitudePayload,
     HealthMessage,
@@ -14,6 +14,8 @@ from utils.messages import (
     LogPayload,
     PositionMessage,
     PositionPayload,
+    StatusMessage,
+    StatusPayload,
 )
 
 _encoder = msgspec.json.Encoder()
@@ -57,4 +59,10 @@ def encode_health(healthy: bool) -> bytes:
 def encode_log(message: str) -> bytes:
     return _encoder.encode(
         LogMessage(payload=LogPayload(message=message))
+    )
+
+
+def encode_status(task: str, state: str, text: str) -> bytes:
+    return _encoder.encode(
+        StatusMessage(payload=StatusPayload(task=task, state=state, text=text))
     )
