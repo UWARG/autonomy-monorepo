@@ -11,7 +11,7 @@ import py_trees_ros
 import rclpy
 import rclpy.node
 from engine import blackboard_keys
-from engine.lapping import create_lapping_subtree
+from airside.src.engine.engine.subtrees.lapping import create_lapping_subtree
 
 TICK_PERIOD_MS: float = 500.0  # Tree clock speed
 UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick

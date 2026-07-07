@@ -4,7 +4,7 @@ import py_trees
 import rclpy.node
 from ament_index_python.packages import get_package_share_directory
 from engine import blackboard_keys
-from engine.waypoint_parser import parse_waypoints_file, sort_clockwise_sweep
+from airside.src.engine.engine.utils.waypoint_parser import parse_waypoints_file, sort_clockwise_sweep
 
 WAYPOINTS_FILE_PARAMETER = "waypoints_file"
 

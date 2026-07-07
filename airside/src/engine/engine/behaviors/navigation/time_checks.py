@@ -9,7 +9,7 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
-from engine.lapping import LAP_TIME_MARGIN
+from airside.src.engine.engine.subtrees.lapping import LAP_TIME_MARGIN
 
 
 class EnoughTimeRemaining(py_trees.behaviour.Behaviour):

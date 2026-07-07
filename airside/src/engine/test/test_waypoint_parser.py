@@ -1,7 +1,7 @@
 import math
 
 import pytest
-from engine.waypoint_parser import (
+from airside.src.engine.engine.utils.waypoint_parser import (
     Waypoint,
     enu_offset_m,
     parse_waypoints_file,

@@ -5,7 +5,7 @@ import math
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
-from engine.waypoint_parser import enu_offset_m
+from airside.src.engine.engine.utils.waypoint_parser import enu_offset_m
 from mavros_msgs.msg import GlobalPositionTarget, State
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
