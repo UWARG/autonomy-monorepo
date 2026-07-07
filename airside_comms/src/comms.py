@@ -6,7 +6,14 @@ import threading
 
 from websockets.sync.client import connect as ws_connect
 
-from .message_encoder import encode_attitude, encode_position, encode_camera, encode_health, encode_log
+from utils.src.message_encoder import (
+    encode_attitude,
+    encode_camera,
+    encode_health,
+    encode_log,
+    encode_position,
+    encode_status,
+)
 
 
 class AirsideComms:
@@ -42,6 +49,10 @@ class AirsideComms:
 
     def send_log(self, message: str) -> None:
         """Encode and send a log message to IMS."""
+
+    def send_status(self, task: str, state: str, text: str) -> None:
+        """Encode and send a StatusMessage to IMS."""
+        self._ws.send(encode_status(task, state, text))
 
     def send_json(self, message: str) -> None:
         """Send a raw JSON string to IMS."""

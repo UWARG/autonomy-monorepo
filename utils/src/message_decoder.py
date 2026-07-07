@@ -4,7 +4,7 @@ Decodes incoming JSON bytes from airside_comms into typed msgspec Structs.
 
 import msgspec
 
-from utils.messages import AirsideMessage
+from utils.src.messages import AirsideMessage
 
 decoder = msgspec.json.Decoder(AirsideMessage)
 

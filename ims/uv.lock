@@ -7,6 +7,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "backports-entry-points-selectable"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/25/dae014b114397a6f60578d7358bf5fcb103f71556e5363a50d7b42e9bc51/backports.entry_points_selectable-1.3.0.tar.gz", hash = "sha256:17a8b44ae700fba548686dd274ddc91c060371565cd63806c20a1d33911746e6", size = 9882, upload-time = "2023-11-27T19:03:06.585Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5a/78/b3ba5d804ae21e26e6179bbe4e1338deaaba9d20161918f59e20e9d92ea0/backports.entry_points_selectable-1.3.0-py3-none-any.whl", hash = "sha256:66f5da003eb4b283c7b60581bc8bb0baf0d810eb3e3068da786d3821b4d5746a", size = 6217, upload-time = "2023-11-27T19:03:04.844Z" },
+]
+
+[[package]]
 name = "blinker"
 version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -96,6 +105,19 @@ wheels = [
 ]
 
 [[package]]
+name = "honcho"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "backports-entry-points-selectable", marker = "python_full_version < '3.10'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/65/c8/d860888358bf5c8a6e7d78d1b508b59b0e255afd5655f243b8f65166dafd/honcho-2.0.0.tar.gz", hash = "sha256:af3815c03c634bf67d50f114253ea9fef72ecff26e4fd06b29234789ac5b8b2e", size = 45618, upload-time = "2024-10-06T14:26:53.871Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/1c/25631fc359955569e63f5446dbb7022c320edf9846cbe892ee5113433a7e/honcho-2.0.0-py3-none-any.whl", hash = "sha256:56dcd04fc72d362a4befb9303b1a1a812cba5da283526fbc6509be122918ddf3", size = 22093, upload-time = "2024-10-06T14:26:52.181Z" },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "8.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -120,6 +142,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "honcho" },
     { name = "ruff" },
 ]
 
@@ -127,6 +150,7 @@ dev = [
 requires-dist = [
     { name = "flask", specifier = ">=3.0.0" },
     { name = "flask-sock", specifier = ">=0.7.0" },
+    { name = "honcho", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "msgspec", specifier = ">=0.18.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
 ]
