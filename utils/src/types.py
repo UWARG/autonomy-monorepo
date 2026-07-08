@@ -14,10 +14,6 @@ class Coordinate:
     lon: float
     alt: float  # Relative altitude in meters
 
-    lat: float
-    lon: float
-    alt: float
-
     def __str__(self) -> str:
         return f"({self.lat}, {self.lon}, {self.alt})"
 
@@ -88,8 +84,8 @@ class MappedTarget:
         )
 
 @dataclass
-class AttitudeMessage:
-    """Data class for an attitude message."""
+class Attitude:
+    """Data class for attitude."""
     roll: float
     pitch: float
     yaw: float
