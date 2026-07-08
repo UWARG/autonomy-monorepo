@@ -3,9 +3,13 @@
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class Coordinate:
-    """Data class for a coordinate in 3D space."""
+    """A latitude/longitude coordinate with relative altitude."""
+
+    lat: float
+    lon: float
+    alt: float  # Relative altitude in meters
 
 
 @dataclass

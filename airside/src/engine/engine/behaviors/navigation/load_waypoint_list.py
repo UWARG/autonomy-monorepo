@@ -4,17 +4,16 @@ import py_trees
 import rclpy.node
 from ament_index_python.packages import get_package_share_directory
 from engine import blackboard_keys
-from airside.src.engine.engine.utils.waypoint_parser import parse_waypoints_file, sort_clockwise_sweep
+from utils.src.waypoint_utils import parse_waypoints_file, sort_clockwise_sweep
 
 WAYPOINTS_FILE_PARAMETER = "waypoints_file"
 
 
 class LoadWaypointList(py_trees.behaviour.Behaviour):
     """
-    Loads the lap waypoints from a text file onto the blackboard.
+    Loads the lap waypoints from a YAML config file onto the blackboard.
 
-    Parses the waypoints file (``lat, lon, alt`` waypoint per line, with
-    an optional ``h`` home line) and orders the waypoints as a clockwise
+    Parses the waypoints file and orders the waypoints as a clockwise
     sweep around their centroid, starting from the waypoint nearest home's
     direction off the centroid (or north if no home is marked). Writes the
     resulting list to ``waypoints``. Returns SUCCESS once loaded, FAILURE
@@ -33,7 +32,7 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         self._node = kwargs["node"]
 
         default_path = (
-            f"{get_package_share_directory('engine')}/config/waypoints.txt"
+            f"{get_package_share_directory('engine')}/config/waypoints.yaml"
         )
         if not self._node.has_parameter(WAYPOINTS_FILE_PARAMETER):
             self._node.declare_parameter(WAYPOINTS_FILE_PARAMETER, default_path)

@@ -27,10 +27,6 @@ from airside.src.engine.engine.behaviors.navigation.load_waypoint_list import Lo
 from airside.src.engine.engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
 
 
-# A new lap is only started if this multiple of the last lap time fits before the deadline.
-LAP_TIME_MARGIN = 1.2
-
-
 def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
     """Build the lapping subtree."""
     single_waypoint = py_trees.composites.Sequence(

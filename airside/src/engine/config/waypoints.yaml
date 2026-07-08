@@ -1,0 +1,14 @@
+# Lap waypoints. `home` orients the waypoints
+# and is the returning location at the end
+# of the mission.
+home:
+  lat: 43.471520
+  lon: -80.541400
+  alt: 15
+
+waypoints:
+  - { lat: 43.471790, lon: -80.541524, alt: 15 }
+  - { lat: 43.471790, lon: -80.541276, alt: 15 }
+  - { lat: 43.471610, lon: -80.541276, alt: 15 }
+  - { lat: 43.471610, lon: -80.541524, alt: 15 }
+  - { lat: 43.471826, lon: -80.541400, alt: 15 }

@@ -5,7 +5,8 @@ import math
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
-from airside.src.engine.engine.utils.waypoint_parser import enu_offset_m
+from engine.constants import WAYPOINT_ACCEPTANCE_RADIUS_M, WAYPOINT_NAV_TIMEOUT_S
+from utils.src.waypoint_utils import east_north_coordinate_offset_m
 from mavros_msgs.msg import GlobalPositionTarget, State
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
@@ -16,8 +17,9 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     """
     Flies the drone to ``current_waypoint`` using MAVROS guided-mode setpoints.
 
-    Returns RUNNING while traveling, SUCCESS once within ``ACCEPTANCE_RADIUS_M``
-    of the waypoint, and FAILURE if the waypoint is not reached within ``TIMEOUT_S``.
+    Returns RUNNING while traveling, SUCCESS once within ``WAYPOINT_ACCEPTANCE_RADIUS_M``
+    of the waypoint, and FAILURE if the waypoint is not reached within
+    ``WAYPOINT_NAV_TIMEOUT_S``.
     """
 
     SETPOINT_TOPIC = "mavros/setpoint_raw/global"
@@ -26,8 +28,6 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     STATE_TOPIC = "mavros/state"
 
     GUIDED_MODE = "GUIDED"
-    ACCEPTANCE_RADIUS_M = 1.0
-    TIMEOUT_S = 120.0
 
     # Position-only setpoint: ignores velocity, acceleration and yaw fields
     TYPE_MASK = (
@@ -116,9 +116,9 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             self._node.get_logger().error(f"{self.name}: no waypoint to fly to")
             return py_trees.common.Status.FAILURE
 
-        if self._now_s() - self._start_time_s > self.TIMEOUT_S:
+        if self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S:
             self._node.get_logger().error(
-                f"{self.name}: waypoint not reached within {self.TIMEOUT_S}s"
+                f"{self.name}: waypoint not reached within {WAYPOINT_NAV_TIMEOUT_S}s"
             )
             return py_trees.common.Status.FAILURE
 
@@ -145,7 +145,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         self._setpoint.header.stamp = self._node.get_clock().now().to_msg()
         self._setpoint_pub.publish(self._setpoint)
 
-        east_m, north_m = enu_offset_m(
+        east_m, north_m = east_north_coordinate_offset_m(
             self._latest_fix.latitude,
             self._latest_fix.longitude,
             self._setpoint.latitude,
@@ -154,7 +154,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         up_m = self._setpoint.altitude - self._latest_rel_alt_m
         distance = math.sqrt(east_m**2 + north_m**2 + up_m**2)
 
-        if distance <= self.ACCEPTANCE_RADIUS_M:
+        if distance <= WAYPOINT_ACCEPTANCE_RADIUS_M:
             self._node.get_logger().info(
                 f"{self.name}: reached waypoint ({distance:.2f}m away)"
             )

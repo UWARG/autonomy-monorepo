@@ -1,5 +1,7 @@
 """Shared constants, enums, and dataclasses used across the monorepo."""
 
+from .src.constants import EARTH_RADIUS_M as EARTH_RADIUS_M
+from .src.constants import TWO_PI as TWO_PI
 from .src.enums import CameraType as CameraType
 from .src.enums import Colour as Colour
 from .src.enums import Colours as Colours
