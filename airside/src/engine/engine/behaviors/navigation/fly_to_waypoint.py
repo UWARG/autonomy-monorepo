@@ -13,6 +13,26 @@ from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
 
 
+_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
+_GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
+_REL_ALT_TOPIC = "mavros/global_position/rel_alt"
+_STATE_TOPIC = "mavros/state"
+
+_GUIDED_MODE = "GUIDED"
+
+# Position-only setpoint: ignores velocity, acceleration and yaw fields
+_TYPE_MASK = (
+    GlobalPositionTarget.IGNORE_VX
+    | GlobalPositionTarget.IGNORE_VY
+    | GlobalPositionTarget.IGNORE_VZ
+    | GlobalPositionTarget.IGNORE_AFX
+    | GlobalPositionTarget.IGNORE_AFY
+    | GlobalPositionTarget.IGNORE_AFZ
+    | GlobalPositionTarget.IGNORE_YAW
+    | GlobalPositionTarget.IGNORE_YAW_RATE
+)
+
+
 class FlyToWaypoint(py_trees.behaviour.Behaviour):
     """
     Flies the drone to ``current_waypoint`` using MAVROS guided-mode setpoints.
@@ -22,24 +42,6 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     ``WAYPOINT_NAV_TIMEOUT_S``.
     """
 
-    SETPOINT_TOPIC = "mavros/setpoint_raw/global"
-    GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
-    REL_ALT_TOPIC = "mavros/global_position/rel_alt"
-    STATE_TOPIC = "mavros/state"
-
-    GUIDED_MODE = "GUIDED"
-
-    # Position-only setpoint: ignores velocity, acceleration and yaw fields
-    TYPE_MASK = (
-        GlobalPositionTarget.IGNORE_VX
-        | GlobalPositionTarget.IGNORE_VY
-        | GlobalPositionTarget.IGNORE_VZ
-        | GlobalPositionTarget.IGNORE_AFX
-        | GlobalPositionTarget.IGNORE_AFY
-        | GlobalPositionTarget.IGNORE_AFZ
-        | GlobalPositionTarget.IGNORE_YAW
-        | GlobalPositionTarget.IGNORE_YAW_RATE
-    )
 
     def __init__(self, name: str = "FlyToWaypoint") -> None:
         super().__init__(name=name)
@@ -59,25 +61,25 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
 
         self._setpoint_pub = self._node.create_publisher(
             msg_type=GlobalPositionTarget,
-            topic=self.SETPOINT_TOPIC,
+            topic=_SETPOINT_TOPIC,
             qos_profile=10,
         )
 
         self._fix_sub = self._node.create_subscription(
             msg_type=NavSatFix,
-            topic=self.GLOBAL_POSITION_TOPIC,
+            topic=_GLOBAL_POSITION_TOPIC,
             callback=self._fix_callback,
             qos_profile=qos_profile_sensor_data,
         )
         self._rel_alt_sub = self._node.create_subscription(
             msg_type=Float64,
-            topic=self.REL_ALT_TOPIC,
+            topic=_REL_ALT_TOPIC,
             callback=self._rel_alt_callback,
             qos_profile=qos_profile_sensor_data,
         )
         self._state_sub = self._node.create_subscription(
             msg_type=State,
-            topic=self.STATE_TOPIC,
+            topic=_STATE_TOPIC,
             callback=self._state_callback,
             qos_profile=10,
         )
@@ -103,7 +105,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
 
         self._setpoint = GlobalPositionTarget()
         self._setpoint.coordinate_frame = GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
-        self._setpoint.type_mask = self.TYPE_MASK
+        self._setpoint.type_mask = _TYPE_MASK
         self._setpoint.latitude = waypoint.lat
         self._setpoint.longitude = waypoint.lon
         self._setpoint.altitude = waypoint.alt
@@ -128,16 +130,16 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             or self._latest_rel_alt_m is None
         ):
             self._node.get_logger().warning(
-                f"{self.name}: waiting for '{self.STATE_TOPIC}', "
-                f"'{self.GLOBAL_POSITION_TOPIC}' and '{self.REL_ALT_TOPIC}'",
+                f"{self.name}: waiting for '{_STATE_TOPIC}', "
+                f"'{_GLOBAL_POSITION_TOPIC}' and '{_REL_ALT_TOPIC}'",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
 
-        if self._latest_state.mode != self.GUIDED_MODE:
+        if self._latest_state.mode != _GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
-                f"mode, not '{self.GUIDED_MODE}' - holding off on setpoints",
+                f"mode, not '{_GUIDED_MODE}' - holding off on setpoints",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
