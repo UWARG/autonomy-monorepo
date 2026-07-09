@@ -14,6 +14,10 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from rclpy.qos import HistoryPolicy
 
+CAM_FORWARD_OFFSET=0.09
+CAM_RIGHT_OFFSET=0.08
+CAM_DOWN_OFFSET=0.18
+
 TAG_ID = "36h11_1"
 class ManagerNode(Node):
     def __init__(self):
@@ -39,10 +43,9 @@ class ManagerNode(Node):
         apriltag.frame=12
         apriltag.type=2 # vision_fiducial = 2
         #apriltag coordinate system to FRD
-        apriltag.pose.position.x=self.last_apriltag.transform.translation.z
-        # for some reason y and z are negated when recieved on mission planner
-        apriltag.pose.position.y=-self.last_apriltag.transform.translation.x
-        apriltag.pose.position.z=-self.last_apriltag.transform.translation.y
+        apriltag.pose.position.x=-self.last_apriltag.transform.translation.y+CAM_FORWARD_OFFSET
+        apriltag.pose.position.y=self.last_apriltag.transform.translation.x+CAM_RIGHT_OFFSET
+        apriltag.pose.position.z=self.last_apriltag.transform.translation.z+CAM_DOWN_OFFSET
         apriltag.distance=math.sqrt(
             self.last_apriltag.transform.translation.y**2+
             self.last_apriltag.transform.translation.x**2+
@@ -56,22 +59,32 @@ class ManagerNode(Node):
         
 
     def rc_callback(self, msg: Mavlink):
-        if msg.msgid!=65:
+        if msg.msgid!=65 and msg.msgid!=70:
             return
         payload_bytes=bytearray()
         for val in msg.payload64:
             payload_bytes.extend(struct.pack("<Q",val&0xFFFFFFFFFFFFFFFF))
         payload_bytes=payload_bytes[:msg.len]
-        try:
-            data=struct.unpack("<I 18H BB", payload_bytes)
-        except Exception as e:
-            self.get_logger().error(f"Failed to unpack Mavlink message: {e}")
-            return
-        
-        channels=data[1:19]
-        if not channels:
-            self.get_logger().info("No channels received")
-            return
+        if msg.msgid==70:
+            try:
+                data = struct.unpack("<8H BB 10H", payload_bytes)
+            except Exception as e:
+                self.get_logger().error(f"Failed to unpack Mavlink message: {e}")
+                return
+            channels = data[0:8] + data[10:20]
+            if not channels:
+                self.get_logger().info("No channels received")
+                return
+        else: 
+            try:
+                data=struct.unpack("<I 18H BB", payload_bytes)
+            except Exception as e:
+                self.get_logger().error(f"Failed to unpack Mavlink message: {e}")
+                return
+            channels=data[1:19]
+            if not channels:
+                self.get_logger().info("No channels received")
+                return
         want_landing = channels[6] > 1500
         if want_landing != self.landing:
             self.get_logger().info(f"Landing {want_landing}")
