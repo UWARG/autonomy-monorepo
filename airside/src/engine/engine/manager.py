@@ -11,7 +11,7 @@ import py_trees_ros
 import rclpy
 import rclpy.node
 from engine import blackboard_keys
-from airside.src.engine.engine.behaviors.flight.takeoff import Takeoff
+from airside.src.engine.engine.behaviors.navigation.takeoff import Takeoff
 from airside.src.engine.engine.behaviors.rc.rc_switch import KillSwitch
 from airside.src.engine.engine.subtrees.lapping import create_lapping_subtree
 from airside.src.engine.engine.subtrees.land import create_land_subtree

@@ -12,7 +12,7 @@ LandPhase
 from __future__ import annotations
 
 import py_trees
-from airside.src.engine.engine.behaviors.flight.land import Land
+from airside.src.engine.engine.behaviors.navigation.land import Land
 from airside.src.engine.engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
 from airside.src.engine.engine.behaviors.navigation.load_home_waypoint import LoadHomeWaypoint
 
