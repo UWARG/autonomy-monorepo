@@ -68,7 +68,7 @@ class ManagerNode(Node):
         payload_bytes=payload_bytes[:msg.len]
         if msg.msgid==70:
             try:
-                data = struct.unpack("<8H BB 10H", payload_bytes)
+                data = struct.unpack("<8H BB 8H", payload_bytes)
             except Exception as e:
                 self.get_logger().error(f"Failed to unpack Mavlink message: {e}")
                 return
