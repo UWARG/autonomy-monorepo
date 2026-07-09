@@ -47,7 +47,7 @@ class Vector3D:
     def normalized(self)-> Vector3D:
         return self * (1 / self.norm())
 
-    def cast_to_quaternion(self) -> Quaternion:
+    def to_pure_quaternion(self) -> Quaternion:
         return Quaternion(0, self.x, self.y, self.z)
 
     def cross(self, other: Vector3D): 
@@ -94,58 +94,66 @@ class Quaternion:
     def __neg__(self) -> Quaternion:
         return Quaternion(-self.w, -self.x, -self.y, -self.z)
 
-    def norm(self) -> float: #norm 
+    def distance(self) -> float: # Norm 
         return math.sqrt(self.w**2 + self.x**2 + self.y**2 + self.z**2)
 
-    def c(self) -> Quaternion: #Conjugate 
+    def c(self) -> Quaternion: # Conjugate 
         return Quaternion(self.w, -self.x, -self.y, -self.z)
 
     def norm(self) -> Quaternion: 
-        return self * (1/ self.norm())
+        return self * (1/ self.distance())
 
     def isVector3D(self) -> bool: 
-        return self.w == 0 
+        return abs(self.w) <= 1e-5 
 
-    def cast_to_vector3d(self) -> Vector3D: 
-        if self.isVector3D() == True: 
+    def to_vector3d(self) -> Vector3D: 
+        if self.isVector3D(): 
             return Vector3D(self.x, self.y, self.z)
         else: 
             raise ValueError("Quaternion is not a vector3D")       
 
+
+
+
 class Rotation: 
     """Class for handling rotation"""
-    def __init__(self, axis_of_rotation: Vector3D, angle: float) -> None: 
+
+    def __init__(self, q: Quaternion) -> None: 
+        self.q = q
+
+    @staticmethod
+    def from_vector3d(axis_of_rotation: Vector3D, angle: float) -> Rotation: 
         checkInput(axis_of_rotation, [Vector3D])
         checkInput(angle, [float|int])
 
         if axis_of_rotation == Vector3D(0, 0, 0):
             raise ValueError("Axis of rotation cannot be zero") 
 
-        self.axis = axis_of_rotation 
-        self.angle = angle  
+        axis = axis_of_rotation 
+        angle = angle  
 
-        self.axis = self.axis * (1/ self.axis.norm())
+        axis = axis * (1/ axis.norm())
         half = angle/2 
 
-        self.q = Quaternion(
+        return Rotation(Quaternion(
             math.cos(half),
-            self.axis.x * math.sin(half),
-            self.axis.y * math.sin(half),
-            self.axis.z * math.sin(half)
-        )
+            axis.x * math.sin(half),
+            axis.y * math.sin(half),
+            axis.z * math.sin(half)
+        ))
 
     def rotate(self, v: Vector3D|Quaternion) -> Vector3D|Quaternion: 
         checkInput(v, [Vector3D, Quaternion])
 
         if type(v) is Vector3D: 
-            v_q = v.cast_to_quaternion()
+            v_q = v.to_pure_quaternion()
         else: 
             v_q = v
 
         rotated_q = self.q * v_q * self.q.c() 
 
         if v is Vector3D: 
-            return rotated_q.cast_to_vector3d()
+            return rotated_q.to_vector3d()
         else: 
             return rotated_q 
     
@@ -156,7 +164,7 @@ class Rotation:
     def rotate_vector3d(self, v: Vector3D) -> Vector3D: 
         checkInput(v, [Vector3D]) 
 
-        return self.rotate_quaternion(v.cast_to_quaternion()).cast_to_vector3d()
+        return self.rotate_quaternion(v.to_pure_quaternion()).to_vector3d()
 
 
 @dataclass
@@ -169,9 +177,9 @@ class Pose:
         checkInput(other, [Pose])
 
         relative_orientation = self.orientation.c() * other.orientation 
-        relative_position = self.orientation.c() * (other.position - self.position).cast_to_quaternion() * self.orientation
+        relative_position = self.orientation.c() * (other.position - self.position).to_pure_quaternion() * self.orientation
         
-        return Pose(relative_position.cast_to_vector3d(), relative_orientation) 
+        return Pose(relative_position.to_vector3d(), relative_orientation) 
     
 @dataclass
 class Plane:

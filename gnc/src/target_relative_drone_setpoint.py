@@ -34,7 +34,7 @@ def target_relative_drone_setpoint(
     forward_axis = Vector3D(1, 0, 0)
 
     #Calculate the global pose of the setpoint  
-    wall_normal_axis = (t_o * forward_axis.cast_to_quaternion() * t_o.c()).cast_to_vector3d().normalized()
+    wall_normal_axis = (t_o * forward_axis.to_pure_quaternion() * t_o.c()).to_vector3d().normalized()
     g_v = t_v + (distance * wall_normal_axis)
 
 
@@ -44,10 +44,10 @@ def target_relative_drone_setpoint(
     if r_axis.norm() > 1e-5: 
         r_axis = r_axis.normalized()
         angle = math.acos((-wall_normal_axis).dot(forward_axis))
-        g_o = Rotation(r_axis, angle).q
+        g_o = Rotation.from_vector3d(r_axis, angle).q
     else: 
         if (-wall_normal_axis).dot(forward_axis) < 0: 
-            g_o = Rotation(Vector3D(0, 1, 0), math.pi).q
+            g_o = Rotation.from_vector3d(Vector3D(0, 1, 0), math.pi).q
         else: 
             g_o = Quaternion(1, 0, 0, 0)
 

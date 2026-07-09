@@ -150,7 +150,7 @@ def test_position_distance_scales_linearly():
 
 def rotate_by_quat(q: Quaternion, v: Vector3D) -> Vector3D:
     """Rotate vector v by quaternion q via sandwich product q*v*q'."""
-    return (q * v.cast_to_quaternion() * q.c()).cast_to_vector3d()
+    return (q * v.to_pure_quaternion() * q.c()).to_vector3d()
 
 def test_orientation_zero_yaw_drone_faces_target():
     # Target at (5,0,0), yaw=0 → forward=(1,0,0), setpoint at (7,0,0).
