@@ -27,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src", ".."]
+pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]
