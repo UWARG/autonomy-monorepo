@@ -1,6 +1,6 @@
 import math
 
-from utils.src.types import Pose, Vector3D, Quaternion, Rotation
+from utils.src.types import Pose, Vector3D, Quaternion
 from target_relative_drone_setpoint import target_relative_drone_setpoint 
 
 EPS = 1e-6
