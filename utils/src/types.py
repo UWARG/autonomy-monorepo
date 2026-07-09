@@ -144,7 +144,7 @@ class Rotation:
     def to_array(self) -> List[float]:
         return [self.w, self.x, self.y, self.z]
 
-    def __init__(self, w: float, x: float, y: float, x: float) -> None: 
+    def __init__(self, w: float, x: float, y: float, z: float) -> None: 
         self.q = Quaternion(w, x, y, z)
 
     @staticmethod
