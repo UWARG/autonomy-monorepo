@@ -3,6 +3,9 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import math
+from typing import List
+
+from .enums import Colours, Direction
 
 def checkInput(obj, types: list):
     if not isinstance(obj, tuple(types)):
@@ -12,56 +15,76 @@ def checkInput(obj, types: list):
 class Coordinate:
     """Data class for a coordinate in 3D space."""
 
+
 @dataclass
 class Vector3D:
     """Data class for a 3D vector."""
-    x: float
-    y: float
-    z: float
+    lat: float
+    lon: float
+    alt: float
+
+    def __str__(self) -> str:
+        return f"({self.lat}, {self.lon}, {self.alt})"
 
     def __add__(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D, Coordinate])
-        return Vector3D(self.x + other.x, self.y + other.y, self.z + other.z)
+        return Vector3D(
+            self.lat + other.lat,
+            self.lon + other.lon,
+            self.alt + other.alt
+        )
 
     def __sub__(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D, Coordinate])
-        return Vector3D(self.x - other.x, self.y - other.y, self.z - other.z)
+        return Vector3D(
+            self.lat - other.lat,
+            self.lon - other.lon,
+            self.alt - other.alt
+        )
 
-    def __neg__(self) -> Vector3D: 
-        return Vector3D(-self.x, -self.y, -self.z)
+    def __neg__(self) -> Vector3D:
+        return Vector3D(-self.lat, -self.lon, -self.alt)
 
-    def __mul__(self, scalar: float) -> Vector3D: 
+    def __mul__(self, scalar: float) -> Vector3D:
         checkInput(scalar, [float, int])
-        return Vector3D(self.x * scalar, self.y * scalar, self.z * scalar)
-    
-    def __rmul__(self, scalar: float) -> Vector3D: 
+        return Vector3D(
+            self.lat * scalar,
+            self.lon * scalar,
+            self.alt * scalar
+        )
+
+    def __rmul__(self, scalar: float) -> Vector3D:
         checkInput(scalar, [float, int])
         return self.__mul__(scalar)
-        
-    def __repr__(self) -> str:
-        return f"Coordinate({self.x}, {self.y}, {self.z})"
 
-    def norm(self) -> float: 
-        return math.sqrt(self.x**2 + self.y**2 + self.z**2)
-    
-    def normalized(self)-> Vector3D:
+    def __repr__(self) -> str:
+        return f"Vector3D({self.lat}, {self.lon}, {self.alt})"
+
+    def norm(self) -> float:
+        return math.sqrt(self.lat**2 + self.lon**2 + self.alt**2)
+
+    def normalized(self) -> Vector3D:
         return self * (1 / self.norm())
 
     def to_pure_quaternion(self) -> Quaternion:
-        return Quaternion(0, self.x, self.y, self.z)
+        return Quaternion(0, self.lat, self.lon, self.alt)
 
-    def cross(self, other: Vector3D): 
+    def cross(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D])
         return Vector3D(
-            self.y * other.z - self.z * other.y,
-            self.z * other.x - self.x * other.z,
-            self.x * other.y - self.y * other.x
+            self.lon * other.alt - self.alt * other.lon,
+            self.alt * other.lat - self.lat * other.alt,
+            self.lat * other.lon - self.lon * other.lat
         )
-    
-    def dot(self, other: Vector3D) -> float: 
+
+    def dot(self, other: Vector3D) -> float:
         checkInput(other, [Vector3D])
-        return self.x * other.x + self.y * other.y + self.z * other.z
-        
+        return (
+            self.lat * other.lat +
+            self.lon * other.lon +
+            self.alt * other.alt
+        )
+
 @dataclass
 class Quaternion:
     """Data class for a quaternion."""
@@ -112,14 +135,17 @@ class Quaternion:
         else: 
             raise ValueError("Quaternion is not a vector3D")       
 
-
-
-
 class Rotation: 
     """Class for handling rotation"""
 
-    def __init__(self, q: Quaternion) -> None: 
-        self.q = q
+    def __str__(self) -> str:
+        return f"(w: {self.w}, x: {self.x}, y: {self.y}, z: {self.z})"
+
+    def to_array(self) -> List[float]:
+        return [self.w, self.x, self.y, self.z]
+
+    def __init__(self, w: float, x: float, y: float, x: float) -> None: 
+        self.q = Quaternion(w, x, y, z)
 
     @staticmethod
     def from_vector3d(axis_of_rotation: Vector3D, angle: float) -> Rotation: 
@@ -135,12 +161,12 @@ class Rotation:
         axis = axis * (1/ axis.norm())
         half = angle/2 
 
-        return Rotation(Quaternion(
+        return Rotation(
             math.cos(half),
             axis.x * math.sin(half),
             axis.y * math.sin(half),
             axis.z * math.sin(half)
-        ))
+        )
 
     def rotate(self, v: Vector3D|Quaternion) -> Vector3D|Quaternion: 
         checkInput(v, [Vector3D, Quaternion])
@@ -183,24 +209,51 @@ class Pose:
     
 @dataclass
 class Plane:
-    """Data class for a plane."""
+    """Data class for a plane in 3D space defined by a normal vector and offset from origin."""
+
+    normal: Vector3D
+    offset: float
+
+    def __str__(self) -> str:
+        return f"(offset={self.offset}, normal={self.normal})"
 
 
 @dataclass
 class Target:
     """Data class for a target."""
 
+    colour: Colours
+    location: Coordinate
+
+    def __str__(self) -> str:
+        return f"{self.colour.name}, {self.location}"
+
 
 @dataclass
 class MappedTarget:
     """Data class for a target mapped to the world frame."""
 
+    colour: Colours
+    location: Coordinate
+    direction: Direction
+    wall_target: bool = True
 
-@dataclass
-class PositionMessage:
-    """Data class for a position message."""
-
+    def __str__(self) -> str:
+        return (
+            f"(colour={self.colour}, location={self.location}, "
+            f"cardinal_direction={self.direction}, wall_target={self.wall_target})"
+        )
 
 @dataclass
 class AttitudeMessage:
     """Data class for an attitude message."""
+    roll: float
+    pitch: float
+    yaw: float
+    rollspeed: float
+    pitchspeed: float
+    yawspeed: float
+
+@dataclass
+class RcChannelsMessage:
+    """Data class for an RC channels message."""

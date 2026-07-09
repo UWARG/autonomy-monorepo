@@ -10,7 +10,7 @@ from camera.src.sim import SimCamera
 
 class CameraNode(Node):
     TOPIC = "camera/image_raw"
-    PUBLISH_HZ = 2.0
+    PUBLISH_HZ = 50.0
     WIDTH = 640
     HEIGHT = 480
 
