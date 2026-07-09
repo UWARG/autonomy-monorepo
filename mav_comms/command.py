@@ -27,3 +27,5 @@ class ChangeYawCommand(MavCommand):
 
     def execute(self) -> bool:
         """Change the drone's yaw."""
+ 
+ 
