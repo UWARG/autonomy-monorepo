@@ -1,5 +1,18 @@
 """Tuning constants for the airside lapping behaviors."""
 
+# MAVLink message IDs the engine needs streamed from the FCU.
+MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
+MAVLINK_MSG_ID_RC_CHANNELS = 65
+
+# Per-message stream rates requested from ArduPilot (message ID -> Hz).
+STREAM_RATE_REQUESTS_HZ = {
+    MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
+    MAVLINK_MSG_ID_RC_CHANNELS: 5.0,
+}
+
+# Baseline rate for all legacy streams (REQUEST_DATA_STREAM fallback), Hz.
+BASELINE_STREAM_RATE_HZ = 4
+
 # A new lap is only started if this multiple of the last lap time fits before the deadline.
 LAP_TIME_MARGIN = 1.2
 

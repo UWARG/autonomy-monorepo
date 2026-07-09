@@ -20,11 +20,11 @@ Lapping
 from __future__ import annotations
 
 import py_trees
-from airside.src.engine.engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
-from airside.src.engine.engine.behaviors.navigation.lap_timing import RecordLapEnd, RecordLapStart
-from airside.src.engine.engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
-from airside.src.engine.engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
-from airside.src.engine.engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
+from engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
+from engine.behaviors.navigation.lap_timing import RecordLapEnd, RecordLapStart
+from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
+from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
+from engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
 
 
 def create_lapping_subtree() -> py_trees.behaviour.Behaviour:

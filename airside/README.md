@@ -61,6 +61,19 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
+| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: `tcp://localhost:5760` or `udp://:14550@` |
+
+### Networking
+
+The container runs with `network_mode: host` to ensure direct access
+to the host's network interfaces. On Docker Desktop (macOS/Windows), enable
+host networking under Settings > Resources > Network, or switch to the 1:1
+`ports:` fallback commented in `compose.yaml` if needed.
+
+### Logs
+
+ROS logs (rclpy logger output and captured node stdout) are written to
+`airside/log/ros/` on the host via the `ROS_LOG_DIR` mount in `compose.yaml`.
 
 ## Developer Guide
 

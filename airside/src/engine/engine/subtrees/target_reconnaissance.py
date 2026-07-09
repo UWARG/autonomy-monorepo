@@ -11,8 +11,8 @@ TargetReconnaissance
 from __future__ import annotations
 
 import py_trees
-from airside.src.engine.engine.behaviors.rc.rc_switch import WaitForRCSwitch
-from airside.src.engine.engine.behaviors.trigger_post_processing import TriggerPostProcessing
+from engine.behaviors.rc.rc_switch import WaitForRCSwitch
+from engine.behaviors.trigger_post_processing import TriggerPostProcessing
 from engine.constants import RECON_COMPLETE_RC_CHANNEL
 
 

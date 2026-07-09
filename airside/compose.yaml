@@ -4,10 +4,19 @@ services:
       context: ..
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
+    network_mode: host
+    # ports:
+      # - "14550:14550/udp"
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
+      ROS_LOG_DIR: /ros_ws/log/ros
+    # devices:
+      # - /dev/serial0:/dev/serial0
+      # - /dev/video0:/dev/video0
     command: ros2 launch engine engine.launch.py
     restart: unless-stopped
     volumes:
       - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
       - ..:/monorepo
