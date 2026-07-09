@@ -1,7 +1,7 @@
 from utils import (
-    AttitudeMessage,
+    Attitude,
     MavStatusType,
-    PositionMessage,
+    Coordinate,
     RcChannelsMessage,
 )
 
@@ -11,10 +11,10 @@ class MavComms:
     def __init__(self, connection: MavConnection) -> None:
         self.connection = connection
 
-    def receive_position(self, position: PositionMessage) -> bool:
+    def receive_position(self, position: Coordinate) -> bool:
         """Receive a position message from the drone."""
 
-    def receive_attitude(self, attitude: AttitudeMessage) -> bool:
+    def receive_attitude(self, attitude: Attitude) -> bool:
         """Receive an attitude message from the drone."""
 
     def receive_heading(self) -> float | None:
