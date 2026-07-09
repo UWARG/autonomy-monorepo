@@ -44,8 +44,9 @@ class ManagerNode(Node):
         apriltag.type=2 # vision_fiducial = 2
         #apriltag coordinate system to FRD
         apriltag.pose.position.x=-self.last_apriltag.transform.translation.y+CAM_FORWARD_OFFSET
-        apriltag.pose.position.y=self.last_apriltag.transform.translation.x+CAM_RIGHT_OFFSET
-        apriltag.pose.position.z=self.last_apriltag.transform.translation.z+CAM_DOWN_OFFSET
+        #for some reason y and z are negated when recieved on mission planner
+        apriltag.pose.position.y=-(self.last_apriltag.transform.translation.x+CAM_RIGHT_OFFSET)
+        apriltag.pose.position.z=-(self.last_apriltag.transform.translation.z+CAM_DOWN_OFFSET)
         apriltag.distance=math.sqrt(
             self.last_apriltag.transform.translation.y**2+
             self.last_apriltag.transform.translation.x**2+
@@ -94,6 +95,7 @@ class ManagerNode(Node):
         apriltag = None
         if len(msg.transforms) == 0:
             self.get_logger().info("No transforms detected")
+            self.last_apriltag = None
             return
         apriltag=msg.transforms[0]
         if apriltag is None:
