@@ -26,14 +26,20 @@ class ArduCam(AbstractCamera):
         return True
 
     def capture_frame(self) -> CameraFrame | None:
-        """Grab one frame and wrap it in a CameraFrame; None if the read failed."""
+        """Grab one frame and wrap it in a CameraFrame; None if the read failed.
+
+        OpenCV's VideoCapture returns frames in BGR channel order, so convert to
+        RGB before wrapping so CameraFrame.rgb is genuinely RGB for downstream
+        consumers (e.g. the ROS camera node publishes it as rgb8).
+        """
         if self._capture is None:
             return None
 
         ret, frame = self._capture.read()
         if not ret or frame is None:
             return None
-        return CameraFrame(rgb=frame, depth=None, rgb_down=None)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return CameraFrame(rgb=rgb, depth=None, rgb_down=None)
 
     def stop(self) -> None:
         if self._capture is not None:

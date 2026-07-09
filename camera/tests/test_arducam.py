@@ -63,10 +63,27 @@ def test_capture_frame_returns_cameraframe():
     frame = cam.capture_frame()
 
     assert isinstance(frame, CameraFrame)
-    assert frame.rgb is fake_frame
+    # capture_frame() converts BGR->RGB, so rgb is a new array (not the raw frame)
+    # with the same shape/dtype.
+    assert frame.rgb is not fake_frame
+    assert np.array_equal(frame.rgb, cv2.cvtColor(fake_frame, cv2.COLOR_BGR2RGB))
+    assert frame.rgb.shape == (720, 1280, 3)
+    assert frame.rgb.dtype == fake_frame.dtype
     assert frame.depth is None
     assert frame.rgb_down is None
-    assert frame.rgb.shape == (720, 1280, 3)
+
+
+def test_capture_frame_converts_bgr_to_rgb():
+    # OpenCV delivers frames as BGR; a pure-blue pixel is [255, 0, 0] in BGR.
+    bgr_frame = np.zeros((2, 2, 3), dtype=np.uint8)
+    bgr_frame[:, :] = (255, 0, 0)
+    capture = _make_capture(read_return=(True, bgr_frame))
+    cam = _make_initialized_arducam(capture)
+
+    frame = cam.capture_frame()
+
+    # After BGR->RGB the same pixel must be [0, 0, 255] (blue in RGB order).
+    assert np.array_equal(frame.rgb[0, 0], np.array([0, 0, 255], dtype=np.uint8))
 
 
 def test_capture_frame_returns_none_on_read_failure():
