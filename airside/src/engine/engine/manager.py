@@ -79,6 +79,19 @@ def set_lapping_deadline(node: rclpy.node.Node) -> None:
     blackboard.set(blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC)
 
 
+def set_lapping_deadline(node: rclpy.node.Node) -> None:
+    """
+    Write the lapping deadline to the blackboard for the time checks.
+    """
+
+    blackboard = py_trees.blackboard.Client(name="MissionConfig")
+    blackboard.register_key(
+        key=blackboard_keys.LAPPING_END_TIME_SEC, access=py_trees.common.Access.WRITE
+    )
+    now_s = node.get_clock().now().nanoseconds / 1e9
+    blackboard.set(blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC)
+
+
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
 
