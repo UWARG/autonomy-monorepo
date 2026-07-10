@@ -1,14 +1,3 @@
-"""
-Subscribes directly to MAVROS topics and caches the latest telemetry values so
-streamer.py can read them synchronously each poll tick. Same direct-MAVROS
-pattern as airside/src/engine/engine/behaviors/navigation/fly_to_waypoint.py
-(PR #103) - no mav_comms wrapper in between.
-
-All rclpy/mavros_msgs imports are deferred into connect() so this module (and
-anything that imports it) still loads fine outside a ROS 2 environment; only
-actually connecting requires one.
-"""
-
 from __future__ import annotations
 
 import math
@@ -16,9 +5,6 @@ import threading
 
 from utils.src.types import AttitudeMessage, PositionMessage
 
-# MAVROS publishes orientation in ROS's ENU/FLU convention (REP-103/105), not
-# ArduPilot's native NED/FRD. These are MAVROS's own static-rotation quaternions
-# (w, x, y, z) to convert back before extracting roll/pitch/yaw.
 _NED_ENU_Q = (0.0, 0.70710678, 0.70710678, 0.0)
 _AIRCRAFT_BASELINK_Q = (0.0, 1.0, 0.0, 0.0)
 
@@ -85,14 +71,6 @@ class Telemetry:
         if not rclpy.ok():
             rclpy.init()
 
-        # mavros/state fires once on the connect transition and relies on
-        # TRANSIENT_LOCAL durability to replay that to late subscribers - it
-        # does not republish periodically. A plain int depth requests VOLATILE
-        # durability, which is QoS-compatible but silently never receives the
-        # replay, so is_connected() would incorrectly stay False forever if we
-        # subscribe after the transition already happened (confirmed live: a
-        # fresh `ros2 topic echo` showed connected: true while a VOLATILE
-        # subscriber here kept reporting False).
         state_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,

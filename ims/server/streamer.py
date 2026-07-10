@@ -1,12 +1,7 @@
-"""
-Always checks for new messages, state of drone, and
-the camera using telemetry.py (direct MAVROS subscriptions) and encodes it
-using message_encoder.py.
-
-Then calls the server to broadcast it to clients (socket.js). Every
-broadcast message is also logged to a local .txt file (via the standard
-`logging` module), so telemetry is captured even when no ground-station is
-connected (e.g. no LTE in the field).
+""" 
+Always checks for new messages, state of drone, and 
+the camera using mav_comms and encodes it using message_encoder.py.
+Then calls the server to broadcast it to clients (socket.js).   
 """
 
 from __future__ import annotations

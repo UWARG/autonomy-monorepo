@@ -4,8 +4,8 @@ description = "Shared constants, enums, and dataclasses used across all Airside 
 depends_on = []
 
 [commands]
-setup = "uv sync --no-editable"
-lint = "uv run --extra dev --no-editable ruff check ."
+setup = "uv sync"
+lint = "uv run --extra dev ruff check ."
 
 [ci]
 pr = ["lint"]

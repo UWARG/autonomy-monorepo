@@ -2,8 +2,6 @@ from launch import LaunchDescription
 from launch.actions import ExecuteProcess
 from launch_ros.actions import Node
 
-# Assumes MAVROS is already running and publishing (started elsewhere) - this
-# launch file does not bring it up itself.
 IMS_SERVER_DIR = "/monorepo/ims/server"
 
 
