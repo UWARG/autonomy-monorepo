@@ -3,27 +3,30 @@ from datetime import datetime
 
 import pytest
 
+from airside_interfaces.msg import Coordinate as CoordinateMsg
+from airside_interfaces.msg import Target as TargetMsg
+
 from utils.src.enums import Colours
 from utils.src.types import Coordinate, Target
 
-from wrapper.map_manager_node import TargetLog, parse_target
+from wrapper.map_manager_node import TargetLog, target_from_msg
 
 
-def test_parse_target():
-    payload = json.dumps(
-        {"colour": "RED", "location": {"lat": 1.0, "lon": 2.0, "alt": 3.0}}
+def test_target_from_msg():
+    msg = TargetMsg(
+        colour="RED", location=CoordinateMsg(lat=1.0, lon=2.0, alt=3.0)
     )
-    target = parse_target(payload)
+    target = target_from_msg(msg)
     assert target.colour is Colours.RED
     assert target.location == Coordinate(lat=1.0, lon=2.0, alt=3.0)
 
 
-def test_parse_target_rejects_unknown_colour():
-    payload = json.dumps(
-        {"colour": "MAGENTA", "location": {"lat": 0.0, "lon": 0.0, "alt": 0.0}}
+def test_target_from_msg_rejects_unknown_colour():
+    msg = TargetMsg(
+        colour="MAGENTA", location=CoordinateMsg(lat=0.0, lon=0.0, alt=0.0)
     )
     with pytest.raises(KeyError):
-        parse_target(payload)
+        target_from_msg(msg)
 
 
 def test_target_log_wipes_previous_run(tmp_path):

@@ -7,27 +7,25 @@ from datetime import datetime
 from pathlib import Path
 
 import rclpy
+from airside_interfaces.msg import Target as TargetMsg
 from rclpy.node import Node
-from std_msgs.msg import Empty, String
+from std_msgs.msg import Empty
 
 from utils.src.enums import Colours
 from utils.src.types import Coordinate, Target
 
 
-def parse_target(payload: str) -> Target:
-    """Deserialize a JSON payload from /capture/target_location into a Target.
+def target_from_msg(msg: TargetMsg) -> Target:
+    """Convert an airside_interfaces/Target message into a utils Target.
 
-    Expected schema:
-        {"colour": "RED", "location": {"lat": 0.0, "lon": 0.0, "alt": 0.0}}
+    Raises KeyError if the colour name is not a Colours member.
     """
-    data = json.loads(payload)
-    location = data["location"]
     return Target(
-        colour=Colours[data["colour"]],
+        colour=Colours[msg.colour],
         location=Coordinate(
-            lat=float(location["lat"]),
-            lon=float(location["lon"]),
-            alt=float(location["alt"]),
+            lat=msg.location.lat,
+            lon=msg.location.lon,
+            alt=msg.location.alt,
         ),
     )
 
@@ -80,7 +78,7 @@ class MapManagerNode(Node):
         self._log = TargetLog(data_dir)
 
         self._target_sub = self.create_subscription(
-            String, self.TARGET_TOPIC, self._on_target, 10
+            TargetMsg, self.TARGET_TOPIC, self._on_target, 10
         )
         self._trigger_sub = self.create_subscription(
             Empty, self.TRIGGER_TOPIC, self._on_trigger, 10
@@ -91,11 +89,11 @@ class MapManagerNode(Node):
             f"to '{self._log.working_file}'."
         )
 
-    def _on_target(self, msg: String) -> None:
+    def _on_target(self, msg: TargetMsg) -> None:
         try:
-            target = parse_target(msg.data)
-        except (KeyError, ValueError, json.JSONDecodeError) as error:
-            self.get_logger().error(f"Dropping malformed target message: {error}")
+            target = target_from_msg(msg)
+        except KeyError as error:
+            self.get_logger().error(f"Dropping target with unknown colour: {error}")
             return
 
         self._log.append(target, stamp=datetime.now().isoformat())

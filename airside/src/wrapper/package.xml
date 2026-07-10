@@ -9,6 +9,7 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
 
+  <depend>airside_interfaces</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
