@@ -4,9 +4,9 @@ description = "Hardware abstraction layer for RGB and depth cameras."
 depends_on = ["utils"]
 
 [commands]
-setup = "uv sync"
-test = "uv run --extra dev pytest"
-lint = "uv run --extra dev ruff check ."
+setup = "uv sync --no-editable"
+test = "uv run --extra dev --no-editable pytest"
+lint = "uv run --extra dev --no-editable ruff check ."
 
 [ci]
 pr = ["lint"]
