@@ -22,6 +22,9 @@ WAYPOINT_ACCEPTANCE_RADIUS_M = 1.0
 # Give up on a waypoint if not reached within this many seconds.
 WAYPOINT_NAV_TIMEOUT_S = 120.0
 
+# Master switch for the RC switch behaviors.
+RC_SWITCHES_ENABLED = False
+
 # RC channel that controls the kill switch, pausing the mission.
 KILL_SWITCH_RC_CHANNEL = 7
 # RC channel that signals the completion of target reconnaissance and starts the land phase.

@@ -12,6 +12,7 @@ import rclpy
 import rclpy.node
 from engine import blackboard_keys
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.constants import RC_SWITCHES_ENABLED
 from engine.behaviors.navigation.takeoff import Takeoff
 from engine.behaviors.rc.rc_switch import KillSwitch
 from engine.subtrees.lapping import create_lapping_subtree
@@ -59,13 +60,15 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
+    children: list[py_trees.behaviour.Behaviour] = []
+    if RC_SWITCHES_ENABLED:
+        children.append(KillSwitch())
+    children.append(mission)
+
     return py_trees.composites.Selector(
         name="Root",
         memory=False,
-        children=[
-            KillSwitch(),
-            mission,
-        ],
+        children=children,
     )
 
 
