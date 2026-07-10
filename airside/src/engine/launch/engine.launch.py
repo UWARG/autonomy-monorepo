@@ -3,6 +3,12 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
+# Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
+# where the RC bridge listens for RC_CHANNELS.
+_RC_BRIDGE_PORT = 14550
+_MAVROS_GCS_URL = f"udp://@127.0.0.1:{_RC_BRIDGE_PORT}"
+_RC_BRIDGE_MAVLINK_URL = f"udpin:127.0.0.1:{_RC_BRIDGE_PORT}"
+
 
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
@@ -24,11 +30,22 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[
                     {
                         "fcu_url": LaunchConfiguration("fcu_url"),
+                        "gcs_url": _MAVROS_GCS_URL,
                         "fcu_protocol": "v2.0",
                         "tgt_system": 1,
                         "tgt_component": 1,
+                        "plugin_denylist": ["rc_io"],
                     }
                 ],
+            ),
+            Node(
+                package="engine",
+                executable="rc_bridge",
+                name="rc_bridge",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"mavlink_url": _RC_BRIDGE_MAVLINK_URL}],
             ),
             Node(
                 package="wrapper",
