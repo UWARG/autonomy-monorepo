@@ -6,7 +6,7 @@ TICK_PERIOD_MS = 500.0
 UNICODE_TREE_DEBUG = False
 
 # Lapping deadline, from engine startup, seconds.
-LAPPING_DURATION_SEC = 30.0
+LAPPING_DURATION_SEC = 120.0
 
 # MAVLink message IDs the engine needs streamed from the FCU.
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
