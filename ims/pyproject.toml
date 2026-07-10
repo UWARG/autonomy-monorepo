@@ -9,7 +9,6 @@ dependencies = [
     "flask-sock>=0.7.0",
     "msgspec>=0.18.0",
     "utils",
-    "camera",
 ]
 
 [project.urls]
@@ -21,7 +20,6 @@ dev = ["honcho>=2.0.0", "ruff>=0.8.0"]
 
 [tool.uv.sources]
 utils = { path = "../utils" }
-camera = { path = "../camera" }
 
 [build-system]
 requires = ["hatchling"]

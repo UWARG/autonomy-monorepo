@@ -1,9 +1,3 @@
-""" 
-Always checks for new messages, state of drone, and 
-the camera using mav_comms and encodes it using message_encoder.py.
-Then calls the server to broadcast it to clients (socket.js).   
-"""
-
 from __future__ import annotations
 
 import logging
@@ -11,11 +5,9 @@ import threading
 import time
 from pathlib import Path
 
-from camera.src import SimCamera
 from telemetry import Telemetry
 from utils.src.message_encoder import (
     encode_attitude,
-    encode_camera,
     encode_health,
     encode_log,
     encode_position,
@@ -49,7 +41,7 @@ def emit(logger: logging.Logger, data: bytes) -> None:
     logger.info(data.decode())
 
 
-def poll_once(telemetry: Telemetry, camera: SimCamera, logger: logging.Logger) -> None:
+def poll_once(telemetry: Telemetry, logger: logging.Logger) -> None:
     """Check every data source once and broadcast/log whatever came back."""
     attitude = AttitudeMessage(
         roll=0.0, pitch=0.0, yaw=0.0, rollspeed=0.0, pitchspeed=0.0, yawspeed=0.0
@@ -67,14 +59,11 @@ def poll_once(telemetry: Telemetry, camera: SimCamera, logger: logging.Logger) -
 
     emit(logger, encode_health(telemetry.is_connected()))
 
-    if camera.capture_frame() is not None:
-        emit(logger, encode_camera())
 
-
-def stream_forever(telemetry: Telemetry, camera: SimCamera, logger: logging.Logger) -> None:
-    """Poll drone + camera state on a fixed interval, forever."""
+def stream_forever(telemetry: Telemetry, logger: logging.Logger) -> None:
+    """Poll drone state on a fixed interval, forever."""
     while True:
-        poll_once(telemetry, camera, logger)
+        poll_once(telemetry, logger)
         time.sleep(POLL_INTERVAL_S)
 
 
@@ -84,11 +73,8 @@ def main() -> None:
     telemetry = Telemetry()
     telemetry.connect()
 
-    camera = SimCamera()
-    camera.initialize_camera()
-
     logger = setup_telemetry_logger()
-    stream_forever(telemetry, camera, logger)
+    stream_forever(telemetry, logger)
 
 
 if __name__ == "__main__":
