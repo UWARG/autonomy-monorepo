@@ -9,5 +9,5 @@ dist/
 build/
 *.egg-info/
 .vscode/
-.cache/
+**/.cache/
 
