@@ -1,14 +1,3 @@
-"""
-Subscribes directly to MAVROS topics and caches the latest telemetry values so
-streamer.py can read them synchronously each poll tick. Same direct-MAVROS
-pattern as airside/src/engine/engine/behaviors/navigation/fly_to_waypoint.py
-(PR #103) - no mav_comms wrapper in between.
-
-All rclpy/mavros_msgs imports are deferred into connect() so this module (and
-anything that imports it) still loads fine outside a ROS 2 environment; only
-actually connecting requires one.
-"""
-
 from __future__ import annotations
 
 import math
@@ -18,14 +7,7 @@ from utils.src.types import AttitudeMessage, PositionMessage
 
 
 def _quaternion_to_euler(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
-    """(roll, pitch, yaw) radians from a (w, x, y, z) quaternion, ZYX aerospace convention.
-
-    Note: this is applied directly to MAVROS's own orientation quaternion, which
-    is in ROS's ENU/FLU convention, not converted to ArduPilot's native NED/FRD -
-    today's goal is just logging what would have been sent groundside, not
-    guaranteeing a specific frame. Revisit before trusting these values against
-    a NED-frame consumer.
-    """
+    """(roll, pitch, yaw) radians from a (w, x, y, z) quaternion, ZYX aerospace convention."""
     sinr_cosp = 2 * (w * x + y * z)
     cosr_cosp = 1 - 2 * (x * x + y * y)
     roll = math.atan2(sinr_cosp, cosr_cosp)
@@ -65,14 +47,6 @@ class Telemetry:
         if not rclpy.ok():
             rclpy.init()
 
-        # mavros/state fires once on the connect transition and relies on
-        # TRANSIENT_LOCAL durability to replay that to late subscribers - it
-        # does not republish periodically. A plain int depth requests VOLATILE
-        # durability, which is QoS-compatible but silently never receives the
-        # replay, so is_connected() would incorrectly stay False forever if we
-        # subscribe after the transition already happened (confirmed live: a
-        # fresh `ros2 topic echo` showed connected: true while a VOLATILE
-        # subscriber here kept reporting False).
         state_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
