@@ -79,14 +79,28 @@ class Telemetry:
         from geometry_msgs.msg import PoseStamped
         from mavros_msgs.msg import State, StatusText
         from rclpy.node import Node
-        from rclpy.qos import qos_profile_sensor_data
+        from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
         from sensor_msgs.msg import NavSatFix
 
         if not rclpy.ok():
             rclpy.init()
 
+        # mavros/state fires once on the connect transition and relies on
+        # TRANSIENT_LOCAL durability to replay that to late subscribers - it
+        # does not republish periodically. A plain int depth requests VOLATILE
+        # durability, which is QoS-compatible but silently never receives the
+        # replay, so is_connected() would incorrectly stay False forever if we
+        # subscribe after the transition already happened (confirmed live: a
+        # fresh `ros2 topic echo` showed connected: true while a VOLATILE
+        # subscriber here kept reporting False).
+        state_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            depth=10,
+        )
+
         self._node = Node(self._node_name)
-        self._node.create_subscription(State, "mavros/state", self._on_state, 10)
+        self._node.create_subscription(State, "mavros/state", self._on_state, state_qos)
         self._node.create_subscription(
             PoseStamped, "mavros/local_position/pose", self._on_pose, qos_profile_sensor_data
         )
