@@ -25,8 +25,6 @@ def handle_client(ws) -> None:
 
     try:
         while True:
-            # Browser clients are receive-only; block here so the connection
-            # stays open and flask-sock notices when the client disconnects.
             ws.receive()
     except ConnectionClosed:
         pass

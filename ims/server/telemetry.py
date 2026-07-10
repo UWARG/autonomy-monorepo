@@ -1,3 +1,14 @@
+"""
+Subscribes directly to MAVROS topics and caches the latest telemetry values so
+streamer.py can read them synchronously each poll tick. Same direct-MAVROS
+pattern as airside/src/engine/engine/behaviors/navigation/fly_to_waypoint.py
+(PR #103) - no mav_comms wrapper in between.
+
+All rclpy/mavros_msgs imports are deferred into connect() so this module (and
+anything that imports it) still loads fine outside a ROS 2 environment; only
+actually connecting requires one.
+"""
+
 from __future__ import annotations
 
 import math
@@ -5,26 +16,16 @@ import threading
 
 from utils.src.types import AttitudeMessage, PositionMessage
 
-_NED_ENU_Q = (0.0, 0.70710678, 0.70710678, 0.0)
-_AIRCRAFT_BASELINK_Q = (0.0, 1.0, 0.0, 0.0)
-
-
-def _quat_mul(
-    q1: tuple[float, float, float, float], q2: tuple[float, float, float, float]
-) -> tuple[float, float, float, float]:
-    """Hamilton product of two (w, x, y, z) quaternions."""
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
-    return (
-        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
-        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
-        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
-        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
-    )
-
 
 def _quaternion_to_euler(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
-    """(roll, pitch, yaw) radians from a (w, x, y, z) quaternion, ZYX aerospace convention."""
+    """(roll, pitch, yaw) radians from a (w, x, y, z) quaternion, ZYX aerospace convention.
+
+    Note: this is applied directly to MAVROS's own orientation quaternion, which
+    is in ROS's ENU/FLU convention, not converted to ArduPilot's native NED/FRD -
+    today's goal is just logging what would have been sent groundside, not
+    guaranteeing a specific frame. Revisit before trusting these values against
+    a NED-frame consumer.
+    """
     sinr_cosp = 2 * (w * x + y * z)
     cosr_cosp = 1 - 2 * (x * x + y * y)
     roll = math.atan2(sinr_cosp, cosr_cosp)
@@ -37,13 +38,6 @@ def _quaternion_to_euler(w: float, x: float, y: float, z: float) -> tuple[float,
     yaw = math.atan2(siny_cosp, cosy_cosp)
 
     return roll, pitch, yaw
-
-
-def _enu_flu_to_ned_frd(
-    w: float, x: float, y: float, z: float
-) -> tuple[float, float, float, float]:
-    """Convert a MAVROS ENU/FLU orientation quaternion to ArduPilot's native NED/FRD."""
-    return _quat_mul(_quat_mul(_NED_ENU_Q, (w, x, y, z)), _AIRCRAFT_BASELINK_Q)
 
 
 class Telemetry:
@@ -71,6 +65,14 @@ class Telemetry:
         if not rclpy.ok():
             rclpy.init()
 
+        # mavros/state fires once on the connect transition and relies on
+        # TRANSIENT_LOCAL durability to replay that to late subscribers - it
+        # does not republish periodically. A plain int depth requests VOLATILE
+        # durability, which is QoS-compatible but silently never receives the
+        # replay, so is_connected() would incorrectly stay False forever if we
+        # subscribe after the transition already happened (confirmed live: a
+        # fresh `ros2 topic echo` showed connected: true while a VOLATILE
+        # subscriber here kept reporting False).
         state_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -102,8 +104,7 @@ class Telemetry:
             return False
 
         q = self._pose.pose.orientation
-        w, x, y, z = _enu_flu_to_ned_frd(q.w, q.x, q.y, q.z)
-        attitude.roll, attitude.pitch, attitude.yaw = _quaternion_to_euler(w, x, y, z)
+        attitude.roll, attitude.pitch, attitude.yaw = _quaternion_to_euler(q.w, q.x, q.y, q.z)
         attitude.rollspeed = 0.0
         attitude.pitchspeed = 0.0
         attitude.yawspeed = 0.0
