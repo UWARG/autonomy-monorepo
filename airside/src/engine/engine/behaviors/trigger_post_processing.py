@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import py_trees
 import rclpy.node
+from engine.ground_log import send_to_ground
 from rclpy.qos import (
     QoSDurabilityPolicy,
     QoSProfile,
@@ -42,4 +43,5 @@ class TriggerPostProcessing(py_trees.behaviour.Behaviour):
         self._node.get_logger().info(
             f"{self.name}: published on '{self.TRIGGER_TOPIC}'"
         )
+        send_to_ground(self._node, "ENG: post-processing triggered")
         return py_trees.common.Status.SUCCESS

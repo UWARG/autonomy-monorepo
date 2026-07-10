@@ -7,6 +7,7 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
+from engine.ground_log import send_to_ground
 
 
 class ResetLapWaypoints(py_trees.behaviour.Behaviour):
@@ -71,6 +72,7 @@ class StartLapTimer(py_trees.behaviour.Behaviour):
         self._node.get_logger().info(
             f"{self.name}: first waypoint reached, lap started at t={now_s:.1f}s"
         )
+        send_to_ground(self._node, "ENG: lap started")
         return py_trees.common.Status.SUCCESS
 
 
@@ -125,9 +127,16 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
                 f"{self.name}: lap aborted at waypoint {index}/{len(waypoints)} "
                 f"after {lap_time_s:.1f}s, keeping previous lap-time estimate"
             )
+            send_to_ground(
+                self._node, f"ENG: lap aborted at wp {index}/{len(waypoints)}"
+            )
             return py_trees.common.Status.SUCCESS
 
         self._completed_laps += 1
+        send_to_ground(
+            self._node,
+            f"ENG: lap {self._completed_laps} done in {lap_time_s:.0f}s",
+        )
         if self._completed_laps == 1:
             self._node.get_logger().info(
                 f"{self.name}: first lap completed in {lap_time_s:.1f}s"
