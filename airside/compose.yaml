@@ -11,3 +11,4 @@ services:
     volumes:
       - ./src:/ros_ws/src
       - ..:/monorepo
+      - ./data:/ros_ws/data

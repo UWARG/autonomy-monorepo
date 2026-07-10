@@ -61,6 +61,7 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
+| `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
 
 ## Developer Guide
 
@@ -132,6 +133,17 @@ blackboard = py_trees.blackboard.Client(name="init")
 blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
+
+### Map manager
+
+The `map_manager` node (in the `wrapper` package) is launched alongside the engine and records detected targets for post processing.
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/capture/target_location` | `std_msgs/String` | subscribe | JSON-encoded `Target`: `{"colour": "RED", "location": {"lat": 0.0, "lon": 0.0, "alt": 0.0}}` (`colour` is a `utils.src.enums.Colours` member name) |
+| `/trigger_post_processing` | `std_msgs/Empty` | subscribe | Snapshots the current target log to a timestamped file for post processing |
+
+Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is wiped at every startup (one file per run). Each trigger copies it to `targets_<YYYY-MM-DDTHH-MM-SS>.jsonl` in the same directory.
 
 ### ROS integration inside a behavior
 
