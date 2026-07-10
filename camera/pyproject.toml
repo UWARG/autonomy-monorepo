@@ -20,5 +20,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
+[tool.hatch.build.targets.wheel.sources]
+"." = "camera"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

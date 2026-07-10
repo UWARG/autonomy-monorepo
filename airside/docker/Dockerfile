@@ -32,6 +32,12 @@ COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
 RUN pip install /monorepo/camera /monorepo/utils
 
+# ims/server (streamer.py) runs inside this container too - it talks to MAVROS
+# directly (see ims/server/telemetry.py), so it needs to be in a ROS 2
+# environment. Only its own runtime deps need installing; ims/server itself is
+# picked up via the PYTHONPATH=/monorepo set in airside_entrypoint.sh.
+RUN pip install flask>=3.0.0 flask-sock>=0.7.0 msgspec>=0.18.0
+
 COPY airside/src/ src/
 
 RUN source /opt/ros/humble/setup.bash \

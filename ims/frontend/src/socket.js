@@ -3,7 +3,7 @@
 
 //{"type": "attitude", "payload": {"roll": 0.1, "pitch":-0.05, "yaw":1.2, etc}
 
-const SOCKET_URL = 'SocketURL-ToBeFilled';
+const SOCKET_URL = `ws://${window.location.hostname}:8765/ws`;
 
 let socket = null;
 const subscribers = {};

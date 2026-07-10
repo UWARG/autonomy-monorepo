@@ -94,5 +94,13 @@ class AttitudeMessage:
     yawspeed: float
 
 @dataclass
+class PositionMessage:
+    """Data class for a position message."""
+    lat: float
+    lon: float
+    alt: float
+
+@dataclass
 class RcChannelsMessage:
     """Data class for an RC channels message."""
+    channels: List[int]

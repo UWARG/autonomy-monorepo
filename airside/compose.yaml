@@ -6,6 +6,8 @@ services:
     image: warg/airside:latest
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    ports:
+      - "8765:8765"
     command: ros2 launch engine engine.launch.py
     restart: unless-stopped
     volumes:
