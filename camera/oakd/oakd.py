@@ -2,6 +2,9 @@ from src.abstract_camera import AbstractCamera
 from rerun_node import RerunNode
 import depthai as dai
 import time
+import cv2
+
+from src.frame import CameraFrame
 
 class Oakd(AbstractCamera):
     """The oakd camera class implementation
@@ -41,17 +44,23 @@ class Oakd(AbstractCamera):
         Returns:
             See base class
         """
-        self.left_cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B, sensorFps=self.fps)
-        self.right_cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C, sensorFps=self.fps)
+        self.cam = self.pipeline.create(dai.node.Camera).build()
+        self.video_queue = self.cam.requestOutput((self.res_x, self.res_y)).createOutputQueue(maxSize=1, blocking=False)
 
         if self.slam_enabled:
+            self.left_cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B, sensorFps=self.fps)
+            self.right_cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C, sensorFps=self.fps)
             self.cam_imu = self.pipeline.create(dai.node.IMU)
             self.visual_odom = self.pipeline.create(dai.node.BasaltVIO)
             self.slam = self.pipeline.create(dai.node.RTABMapSLAM)
             self.stereo = self.pipeline.create(dai.node.StereoDepth)
-            self.params = {"RGBD/CreateOccupancyGrid": "true",
-                            "Grid/3D": "true",
-                            "Rtabmap/SaveWMState": "true"}
+            self.slam.setDatabasePath(str("./building.db"))
+            self.params = {
+                        "RGBD/CreateOccupancyGrid": "true",
+                        "Grid/3D": "true",
+                        "Rtabmap/SaveWMState": "true",
+                        "RGBD/ProximityBySpace": "false",
+                    }
             self.slam.setParams(self.params)
 
             if self.rerun_enabled:
@@ -85,9 +94,9 @@ class Oakd(AbstractCamera):
                 self.slam.obstaclePCL.link(self.rerun_viewer.inputObstaclePCL)
                 self.slam.groundPCL.link(self.rerun_viewer.inputGroundPCL)
 
-            self.pipeline.start()
-            while self.pipeline.isRunning():
-                time.sleep(1)
+        self.pipeline.start()
+        while self.pipeline.isRunning() and self.slam_enabled:
+            time.sleep(0.1)
 
         return True
 
@@ -97,13 +106,20 @@ class Oakd(AbstractCamera):
         Returns:
             See base class
         """
-        pass
+        self.pipeline.stop()
+        del self.pipeline
 
-    def capture_frame(self) -> None: 
+        return True
+
+    def capture_frame(self) -> CameraFrame | None: 
         """Oakd implementation for the capture_frame abstract method
 
         Returns:
             See base class
         """
-        pass
+        video_in = self.video_queue.get()
 
+        assert isinstance(video_in, dai.ImgFrame)
+        camera_frame = CameraFrame(rgb=video_in.getCvFrame(), depth=None, rgb_down=None)       
+
+        return camera_frame

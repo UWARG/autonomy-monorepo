@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import time 
 import math 
 import numpy as np 
+import cv2
 
 @dataclass 
 class CameraFrame: 
@@ -13,7 +14,7 @@ class CameraFrame:
 
     rgb: np.ndarray
 
-    depth: np.ndarray | None 
+    depth: np.ndarray | None
 
     rgb_down: np.ndarray | None
 
