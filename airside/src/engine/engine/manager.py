@@ -12,7 +12,12 @@ import rclpy
 import rclpy.node
 from engine import blackboard_keys
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
-from engine.constants import RC_SWITCHES_ENABLED
+from engine.constants import (
+    LAPPING_DURATION_SEC,
+    RC_SWITCHES_ENABLED,
+    TICK_PERIOD_MS,
+    UNICODE_TREE_DEBUG,
+)
 from engine.behaviors.navigation.takeoff import Takeoff
 from engine.behaviors.rc.rc_switch import KillSwitch
 from engine.subtrees.lapping import create_lapping_subtree
@@ -20,12 +25,6 @@ from engine.subtrees.land import create_land_subtree
 from engine.subtrees.target_reconnaissance import (
     create_target_reconnaissance_subtree,
 )
-
-TICK_PERIOD_MS: float = 500.0  # Tree clock speed
-UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
-
-LAPPING_DURATION_SEC: float = 600.0  # Lapping deadline, from engine startup
-
 
 def create_root() -> py_trees.behaviour.Behaviour:
     """
@@ -92,7 +91,7 @@ def main(args: list[str] | None = None) -> None:
 
     tree = py_trees_ros.trees.BehaviourTree(
         root=root,
-        unicode_tree_debug=False,  # UNICODE_TREE_DEBUG
+        unicode_tree_debug=UNICODE_TREE_DEBUG,
     )
 
     try:

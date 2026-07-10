@@ -1,5 +1,13 @@
 """Tuning constants for the airside lapping behaviors."""
 
+# Behavior tree tick period, milliseconds.
+TICK_PERIOD_MS = 500.0
+# Whether or not to print the tree with Unicode characters on every tick.
+UNICODE_TREE_DEBUG = False
+
+# Lapping deadline, from engine startup, seconds.
+LAPPING_DURATION_SEC = 30.0
+
 # MAVLink message IDs the engine needs streamed from the FCU.
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
 MAVLINK_MSG_ID_RC_CHANNELS = 65
