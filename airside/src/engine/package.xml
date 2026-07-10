@@ -10,6 +10,7 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
+  <depend>ament_index_python</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
