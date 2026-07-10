@@ -89,7 +89,7 @@ def main(args: list[str] | None = None) -> None:
 
     tree = py_trees_ros.trees.BehaviourTree(
         root=root,
-        unicode_tree_debug=UNICODE_TREE_DEBUG,
+        unicode_tree_debug=False,  # UNICODE_TREE_DEBUG
     )
 
     try:
