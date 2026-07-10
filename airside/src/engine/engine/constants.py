@@ -44,5 +44,8 @@ RC_SWITCH_HIGH_PWM = 1700
 # Relative altitude (meters) to climb to on takeoff.
 TAKEOFF_ALTITUDE_M = 15.0
 
+# Relative altitude (meters) above which the drone counts as already flying.
+TAKEOFF_AIRBORNE_THRESHOLD_M = 2.0
+
 # Takeoff tolerance from target altitude.
 TAKEOFF_ALTITUDE_TOLERANCE_M = 1.0
