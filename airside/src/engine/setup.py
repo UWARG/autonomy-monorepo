@@ -15,6 +15,7 @@ setup(
         ),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
+        (f"share/{package_name}/config", ["config/waypoints.yaml"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

@@ -6,13 +6,13 @@ from typing import List
 from .enums import Colours, Direction
 
 
-@dataclass
+@dataclass(frozen=True)
 class Coordinate:
-    """Data class for a coordinate in 3D space."""
+    """A latitude/longitude coordinate with relative altitude."""
 
     lat: float
     lon: float
-    alt: float
+    alt: float  # Relative altitude in meters
 
     def __str__(self) -> str:
         return f"({self.lat}, {self.lon}, {self.alt})"
@@ -84,8 +84,8 @@ class MappedTarget:
         )
 
 @dataclass
-class AttitudeMessage:
-    """Data class for an attitude message."""
+class Attitude:
+    """Data class for attitude."""
     roll: float
     pitch: float
     yaw: float

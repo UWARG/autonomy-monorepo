@@ -12,7 +12,7 @@ from utils.src.message_encoder import (
     encode_log,
     encode_position,
 )
-from utils.src.types import AttitudeMessage, PositionMessage
+from utils.src.types import Attitude, PositionMessage
 
 import server
 
@@ -43,7 +43,7 @@ def emit(logger: logging.Logger, data: bytes) -> None:
 
 def poll_once(telemetry: Telemetry, logger: logging.Logger) -> None:
     """Check every data source once and broadcast/log whatever came back."""
-    attitude = AttitudeMessage(
+    attitude = Attitude(
         roll=0.0, pitch=0.0, yaw=0.0, rollspeed=0.0, pitchspeed=0.0, yawspeed=0.0
     )
     if telemetry.receive_attitude(attitude):

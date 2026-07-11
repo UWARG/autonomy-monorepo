@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import threading
 
-from utils.src.types import AttitudeMessage, PositionMessage
+from utils.src.types import Attitude, PositionMessage
 
 
 def _quaternion_to_euler(w: float, x: float, y: float, z: float) -> tuple[float, float, float]:
@@ -72,7 +72,7 @@ class Telemetry:
     def is_connected(self) -> bool:
         return self._state is not None and self._state.connected
 
-    def receive_attitude(self, attitude: AttitudeMessage) -> bool:
+    def receive_attitude(self, attitude: Attitude) -> bool:
         """Fill `attitude` from the latest local_position/pose orientation."""
         if self._pose is None:
             return False
