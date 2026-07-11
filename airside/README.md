@@ -11,6 +11,7 @@ airside/
 │   ├── Dockerfile
 │   └── airside_entrypoint.sh
 ├── src/
+│   ├── airside_interfaces/
 │   ├── engine/
 │   └── wrapper/
 └── warg.toml
@@ -61,6 +62,20 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
+| `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
+| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: `tcp://localhost:5760` or `udp://:14550@` |
+
+### Networking
+
+The container runs with `network_mode: host` to ensure direct access
+to the host's network interfaces. On Docker Desktop (macOS/Windows), enable
+host networking under Settings > Resources > Network, or switch to the 1:1
+`ports:` fallback commented in `compose.yaml` if needed.
+
+### Logs
+
+ROS logs (rclpy logger output and captured node stdout) are written to
+`airside/log/ros/` on the host via the `ROS_LOG_DIR` mount in `compose.yaml`.
 
 ## Developer Guide
 
@@ -132,6 +147,17 @@ blackboard = py_trees.blackboard.Client(name="init")
 blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
+
+### Map manager
+
+The `map_manager` node (in the `wrapper` package) is launched alongside the engine and records detected targets for post processing.
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/capture/target_location` | `airside_interfaces/Target` | subscribe | A detected target: `colour` (a `utils.src.enums.Colours` member name, e.g. `"RED"`) and `location` (`airside_interfaces/Coordinate`: `lat`, `lon`, `alt`) |
+| `/trigger_post_processing` | `std_msgs/Empty` | subscribe | Snapshots the current target log to a timestamped file for post processing |
+
+Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is wiped at every startup (one file per run). Each trigger copies it to `targets_<YYYY-MM-DDTHH-MM-SS>.jsonl` in the same directory.
 
 ### ROS integration inside a behavior
 

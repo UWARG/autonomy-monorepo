@@ -10,6 +10,7 @@ import py_trees
 import rclpy.node
 from engine import blackboard_keys
 from engine.constants import LAP_TIME_MARGIN
+from engine.ground_log import send_to_ground
 
 
 class EnoughTimeRemaining(py_trees.behaviour.Behaviour):
@@ -41,6 +42,7 @@ class EnoughTimeRemaining(py_trees.behaviour.Behaviour):
         self._node.get_logger().warning(
             f"{self.name}: lapping deadline passed, cutting lap short"
         )
+        send_to_ground(self._node, "ENG: deadline passed, cutting lap short")
         return py_trees.common.Status.FAILURE
 
 
@@ -86,6 +88,7 @@ class EnoughTimeForAnotherLap(py_trees.behaviour.Behaviour):
             self._node.get_logger().warning(
                 f"{self.name}: lapping deadline passed, not starting a lap"
             )
+            send_to_ground(self._node, "ENG: lapping done, deadline passed")
             return py_trees.common.Status.FAILURE
 
         required_s = estimated_lap_time_s * LAP_TIME_MARGIN
@@ -98,5 +101,8 @@ class EnoughTimeForAnotherLap(py_trees.behaviour.Behaviour):
         self._node.get_logger().warning(
             f"{self.name}: only {remaining_s:.1f}s left but a lap needs "
             f"~{required_s:.1f}s, not starting another lap"
+        )
+        send_to_ground(
+            self._node, "ENG: lapping done, no time for another lap"
         )
         return py_trees.common.Status.FAILURE

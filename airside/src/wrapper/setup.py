@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'camera = wrapper.camera_node:main',
+            'map_manager = wrapper.map_manager_node:main',
         ],
     },
 )

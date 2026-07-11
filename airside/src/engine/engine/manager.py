@@ -9,33 +9,57 @@ import sys
 import py_trees
 import py_trees_ros
 import rclpy
-import rclpy.node
-from engine import blackboard_keys
-from airside.src.engine.engine.subtrees.lapping import create_lapping_subtree
-
-TICK_PERIOD_MS: float = 500.0  # Tree clock speed
-UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
-
-LAPPING_DURATION_SEC: float = 600.0  # Lapping deadline, from engine startup
-
+from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.constants import (
+    RC_SWITCHES_ENABLED,
+    TICK_PERIOD_MS,
+    UNICODE_TREE_DEBUG,
+)
+from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.rc.rc_switch import KillSwitch
+from engine.subtrees.lapping import create_lapping_subtree
+from engine.subtrees.land import create_land_subtree
+from engine.subtrees.target_reconnaissance import (
+    create_target_reconnaissance_subtree,
+)
 
 def create_root() -> py_trees.behaviour.Behaviour:
-    root = py_trees.composites.Sequence(name="Root", memory=True)
-    root.add_child(create_lapping_subtree())
-    return root
-
-
-def set_lapping_deadline(node: rclpy.node.Node) -> None:
     """
-    Write the lapping deadline to the blackboard for the time checks.
+    Builds the full mission tree.
+
+    The KillSwitch decorator freezes the mission (without resetting its
+    progress) while the kill switch is high, so flipping the switch back
+    resumes the mission where it left off. The final MissionComplete node
+    holds the tree in RUNNING after landing.
+
+    ````
+    KillSwitch
+    └── Mission [Sequence]
+        ├── ConfigureStreamRates
+        ├── Takeoff
+        ├── Lapping
+        ├── TargetReconnaissance
+        ├── LandPhase
+        └── MissionComplete [Running]
+    ````
     """
 
-    blackboard = py_trees.blackboard.Client(name="MissionConfig")
-    blackboard.register_key(
-        key=blackboard_keys.LAPPING_END_TIME_SEC, access=py_trees.common.Access.WRITE
+    mission = py_trees.composites.Sequence(
+        name="Mission",
+        memory=True,
+        children=[
+            ConfigureStreamRates(),
+            Takeoff(),
+            create_lapping_subtree(),
+            create_target_reconnaissance_subtree(),
+            create_land_subtree(),
+            py_trees.behaviours.Running(name="MissionComplete"),
+        ],
     )
-    now_s = node.get_clock().now().nanoseconds / 1e9
-    blackboard.set(blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC)
+
+    if RC_SWITCHES_ENABLED:
+        return KillSwitch(child=mission)
+    return mission
 
 
 def main(args: list[str] | None = None) -> None:
@@ -60,8 +84,6 @@ def main(args: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         rclpy.try_shutdown()
         return
-
-    set_lapping_deadline(tree.node)
 
     tree.tick_tock(period_ms=TICK_PERIOD_MS)
 
