@@ -1,8 +1,19 @@
+"""
+Always checks for new messages and state of the drone using telemetry.py
+(direct MAVROS subscriptions) and encodes it using message_encoder.py.
+
+Then calls the server to broadcast it to clients (socket.js). Every
+broadcast message is also logged to a local .txt file (via the standard
+`logging` module), so telemetry is captured even when no ground-station is
+connected (e.g. no LTE in the field).
+"""
+
 from __future__ import annotations
 
 import logging
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 from telemetry import Telemetry
@@ -26,7 +37,9 @@ def setup_telemetry_logger() -> logging.Logger:
     path = LOG_DIR / f"telemetry_{time.strftime('%Y%m%d_%H%M%S')}.txt"
 
     handler = logging.FileHandler(path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(created)f\t%(message)s"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s.%(msecs)03d | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    )
 
     logger = logging.getLogger("telemetry")
     logger.setLevel(logging.INFO)
@@ -35,10 +48,19 @@ def setup_telemetry_logger() -> logging.Logger:
     return logger
 
 
-def emit(logger: logging.Logger, data: bytes) -> None:
+def _format_value(value: object) -> str:
+    if isinstance(value, float):
+        return f"{value:.3f}"
+    if isinstance(value, str):
+        return f'"{value}"'
+    return str(value)
+
+
+def emit(logger: logging.Logger, msg_type: str, payload: dict, data: bytes) -> None:
     """Broadcast a message to connected clients and log it to disk."""
     server.broadcast(data)
-    logger.info(data.decode())
+    fields = " ".join(f"{key}={_format_value(value)}" for key, value in payload.items())
+    logger.info(f"{msg_type.upper():<9} {fields}")
 
 
 def poll_once(telemetry: Telemetry, logger: logging.Logger) -> None:
@@ -47,17 +69,19 @@ def poll_once(telemetry: Telemetry, logger: logging.Logger) -> None:
         roll=0.0, pitch=0.0, yaw=0.0, rollspeed=0.0, pitchspeed=0.0, yawspeed=0.0
     )
     if telemetry.receive_attitude(attitude):
-        emit(logger, encode_attitude(attitude))
+        emit(logger, "attitude", asdict(attitude), encode_attitude(attitude))
 
     position = PositionMessage(lat=0.0, lon=0.0, alt=0.0)
     if telemetry.receive_position(position):
-        emit(logger, encode_position(position))
+        emit(logger, "position", asdict(position), encode_position(position))
 
     text = telemetry.receive_message()
     if text:
-        emit(logger, encode_log(text))
+        emit(logger, "log", {"message": text}, encode_log(text))
 
-    emit(logger, encode_health(telemetry.is_connected()))
+    # Broadcast only, not logged - health fires every tick and would swamp
+    # the flight log with a low-signal line; the frontend still gets it live.
+    server.broadcast(encode_health(telemetry.is_connected()))
 
 
 def stream_forever(telemetry: Telemetry, logger: logging.Logger) -> None:
