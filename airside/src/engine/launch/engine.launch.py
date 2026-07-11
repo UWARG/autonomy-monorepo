@@ -54,6 +54,12 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
             ),
             Node(
+                package="wrapper",
+                executable="map_manager",
+                name="map_manager_node",
+                output="screen",
+            ),
+            Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",

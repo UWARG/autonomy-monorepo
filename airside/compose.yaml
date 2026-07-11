@@ -19,6 +19,7 @@ services:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
+      - ./data:/ros_ws/data
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
     command: ros2 launch engine engine.launch.py
