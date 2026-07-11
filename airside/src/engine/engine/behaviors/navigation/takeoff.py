@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import py_trees
 import rclpy.node
-from engine.constants import TAKEOFF_ALTITUDE_M, TAKEOFF_ALTITUDE_TOLERANCE_M
+from engine.constants import (
+    TAKEOFF_AIRBORNE_THRESHOLD_M,
+    TAKEOFF_ALTITUDE_M,
+    TAKEOFF_ALTITUDE_TOLERANCE_M,
+)
+from engine.ground_log import send_to_ground
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandTOL
 from rclpy.qos import qos_profile_sensor_data
@@ -18,6 +23,10 @@ class Takeoff(py_trees.behaviour.Behaviour):
     the relative altitude is within ``TAKEOFF_ALTITUDE_TOLERANCE_M``
     of the target, then SUCCESS. Returns FAILURE if the takeoff
     command is rejected.
+
+    If the drone is already flying (armed and above
+    ``TAKEOFF_AIRBORNE_THRESHOLD_M``), succeeds immediately without
+    commanding a takeoff.
     """
 
     STATE_TOPIC = "mavros/state"
@@ -71,6 +80,18 @@ class Takeoff(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.RUNNING
 
+        if (
+            not self._takeoff_accepted
+            and self._latest_state.armed
+            and self._latest_rel_alt_m >= TAKEOFF_AIRBORNE_THRESHOLD_M
+        ):
+            self._node.get_logger().info(
+                f"{self.name}: already flying at {self._latest_rel_alt_m:.1f}m, "
+                "skipping takeoff"
+            )
+            send_to_ground(self._node, "ENG: already airborne, skipping takeoff")
+            return py_trees.common.Status.SUCCESS
+
         if self._latest_state.mode != self.GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
@@ -95,6 +116,10 @@ class Takeoff(py_trees.behaviour.Behaviour):
         ):
             self._node.get_logger().info(
                 f"{self.name}: reached {self._latest_rel_alt_m:.1f}m"
+            )
+            send_to_ground(
+                self._node,
+                f"ENG: takeoff complete at {self._latest_rel_alt_m:.1f}m",
             )
             return py_trees.common.Status.SUCCESS
 
@@ -122,6 +147,9 @@ class Takeoff(py_trees.behaviour.Behaviour):
             self._node.get_logger().info(
                 f"{self.name}: commanding takeoff to {TAKEOFF_ALTITUDE_M:.1f}m"
             )
+            send_to_ground(
+                self._node, f"ENG: takeoff to {TAKEOFF_ALTITUDE_M:.0f}m commanded"
+            )
             return py_trees.common.Status.RUNNING
 
         if not self._takeoff_future.done():
@@ -133,6 +161,7 @@ class Takeoff(py_trees.behaviour.Behaviour):
             self._node.get_logger().error(
                 f"{self.name}: takeoff command rejected: {response}"
             )
+            send_to_ground(self._node, "ENG: takeoff rejected")
             return py_trees.common.Status.FAILURE
 
         self._takeoff_accepted = True

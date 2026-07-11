@@ -7,24 +7,20 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
+from engine.ground_log import send_to_ground
 
 
-class RecordLapStart(py_trees.behaviour.Behaviour):
+class ResetLapWaypoints(py_trees.behaviour.Behaviour):
     """
-    Write the current ROS clock time to ``latest_lap_start_time_sec``
-    and rewinds ``waypoint_index`` to 0.
+    Rewinds ``waypoint_index`` to 0 at the start of a lap.
 
     Always returns SUCCESS.
     """
 
-    def __init__(self, name: str = "RecordLapStart") -> None:
+    def __init__(self, name: str = "ResetLapWaypoints") -> None:
         super().__init__(name=name)
 
         self.blackboard = self.attach_blackboard_client(name=self.name)
-        self.blackboard.register_key(
-            key=blackboard_keys.LATEST_LAP_START_TIME_SEC,
-            access=py_trees.common.Access.WRITE,
-        )
         self.blackboard.register_key(
             key=blackboard_keys.WAYPOINT_INDEX, access=py_trees.common.Access.WRITE
         )
@@ -33,11 +29,50 @@ class RecordLapStart(py_trees.behaviour.Behaviour):
         self._node = kwargs["node"]
 
     def update(self) -> py_trees.common.Status:
+        self.blackboard.set(blackboard_keys.WAYPOINT_INDEX, 0)
+        return py_trees.common.Status.SUCCESS
+
+
+class StartLapTimer(py_trees.behaviour.Behaviour):
+    """
+    Starts the lap timer once the drone reaches the lap's first waypoint.
+
+    Always returns SUCCESS.
+    """
+
+    def __init__(self, name: str = "StartLapTimer") -> None:
+        super().__init__(name=name)
+
+        self.blackboard = self.attach_blackboard_client(name=self.name)
+        self.blackboard.register_key(
+            key=blackboard_keys.WAYPOINT_INDEX, access=py_trees.common.Access.READ
+        )
+        self.blackboard.register_key(
+            key=blackboard_keys.LATEST_LAP_START_TIME_SEC,
+            access=py_trees.common.Access.WRITE,
+        )
+
+    def setup(self, **kwargs: rclpy.node.Node) -> None:
+        self._node = kwargs["node"]
+
+    def update(self) -> py_trees.common.Status:
+        try:
+            index = self.blackboard.get(blackboard_keys.WAYPOINT_INDEX)
+        except KeyError:
+            self._node.get_logger().warning(
+                f"{self.name}: no waypoint index on the blackboard"
+            )
+            return py_trees.common.Status.SUCCESS
+
+        if index != 1:
+            return py_trees.common.Status.SUCCESS
+
         now_s = self._node.get_clock().now().nanoseconds / 1e9
         self.blackboard.set(blackboard_keys.LATEST_LAP_START_TIME_SEC, now_s)
-        self.blackboard.set(blackboard_keys.WAYPOINT_INDEX, 0)
-        self._node.get_logger().info(f"{self.name}: lap started at t={now_s:.1f}s")
-
+        self._node.get_logger().info(
+            f"{self.name}: first waypoint reached, lap started at t={now_s:.1f}s"
+        )
+        send_to_ground(self._node, "ENG: lap started")
         return py_trees.common.Status.SUCCESS
 
 
@@ -45,6 +80,8 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
     """
     Checks if the lap was completed and updates ``estimated_lap_time_sec``
     from the lap that just finished.
+
+    The first completed lap is not used as an estimate.
 
     Always returns SUCCESS.
     """
@@ -70,6 +107,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
+        self._completed_laps = 0
 
     def update(self) -> py_trees.common.Status:
         try:
@@ -88,6 +126,20 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             self._node.get_logger().info(
                 f"{self.name}: lap aborted at waypoint {index}/{len(waypoints)} "
                 f"after {lap_time_s:.1f}s, keeping previous lap-time estimate"
+            )
+            send_to_ground(
+                self._node, f"ENG: lap aborted at wp {index}/{len(waypoints)}"
+            )
+            return py_trees.common.Status.SUCCESS
+
+        self._completed_laps += 1
+        send_to_ground(
+            self._node,
+            f"ENG: lap {self._completed_laps} done in {lap_time_s:.0f}s",
+        )
+        if self._completed_laps == 1:
+            self._node.get_logger().info(
+                f"{self.name}: first lap completed in {lap_time_s:.1f}s"
             )
             return py_trees.common.Status.SUCCESS
 

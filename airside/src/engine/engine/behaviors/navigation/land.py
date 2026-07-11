@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import py_trees
 import rclpy.node
+from engine.ground_log import send_to_ground
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandTOL
 
@@ -56,6 +57,7 @@ class Land(py_trees.behaviour.Behaviour):
 
         if not self._latest_state.armed:
             self._node.get_logger().info(f"{self.name}: landed and disarmed")
+            send_to_ground(self._node, "ENG: landed and disarmed")
             return py_trees.common.Status.SUCCESS
 
         self._node.get_logger().info(
@@ -77,6 +79,7 @@ class Land(py_trees.behaviour.Behaviour):
 
             self._land_future = self._land_client.call_async(CommandTOL.Request())
             self._node.get_logger().info(f"{self.name}: commanding land")
+            send_to_ground(self._node, "ENG: landing")
             return py_trees.common.Status.RUNNING
 
         if not self._land_future.done():

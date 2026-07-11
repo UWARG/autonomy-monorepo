@@ -11,19 +11,20 @@ import py_trees_ros
 import rclpy
 import rclpy.node
 from engine import blackboard_keys
-from airside.src.engine.engine.behaviors.navigation.takeoff import Takeoff
-from airside.src.engine.engine.behaviors.rc.rc_switch import KillSwitch
-from airside.src.engine.engine.subtrees.lapping import create_lapping_subtree
-from airside.src.engine.engine.subtrees.land import create_land_subtree
-from airside.src.engine.engine.subtrees.target_reconnaissance import (
+from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.constants import (
+    LAPPING_DURATION_SEC,
+    RC_SWITCHES_ENABLED,
+    TICK_PERIOD_MS,
+    UNICODE_TREE_DEBUG,
+)
+from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.rc.rc_switch import KillSwitch
+from engine.subtrees.lapping import create_lapping_subtree
+from engine.subtrees.land import create_land_subtree
+from engine.subtrees.target_reconnaissance import (
     create_target_reconnaissance_subtree,
 )
-
-TICK_PERIOD_MS: float = 500.0  # Tree clock speed
-UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
-
-LAPPING_DURATION_SEC: float = 600.0  # Lapping deadline, from engine startup
-
 
 def create_root() -> py_trees.behaviour.Behaviour:
     """
@@ -36,6 +37,7 @@ def create_root() -> py_trees.behaviour.Behaviour:
     Root [Selector]
     ├── KillSwitch
     └── Mission [Sequence]
+        ├── ConfigureStreamRates
         ├── Takeoff
         ├── Lapping
         ├── TargetReconnaissance
@@ -48,6 +50,7 @@ def create_root() -> py_trees.behaviour.Behaviour:
         name="Mission",
         memory=True,
         children=[
+            ConfigureStreamRates(),
             Takeoff(),
             create_lapping_subtree(),
             create_target_reconnaissance_subtree(),
@@ -56,27 +59,16 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
+    children: list[py_trees.behaviour.Behaviour] = []
+    if RC_SWITCHES_ENABLED:
+        children.append(KillSwitch())
+    children.append(mission)
+
     return py_trees.composites.Selector(
         name="Root",
         memory=False,
-        children=[
-            KillSwitch(),
-            mission,
-        ],
+        children=children,
     )
-
-
-def set_lapping_deadline(node: rclpy.node.Node) -> None:
-    """
-    Write the lapping deadline to the blackboard for the time checks.
-    """
-
-    blackboard = py_trees.blackboard.Client(name="MissionConfig")
-    blackboard.register_key(
-        key=blackboard_keys.LAPPING_END_TIME_SEC, access=py_trees.common.Access.WRITE
-    )
-    now_s = node.get_clock().now().nanoseconds / 1e9
-    blackboard.set(blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC)
 
 
 def set_lapping_deadline(node: rclpy.node.Node) -> None:

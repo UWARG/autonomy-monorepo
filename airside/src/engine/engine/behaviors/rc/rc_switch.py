@@ -57,6 +57,9 @@ class KillSwitch(RCSwitchMonitor):
 
     def update(self) -> py_trees.common.Status:
         if self._switch_high:
+            self._node.get_logger().warning(
+                f"{self.name}: RC channel {self._channel} flipped, pausing mission"
+            )
             return py_trees.common.Status.RUNNING
         else:
             return py_trees.common.Status.FAILURE
