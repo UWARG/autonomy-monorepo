@@ -20,8 +20,5 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
-[tool.hatch.build.targets.wheel.sources]
-"." = "mav_comms"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]

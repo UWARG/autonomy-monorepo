@@ -138,7 +138,6 @@ dependencies = [
     { name = "flask-sock" },
     { name = "msgspec", version = "0.20.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "msgspec", version = "0.21.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "utils" },
 ]
 
 [package.optional-dependencies]
@@ -154,7 +153,6 @@ requires-dist = [
     { name = "honcho", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "msgspec", specifier = ">=0.18.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "utils", directory = "../utils" },
 ]
 provides-extras = ["dev"]
 
@@ -438,15 +436,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/b0/d4/bfa032f961103eba9
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/59/0782e51887ac6b07ffd1570e0364cf901ebc36345fea669969d2084baebb/simple_websocket-1.1.0-py3-none-any.whl", hash = "sha256:4af6069630a38ed6c561010f0e11a5bc0d4ca569b36306eb257cd9a192497c8c", size = 13842, upload-time = "2024-10-10T22:39:29.645Z" },
 ]
-
-[[package]]
-name = "utils"
-version = "0.1.0"
-source = { directory = "../utils" }
-
-[package.metadata]
-requires-dist = [{ name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" }]
-provides-extras = ["dev"]
 
 [[package]]
 name = "werkzeug"
