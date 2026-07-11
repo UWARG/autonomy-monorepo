@@ -27,12 +27,13 @@ def create_root() -> py_trees.behaviour.Behaviour:
     """
     Builds the full mission tree.
 
-    The final MissionComplete node holds the tree in
-    RUNNING after landing.
+    The KillSwitch decorator freezes the mission (without resetting its
+    progress) while the kill switch is high, so flipping the switch back
+    resumes the mission where it left off. The final MissionComplete node
+    holds the tree in RUNNING after landing.
 
     ````
-    Root [Selector]
-    ├── KillSwitch
+    KillSwitch
     └── Mission [Sequence]
         ├── ConfigureStreamRates
         ├── Takeoff
@@ -56,16 +57,9 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
-    children: list[py_trees.behaviour.Behaviour] = []
     if RC_SWITCHES_ENABLED:
-        children.append(KillSwitch())
-    children.append(mission)
-
-    return py_trees.composites.Selector(
-        name="Root",
-        memory=False,
-        children=children,
-    )
+        return KillSwitch(child=mission)
+    return mission
 
 
 def main(args: list[str] | None = None) -> None:
