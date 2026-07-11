@@ -1,3 +1,9 @@
+# Runs the airside stack against an ArduPilot SITL instance (e.g. Mission
+# Planner's built-in simulation)
+#
+# Usage (from airside/):
+#   docker compose -f compose.sitl.yaml up
+#   SITL_HOST=<sitl-machine-ip> docker compose -f compose.sitl.yaml up
 services:
   airside:
     build:
@@ -5,22 +11,12 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
-    # ports:
-      # - "14550:14550/udp"
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      FCU_URL: ${FCU_URL:-serial:///dev/ttyAMA0:115200}
+      FCU_URL: tcp://${SITL_HOST:-10.183.10.187}:5762
       ROS_LOG_DIR: /ros_ws/log/ros
-    devices:
-      - /dev/serial0:/dev/serial0
-      - /dev/ttyAMA0:/dev/ttyAMA0
-      - /dev/video0:/dev/video0
     volumes:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
-      - ./data:/ros_ws/data
-      - /dev/bus/usb:/dev/bus/usb
-    privileged: true
     command: ros2 launch engine engine.launch.py
-    restart: unless-stopped
