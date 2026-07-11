@@ -3,12 +3,13 @@ import cv2
 import os
 import platform
 
+# For da linux devs
 if platform.system() == "Linux":
     os.environ["QT_QPA_PLATFORM"] = "xcb"
     os.environ['QT_QPA_FONTDIR'] = '/usr/share/fonts/open-sans/'
 
 if __name__ == "__main__":
-    cam = Oakd(640, 400, 20, slam_enabled=True, rerun_enabled=True)
+    cam = Oakd(640, 400, 10, slam_enabled=True, rerun_enabled=True)
     cam.start()
 
     # cam = Oakd(640, 400, 20)

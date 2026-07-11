@@ -2,7 +2,8 @@ from src.abstract_camera import AbstractCamera
 from rerun_node import RerunNode
 import depthai as dai
 import time
-import cv2
+import numpy as np
+from utils import quat_rotate
 
 from src.frame import CameraFrame
 
@@ -18,7 +19,6 @@ class Oakd(AbstractCamera):
                  fps: int,
                  *, # Enforces use of param=
                  slam_enabled: bool = False,
-                 inference_enabled: bool = False,
                  rerun_enabled: bool = False):
         """Initializing the oakd camera class 
         
@@ -34,7 +34,6 @@ class Oakd(AbstractCamera):
         super().__init__(res_x, res_y)
         self.fps = fps
         self.slam_enabled = slam_enabled
-        self.inference_enabled = inference_enabled
         self.rerun_enabled = rerun_enabled
         self.pipeline = dai.Pipeline()
 
@@ -44,7 +43,7 @@ class Oakd(AbstractCamera):
         Returns:
             See base class
         """
-        self.cam = self.pipeline.create(dai.node.Camera).build()
+        self.cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
         self.video_queue = self.cam.requestOutput((self.res_x, self.res_y)).createOutputQueue(maxSize=1, blocking=False)
 
         if self.slam_enabled:
@@ -53,7 +52,7 @@ class Oakd(AbstractCamera):
             self.cam_imu = self.pipeline.create(dai.node.IMU)
             self.visual_odom = self.pipeline.create(dai.node.BasaltVIO)
             self.slam = self.pipeline.create(dai.node.RTABMapSLAM)
-            self.stereo = self.pipeline.create(dai.node.StereoDepth)
+            self.depth = self.pipeline.create(dai.node.StereoDepth, presetMode=dai.node.StereoDepth.PresetMode.FAST_DENSITY)
             self.slam.setDatabasePath(str("./building.db"))
             self.params = {
                         "RGBD/CreateOccupancyGrid": "true",
@@ -70,23 +69,41 @@ class Oakd(AbstractCamera):
             self.cam_imu.setBatchReportThreshold(1)
             self.cam_imu.setMaxBatchReports(10)
 
-            self.stereo.setExtendedDisparity(False)
-            self.stereo.setLeftRightCheck(True)
-            self.stereo.setSubpixel(True)
-            self.stereo.setRectifyEdgeFillColor(0)
-            self.stereo.enableDistortionCorrection(True)
-            self.stereo.initialConfig.setLeftRightCheckThreshold(10)
-            self.stereo.setDepthAlign(dai.CameraBoardSocket.CAM_B)
+            self.depth.setExtendedDisparity(False)
+            self.depth.setLeftRightCheck(True)
+            self.depth.setSubpixel(True)
+            self.depth.setRectifyEdgeFillColor(0)
+            self.depth.enableDistortionCorrection(True)
+            self.depth.initialConfig.setLeftRightCheckThreshold(10)
+            self.depth.setDepthAlign(dai.CameraBoardSocket.CAM_B)
             
-            self.left_cam.requestOutput((self.res_x, self.res_y)).link(self.stereo.left)
-            self.right_cam.requestOutput((self.res_x, self.res_y)).link(self.stereo.right)
-            self.stereo.syncedLeft.link(self.visual_odom.left)
-            self.stereo.syncedRight.link(self.visual_odom.right)
-            self.stereo.depth.link(self.slam.depth)
-            self.stereo.rectifiedLeft.link(self.slam.rect)
+            self.left_cam.requestOutput((self.res_x, self.res_y)).link(self.depth.left)
+            self.right_cam.requestOutput((self.res_x, self.res_y)).link(self.depth.right)
+            self.depth.syncedLeft.link(self.visual_odom.left)
+            self.depth.syncedRight.link(self.visual_odom.right)
+            self.depth.depth.link(self.slam.depth)
+            self.depth.rectifiedLeft.link(self.slam.rect)
             self.cam_imu.out.link(self.visual_odom.imu)
 
             self.visual_odom.transform.link(self.slam.odom)
+
+            self.required_cam_capabilties = dai.ImgFrameCapability()
+            self.required_cam_capabilties.fps.fixed(self.fps)
+            self.required_cam_capabilties.enableUndistortion = True
+
+            # TODO: replace model
+            self.det_nn = self.pipeline.create(dai.node.DetectionNetwork).build(self.cam, "yolov6-nano", self.required_cam_capabilties)
+
+            self.spatial_calc = self.pipeline.create(dai.node.SpatialLocationCalculator)
+            self.spatial_calc.initialConfig.setCalculateSpatialKeypoints(True)
+            self.det_nn.out.link(self.spatial_calc.inputDetections)
+
+            self.det_nn.passthrough.link(self.depth.inputAlignTo)
+            self.depth.depth.link(self.spatial_calc.inputDepth)
+
+            self.spatial_output_queue = self.spatial_calc.outputDetections.createOutputQueue(maxSize=1, blocking=False)
+            self.slam_transforms = self.slam.transform.createOutputQueue(maxSize=1, blocking=False)
+
             if self.rerun_enabled:
                 self.slam.transform.link(self.rerun_viewer.inputTrans)
                 self.slam.passthroughRect.link(self.rerun_viewer.inputImg)
@@ -96,6 +113,32 @@ class Oakd(AbstractCamera):
 
         self.pipeline.start()
         while self.pipeline.isRunning() and self.slam_enabled:
+            spatialData = self.spatial_output_queue.get()
+            transData = self.slam_transforms.get()
+
+            assert isinstance(spatialData, dai.SpatialImgDetections)
+
+            cached_t_world = None
+            q = None
+
+            if isinstance(transData, dai.TransformData):
+                t = transData.getTranslation()
+                q = transData.getQuaternion()
+                cached_t_world = np.array([t.x, t.y, t.z])
+
+            for (i, det) in enumerate(spatialData.detections):
+                if det.label != 39:
+                    continue
+                depthCoordinate = det.spatialCoordinates
+                text = f"X: {depthCoordinate.x / 1000} m, Y: {depthCoordinate.y / 1000} m, Z: {depthCoordinate.z / 1000} m"
+                print(f"====={det.label}=====")
+                print(text)
+
+                if cached_t_world is not None and q is not None:
+                    cam_flu = np.array([depthCoordinate.z / 1000, -depthCoordinate.x / 1000.0, -depthCoordinate.y / 1000.0])
+                    world_pos = quat_rotate(q.qx, q.qy, q.qz, q.qw, cam_flu) + cached_t_world
+                    print(f"X: {world_pos[0]}, Y: {world_pos[1]}, Z: {world_pos[2]}")
+
             time.sleep(0.1)
 
         return True
