@@ -23,4 +23,4 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
     command: ros2 launch engine engine.launch.py
-    restart: unless-stopped
+    restart: on-failure
