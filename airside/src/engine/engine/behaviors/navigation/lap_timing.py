@@ -7,7 +7,41 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
+from engine.constants import LAPPING_DURATION_SEC
 from engine.ground_log import send_to_ground
+
+
+class SetLappingDeadline(py_trees.behaviour.Behaviour):
+    """
+    Writes the lapping deadline to the blackboard when lapping begins.
+
+        Always returns SUCCESS.
+    """
+
+    def __init__(self, name: str = "SetLappingDeadline") -> None:
+        super().__init__(name=name)
+
+        self.blackboard = self.attach_blackboard_client(name=self.name)
+        self.blackboard.register_key(
+            key=blackboard_keys.LAPPING_END_TIME_SEC,
+            access=py_trees.common.Access.WRITE,
+        )
+
+    def setup(self, **kwargs: rclpy.node.Node) -> None:
+        self._node = kwargs["node"]
+
+    def update(self) -> py_trees.common.Status:
+        now_s = self._node.get_clock().now().nanoseconds / 1e9
+        self.blackboard.set(
+            blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC
+        )
+        self._node.get_logger().info(
+            f"{self.name}: lapping deadline set to t={now_s + LAPPING_DURATION_SEC:.1f}s"
+        )
+        send_to_ground(
+            self._node, f"ENG: lapping phase, {LAPPING_DURATION_SEC:.0f}s window"
+        )
+        return py_trees.common.Status.SUCCESS
 
 
 class ResetLapWaypoints(py_trees.behaviour.Behaviour):

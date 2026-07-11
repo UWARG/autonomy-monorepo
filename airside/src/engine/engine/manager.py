@@ -9,11 +9,8 @@ import sys
 import py_trees
 import py_trees_ros
 import rclpy
-import rclpy.node
-from engine import blackboard_keys
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
 from engine.constants import (
-    LAPPING_DURATION_SEC,
     RC_SWITCHES_ENABLED,
     TICK_PERIOD_MS,
     UNICODE_TREE_DEBUG,
@@ -71,19 +68,6 @@ def create_root() -> py_trees.behaviour.Behaviour:
     )
 
 
-def set_lapping_deadline(node: rclpy.node.Node) -> None:
-    """
-    Write the lapping deadline to the blackboard for the time checks.
-    """
-
-    blackboard = py_trees.blackboard.Client(name="MissionConfig")
-    blackboard.register_key(
-        key=blackboard_keys.LAPPING_END_TIME_SEC, access=py_trees.common.Access.WRITE
-    )
-    now_s = node.get_clock().now().nanoseconds / 1e9
-    blackboard.set(blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC)
-
-
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
 
@@ -106,8 +90,6 @@ def main(args: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         rclpy.try_shutdown()
         return
-
-    set_lapping_deadline(tree.node)
 
     tree.tick_tock(period_ms=TICK_PERIOD_MS)
 
