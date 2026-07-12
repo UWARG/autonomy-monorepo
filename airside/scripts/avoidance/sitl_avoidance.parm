@@ -1,0 +1,28 @@
+# Issue 96 -- ArduPilot-native obstacle avoidance demo parameters.
+# Loaded on top of Tools/autotest/default_params/copter.parm at SITL start
+# (PRX1_TYPE and OA_TYPE are reboot-required, so they must be boot defaults).
+
+# Proximity source: MAVLink OBSTACLE_DISTANCE from the companion computer.
+PRX1_TYPE 2
+
+# Avoidance sources bitmask: 1=fence, 2=proximity sensor, 4=beacon fence.
+AVOID_ENABLE 7
+
+# Object-avoidance path planning: 1 = BendyRuler (works on sensed obstacles
+# in AUTO / GUIDED / RTL; Dijkstra=2 only handles pre-declared fences).
+OA_TYPE 1
+
+# Keep at least this many metres from sensed obstacles when path planning.
+OA_MARGIN_MAX 3
+
+# Allow arming + throttleless takeoff in AUTO so the mission scenario can run.
+AUTO_OPTIONS 3
+
+# SERIAL0 telemetry stream rates (bare SITL defaults are 0 -> no telemetry).
+# The demo script also requests streams at runtime; these are belt-and-braces.
+SR0_EXT_STAT 5
+SR0_EXTRA1 10
+SR0_EXTRA2 10
+SR0_EXTRA3 5
+SR0_POSITION 10
+SR0_RAW_SENS 5
