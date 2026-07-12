@@ -106,7 +106,7 @@ export default function AttitudeWidget({
   attitude?: AttitudeMessage;
 }) {
   return (
-    <section className="widget flex h-full min-h-[120px] flex-col p-4"
+    <section className="widget flex h-full min-h-[120px] flex-col overflow-hidden p-4"
       style={{
         ['--att-sky' as string]: '#BFE0F5',
         ['--att-ground' as string]: '#6E5744',
@@ -119,7 +119,7 @@ export default function AttitudeWidget({
         {!attitude && <span className="pill bg-edge text-ink-3">NO DATA</span>}
       </header>
 
-      <div className="mx-auto my-3 aspect-square w-full max-w-[220px] flex-1">
+      <div className="mx-auto my-3 aspect-square w-full min-h-0 max-w-[220px] flex-1">
         <Horizon attitude={attitude} />
       </div>
 

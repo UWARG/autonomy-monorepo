@@ -1,29 +1,88 @@
 /**
- * Payload shapes broadcast over the websocket (see socket.js).
- * Message envelope: { "type": "<key>", "payload": { ... } }
+ * Wire payloads mirror utils/src/messages.py. Envelope: { "type": "<tag>", "payload": {...} }.
  */
-
 
 export type ConnectionStatus = 'active' | 'degraded' | 'lost';
 
-/** payload for { "type": "connection" } */
+/**
+ * payload for { "type": "connection" }
+ */
 export interface ConnectionMessage {
   status: ConnectionStatus;
   protocol: string;
   transport: string;
   heartbeatHz: number; //Hz
-  latencyMs: number; // ms
-  packetLossPct: number; //0-100
-  /** inbound messages per second */
-  msgRate: number;
+  latencyMs: number; //ms
+  packetLossPct: number; // 0-100
+  msgRate: number; //  messages per second
 }
 
 /**
  * payload for { "type": "attitude" }
- * Angles are radians, but converted to deg for display
+ * Mirrors AttitudePayload in utils/src/messages.py (the wire contract).
  */
 export interface AttitudeMessage {
+  /** radians;  */
   roll: number;
   pitch: number;
   yaw: number;
+  rollspeed: number;
+  pitchspeed: number;
+  yawspeed: number; 
+}
+
+/**
+ * payload for { "type": "camera" }
+ *
+ * PROVISIONAL
+ */
+export interface CameraMessage {
+  online: boolean;
+  width?: number; //px
+  height?: number; //px
+  encoding?: string;
+  fps?: number;
+  latencyMs?: number; //ms
+}
+
+/**
+ * payload for { "type": "position" } — the drone's global position.
+ * Mirrors PositionPayload in utils/src/messages.py.
+ */
+export interface PositionMessage {
+  /** degrees */
+  lat: number;
+  lon: number;
+  alt: number; // meter
+}
+
+/**
+ * payload for { "type": "target" }
+ *
+ * PROVISIONAL 
+ */
+export interface TargetMessage {
+  /** degrees */
+  lat: number; 
+  lon: number;
+  label?: string; 
+  tracking?: boolean;
+}
+
+/**
+ * payload for { "type": "status" } — mission/script state.
+ *
+ */
+export interface StatusMessage {
+  task: string;
+  state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
+  text: string;
+}
+
+/**
+ * payload for { "type": "log" }
+ *
+ */
+export interface LogMessage {
+  message: string;
 }
