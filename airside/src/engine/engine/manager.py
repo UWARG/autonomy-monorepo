@@ -10,18 +10,19 @@ import py_trees
 import py_trees_ros
 import rclpy
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.rc.rc_switch import KillSwitch
 from engine.constants import (
     RC_SWITCHES_ENABLED,
     TICK_PERIOD_MS,
     UNICODE_TREE_DEBUG,
 )
-from engine.behaviors.navigation.takeoff import Takeoff
-from engine.behaviors.rc.rc_switch import KillSwitch
-from engine.subtrees.lapping import create_lapping_subtree
 from engine.subtrees.land import create_land_subtree
+from engine.subtrees.lapping import create_lapping_subtree
 from engine.subtrees.target_reconnaissance import (
     create_target_reconnaissance_subtree,
 )
+
 
 def create_root() -> py_trees.behaviour.Behaviour:
     """
@@ -90,7 +91,7 @@ def main(args: list[str] | None = None) -> None:
     try:
         if tree.node is not None:
             rclpy.spin(tree.node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  #type: ignore[attr-defined]
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  # type: ignore[attr-defined]
         pass
     finally:
         tree.shutdown()

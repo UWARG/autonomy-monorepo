@@ -5,8 +5,9 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    # Fallback if host networking is unavailable:
     # ports:
-      # - "14550:14550/udp"
+    #   - "14550:14550/udp"
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/ttyAMA0:115200}

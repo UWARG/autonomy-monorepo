@@ -12,9 +12,9 @@ import argparse
 import sys
 import xml.etree.ElementTree as ET
 
-KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
+_KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 
-HEADER = """\
+_HEADER = """\
 # Lap waypoints. `home` orients the waypoints
 # and is the returning location at the end
 # of the mission.\
@@ -37,11 +37,11 @@ def extract(root):
     polygon_points = None
     point_placemarks = []
 
-    for placemark in root.iter("{http://www.opengis.net/kml/2.2}Placemark"):
-        name_el = placemark.find("kml:name", KML_NS)
+    for placemark in root.iter(f"{{{_KML_NS['kml']}}}Placemark"):
+        name_el = placemark.find("kml:name", _KML_NS)
         name = (name_el.text or "").strip() if name_el is not None else ""
 
-        point_coords = placemark.find("kml:Point/kml:coordinates", KML_NS)
+        point_coords = placemark.find("kml:Point/kml:coordinates", _KML_NS)
         if point_coords is not None:
             point = parse_coordinates(point_coords.text)[0]
             if name.lower() == "home":
@@ -52,7 +52,7 @@ def extract(root):
 
         ring_coords = placemark.find(
             "kml:Polygon/kml:outerBoundaryIs/kml:LinearRing/kml:coordinates",
-            KML_NS,
+            _KML_NS,
         )
         if ring_coords is not None and polygon_points is None:
             ring = parse_coordinates(ring_coords.text)
@@ -65,7 +65,7 @@ def extract(root):
 
 
 def format_yaml(home, waypoints, alt):
-    lines = [HEADER]
+    lines = [_HEADER]
     lines.append("home:")
     lines.append(f"  lat: {home[0]}")
     lines.append(f"  lon: {home[1]}")

@@ -1,4 +1,7 @@
-"""Tuning constants for the airside lapping behaviors."""
+"""Tuning constants for the airside engine behaviors."""
+
+# ArduPilot flight mode in which the engine is allowed to command the drone.
+GUIDED_MODE = "GUIDED"
 
 # Behavior tree tick period, milliseconds.
 TICK_PERIOD_MS = 500.0

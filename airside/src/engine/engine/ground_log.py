@@ -8,10 +8,10 @@ import rclpy.node
 from mavros_msgs.msg import StatusText
 from rclpy.publisher import Publisher
 
-STATUSTEXT_TOPIC = "mavros/statustext/send"
+_STATUSTEXT_TOPIC = "mavros/statustext/send"
 
 # A MAVLink STATUSTEXT message carries at most 50 characters.
-MAX_TEXT_LEN = 50
+_MAX_TEXT_LEN = 50
 
 _publishers: dict[rclpy.node.Node, Publisher] = {}
 
@@ -19,13 +19,13 @@ _publishers: dict[rclpy.node.Node, Publisher] = {}
 def send_to_ground(node: rclpy.node.Node, text: str) -> None:
     publisher = _publishers.get(node)
     if publisher is None:
-        publisher = node.create_publisher(StatusText, STATUSTEXT_TOPIC, 10)
+        publisher = node.create_publisher(StatusText, _STATUSTEXT_TOPIC, 10)
         _publishers[node] = publisher
 
     message = StatusText()
     message.header.stamp = node.get_clock().now().to_msg()
     message.severity = StatusText.NOTICE
-    message.text = text[:MAX_TEXT_LEN]
+    message.text = text[:_MAX_TEXT_LEN]
     publisher.publish(message)
 
     node.get_logger().info(f"to ground: {text}")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine.constants import (
+    GUIDED_MODE,
     TAKEOFF_AIRBORNE_THRESHOLD_M,
     TAKEOFF_ALTITUDE_M,
     TAKEOFF_ALTITUDE_TOLERANCE_M,
@@ -32,8 +33,6 @@ class Takeoff(py_trees.behaviour.Behaviour):
     STATE_TOPIC = "mavros/state"
     REL_ALT_TOPIC = "mavros/global_position/rel_alt"
     TAKEOFF_SERVICE = "mavros/cmd/takeoff"
-
-    GUIDED_MODE = "GUIDED"
 
     def __init__(self, name: str = "Takeoff") -> None:
         super().__init__(name=name)
@@ -92,10 +91,10 @@ class Takeoff(py_trees.behaviour.Behaviour):
             send_to_ground(self._node, "ENG: already airborne, skipping takeoff")
             return py_trees.common.Status.SUCCESS
 
-        if self._latest_state.mode != self.GUIDED_MODE:
+        if self._latest_state.mode != GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
-                f"mode, waiting for the pilot to select '{self.GUIDED_MODE}'",
+                f"mode, waiting for the pilot to select '{GUIDED_MODE}'",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING

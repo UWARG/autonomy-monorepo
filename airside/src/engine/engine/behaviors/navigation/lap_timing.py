@@ -15,7 +15,7 @@ class SetLappingDeadline(py_trees.behaviour.Behaviour):
     """
     Writes the lapping deadline to the blackboard when lapping begins.
 
-        Always returns SUCCESS.
+    Always returns SUCCESS.
     """
 
     def __init__(self, name: str = "SetLappingDeadline") -> None:
