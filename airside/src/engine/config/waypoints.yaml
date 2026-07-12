@@ -2,17 +2,17 @@
 # and is the returning location at the end
 # of the mission.
 home:
-  lat: 43.4338
-  lon: -80.57732
+  lat: 43.4338267
+  lon: -80.5773236
   alt: 10
 
 waypoints:
-  - lat: 43.43388
-    lon: -80.5776
+  - lat: 43.4338803
+    lon: -80.5775947
     alt: 10
-  - lat: 43.43403
-    lon: -80.57797
+  - lat: 43.4340313
+    lon: -80.5779689
     alt: 10
-  - lat: 43.43393
-    lon: -80.57801
+  - lat: 43.4339319
+    lon: -80.5780172
     alt: 10
