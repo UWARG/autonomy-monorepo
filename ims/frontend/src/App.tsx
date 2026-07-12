@@ -9,19 +9,37 @@ import ConnectionWidget from './widgets/ConnectionWidget';
 import LogWidget from './widgets/LogWidget';
 import ScriptWidget from './widgets/ScriptWidget';
 import TargetWidget from './widgets/TargetWidget';
+import { useEffect, useState } from 'react';
+import { subscribe, unsubscribe } from './socket';
+import type { AttitudeMessage, ConnectionMessage } from './types';
 
 export default function App() {
+  // undefined until the first 'connection' payload arrives 
+  const [connection, setConnection] = useState<ConnectionMessage>();
+  const [attitude, setAttitude] = useState<AttitudeMessage>();
+
+  useEffect(() => {
+    const onConnection = (payload: ConnectionMessage) => setConnection(payload);
+    const onAttitude = (payload: AttitudeMessage) => setAttitude(payload);
+    subscribe('connection', onConnection);
+    subscribe('attitude', onAttitude);
+
+
+    return () => {
+      unsubscribe('connection', onConnection);
+      unsubscribe('attitude', onAttitude);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen">
-      {/* Header */}
       <header className="sticky top-0 z-20 border-b border-edge bg-card">
         <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3">
           <span className="font-mono text-lg font-bold tracking-tight">IMS</span>
-          <span className="widget-label">Ground Station</span>
+          <span className="widget-label">Ground Station</span>   
         </div>
       </header>
 
-      {/* Six widget spaces */}
       <main className="mx-auto grid max-w-[1400px] grid-cols-12 gap-4 px-5 py-5">
         <div className="col-span-12 lg:col-span-5">
           <CameraWidget />
@@ -30,10 +48,10 @@ export default function App() {
           <TargetWidget />
         </div>
         <div className="col-span-12 md:col-span-5 lg:col-span-3">
-          <AttitudeWidget />
+          <AttitudeWidget attitude={attitude} />
         </div>
         <div className="col-span-12 md:col-span-6 lg:col-span-4">
-          <ConnectionWidget />
+          <ConnectionWidget connection={connection} />
         </div>
         <div className="col-span-12 md:col-span-6 lg:col-span-8">
           <ScriptWidget />
