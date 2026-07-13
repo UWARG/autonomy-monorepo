@@ -11,6 +11,7 @@ import TargetWidget, { type TrailSample } from './widgets/TargetWidget';
 import LogWidget, { type LogEntry } from './widgets/LogWidget';
 import { useEffect, useState } from 'react';
 import { subscribe, unsubscribe } from './socket';
+import HeaderStatus from './widgets/Header';
 import type {
   AttitudeMessage,
   CameraMessage,
@@ -49,7 +50,8 @@ export default function App() {
     const onTarget = (p: TargetMessage) => setTarget(p);
     const onStatus = (p: StatusMessage) => setStatus(p);
     const onLog = (p: LogMessage) =>
-      setLog((prev) => [...prev, { message: p.message, t: Date.now() }].slice(-LOG_MAX));
+    
+    setLog((prev) => [...prev, { message: p.message, t: Date.now() }].slice(-LOG_MAX));
     subscribe('attitude', onAttitude);
     subscribe('connection', onConnection);
     subscribe('camera', onCamera);
@@ -58,25 +60,20 @@ export default function App() {
     subscribe('status', onStatus);
     subscribe('log', onLog);
 
-    return () => {
-      unsubscribe('attitude', onAttitude);
-      unsubscribe('connection', onConnection);
-      unsubscribe('camera', onCamera);
-      unsubscribe('position', onPosition);
-      unsubscribe('target', onTarget);
-      unsubscribe('status', onStatus);
-      unsubscribe('log', onLog);
-    };
   }, []);
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
-      <header className="shrink-0 border-b border-edge bg-card">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3">
-          <span className="font-mono text-lg font-bold tracking-tight">IMS</span>
-          <span className="widget-label">Ground Station</span>
-        </div>
-      </header>
+    <header className="shrink-0 border-b border-edge bg-card">
+          <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3">
+            <span className="font-mono text-lg font-bold tracking-tight">IMS</span>
+            <span className="widget-label">Ground Station</span>
+            <div className="ml-auto">
+              <HeaderStatus connection={connection} status={status} />
+            </div>
+          </div>
+        </header>
+ 
 
       <main
         className="mx-auto grid w-full max-w-[1400px] grid-cols-12 gap-4 px-5 py-4
