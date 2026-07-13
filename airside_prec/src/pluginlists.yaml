@@ -1,7 +1,7 @@
 /mavros/UAS1:
   ros__parameters:
     plugin_denylist: ['*']
-    plugin_allowlist: [sys_status, command, setpoint_position, imu, mission, rc_io, landing_target]
+    plugin_allowlist: [sys_status, command, setpoint_position, imu, mission, rc_io, landing_target,global_position]
     uas_url: /uas1
     fcu_protocol: v2.0
     system_id: 1

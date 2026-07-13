@@ -44,26 +44,23 @@ def generate_launch_description() -> LaunchDescription:
         [
             container,
             Node(
-                package="wrapper",
-                executable="camera",
-                name="camera_node",
-                output="screen",
+                package="v4l2_camera",
+                executable="v4l2_camera_node",
+                name="v4l2_camera_node",
+                parameters=[
+                    {"device": "/dev/video0"},
+                    {"image_size": [640, 480]},
+                    {"pixel_format": "YUYV"},
+                    {"output_encoding": "rgb8"},
+                ],
+                remappings=[
+                    ("image", "camera/image"),
+                ],
             ),
             Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",
-                output="screen",
-            ),
-            Node(
-                package="apriltag_ros",
-                executable="apriltag_node",
-                name="apriltag",
-                remappings=[
-                    ("image_rect", "camera/image"),
-                    ("camera_info", "camera/camera_info"),
-                ],
-                parameters=[os.path.join(get_package_share_directory("engine"),"apriltag.yaml")],
                 output="screen",
             ),
            ]

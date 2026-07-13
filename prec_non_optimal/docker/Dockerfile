@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rqt-image-view \
     ros-humble-camera-calibration \
     ros-humble-usb-cam \
+    ros-humble-image-proc \
+    ros-humble-v4l2-camera \
+    python3-scipy \
+    ros-humble-py-trees \
+    ros-humble-py-trees-ros \
+    ros-humble-py-trees-ros-interfaces \
   && rm -rf /var/lib/apt/lists/*
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
@@ -23,7 +29,7 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install numpy
+RUN pip install numpy scipy
 
 WORKDIR /ros_ws
 

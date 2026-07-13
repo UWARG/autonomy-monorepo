@@ -1,101 +1,49 @@
-import math
+import py_trees
+import py_trees_ros
 import rclpy
-from rclpy.node import Node
-from mavros_msgs.srv import CommandBool
-from mavros_msgs.srv import SetMode
-from mavros_msgs.srv import CommandTOL
-from tf2_msgs.msg import TFMessage
-from mavros_msgs.msg import RCIn
-from mavros_msgs.msg import LandingTarget
-from mavros_msgs.srv import MessageInterval
-from mavros_msgs.msg import Mavlink
-import struct
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
-from rclpy.qos import HistoryPolicy
+from engine.behaviours.takeoff import Takeoff
+from engine.behaviours.fly_around import FlyAround
+from engine.behaviours.return_to_launch import ReturnToLaunch
+from engine.behaviours.landing import Landing
 
-TAG_ID = "36h11_1"
-class ManagerNode(Node):
-    def __init__(self):
-        super().__init__("mavros_comms")
-        self.mavlink_qos=QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, history=HistoryPolicy.KEEP_LAST, depth=10)
-        self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
-        self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
-        self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/uas1/mavlink_source", self.rc_callback, self.mavlink_qos)
-        self._mode_change_pending=False
-        self.create_timer(0.1, self.precision_landing_timer_callback)
-        self.landing=False
-        self.last_apriltag=None
+def create_sequence():
+    sequence=py_trees.composite.Sequence("Sequence")
+    sequence.add_children([
+        Takeoff(),
+        FlyAround(),
+        ReturnToLaunch(),
+        Landing()
+    ])
+    return sequence
 
+def initialize_blackboard():
+    blackboard=py_trees.blackboard.Client(name="engine_blackboard")
+    blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
+    blackboard.register_key(key="longitude", access=py_trees.common.Access.WRITE)
+    blackboard.register_key(key="latitude", access=py_trees.common.Access.WRITE)
+    blackboard.altitude=0.0
+    blackboard.longitude=0.0
+    blackboard.latitude=0.0
+    return blackboard
 
-    def precision_landing_timer_callback(self):
-        if not self.landing:
-            return 
-        if self.last_apriltag is None:
-            self.get_logger().info("No apriltag detected")
-            return
-        apriltag=LandingTarget()
-        apriltag.header.stamp=self.get_clock().now().to_msg()
-        apriltag.frame=12
-        apriltag.type=2 # vision_fiducial = 2
-        #apriltag coordinate system to FRD
-        apriltag.pose.position.x=self.last_apriltag.transform.translation.z
-        # for some reason y and z are negated when recieved on mission planner
-        apriltag.pose.position.y=-self.last_apriltag.transform.translation.x
-        apriltag.pose.position.z=-self.last_apriltag.transform.translation.y
-        apriltag.distance=math.sqrt(
-            self.last_apriltag.transform.translation.y**2+
-            self.last_apriltag.transform.translation.x**2+
-            self.last_apriltag.transform.translation.z**2
-        )
-        apriltag.pose.orientation.x=0.0
-        apriltag.pose.orientation.y=0.0
-        apriltag.pose.orientation.z=0.0
-        apriltag.pose.orientation.w=1.0
-        self.precision_landing_pub.publish(apriltag)
-        
-
-    def rc_callback(self, msg: Mavlink):
-        if msg.msgid!=65:
-            return
-        payload_bytes=bytearray()
-        for val in msg.payload64:
-            payload_bytes.extend(struct.pack("<Q",val&0xFFFFFFFFFFFFFFFF))
-        payload_bytes=payload_bytes[:msg.len]
-        try:
-            data=struct.unpack("<I 18H BB", payload_bytes)
-        except Exception as e:
-            self.get_logger().error(f"Failed to unpack Mavlink message: {e}")
-            return
-        
-        channels=data[1:19]
-        if not channels:
-            self.get_logger().info("No channels received")
-            return
-        want_landing = channels[6] > 1500
-        if want_landing != self.landing:
-            self.get_logger().info(f"Landing {want_landing}")
-            self.landing = want_landing
-
-    def apriltag_callback(self, msg: TFMessage):
-        apriltag = None
-        if len(msg.transforms) == 0:
-            self.get_logger().info("No transforms detected")
-            return
-        apriltag=msg.transforms[0]
-        if apriltag is None:
-            self.get_logger().info("Apriltag not found")
-            self.last_apriltag = None
-            return
-        self.last_apriltag = apriltag
-            
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = ManagerNode()
+def main():
+    rclpy.init()
+    blackboard=initialize_blackboard()
+    sequence=create_sequence()
+    tree=py_trees_ros.trees.BehaviourTree(root=sequence)
     try:
-        node.get_logger().info("Starting manager node")
-        rclpy.spin(node)
+        tree.setup(name="engine_tree",timeout=15.0)
+    except Exception as e:
+        tree.node.get_logger().error(f"Error setting up tree: {e}")
+        rclpy.try_shutdown()
+        return
+    tree.tick_tock(period_ms=500.0)
+    try:
+        if tree is not None:
+            rclpy.spin(tree.node)
+    except Exception as e:
+        tree.node.get_logger().error(f"Error ticking tree: {e}")
+        rclpy.try_shutdown()
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        tree.shutdown()
+        rclpy.try_shutdown()

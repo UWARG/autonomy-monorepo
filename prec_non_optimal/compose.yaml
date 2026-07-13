@@ -9,13 +9,9 @@ services:
     image: uwarg/prec-non-optimal:0.1.0
     environment:
       - ${ROS_DOMAIN_ID:-0}
-      - ${DISPLAY:-host.docker.internal:0}
-      - ${WAYLAND_DISPLAY:-host.docker.internal:0}
     command: ros2 launch engine engine.launch.py
     restart: unless-stopped
     volumes:
-      - "/tmp/.X11-unix:/tmp/.X11-unix:rw"
-      - "/mnt/wslg:/mnt/wslg:rw"
       - ./src:/ros_ws/src
       - ..:/monorepo
     devices:
