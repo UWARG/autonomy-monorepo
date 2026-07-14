@@ -135,7 +135,65 @@ Recommendation: request an SF45/B (or similar native proximity LiDAR) as the pri
 sensor; build the OAK-D bridge as the software path where camera coverage suffices — both
 converge on the identical FC configuration proven here.
 
-## 7. Proposed next steps
+## 7. Integration architectures — where the bridge lives
+
+The FC-side configuration is identical in every option (§2's `PRX1_TYPE` / `AVOID_*` /
+`OA_*` params); what differs is **which process produces the `OBSTACLE_DISTANCE` stream
+and how it reaches the FC**. Four shapes, not mutually exclusive:
+
+| Option | Shape | Companion software | Fits |
+|---|---|---|---|
+| **A. FC-direct sensor** | SF45/B (or similar) wired straight to an FC serial port, `PRX1_TYPE=8` | none | fastest to flight-ready once the sensor exists |
+| **B. Standalone pymavlink daemon** | Python process: sensor driver → 72 sector distances → `OBSTACLE_DISTANCE` at 10–15 Hz over a dedicated FC telem port | one script — exactly the demo's shape (swap `wall_sector_distances()` for a real driver) | the comp repo's plain-pymavlink stack; this is the officially documented pattern (RealSense guide) |
+| **C. ROS2 / MAVROS plugin** | a ROS2 node publishes `sensor_msgs/LaserScan` on `/mavros/obstacle/send`; the `obstacle_distance` plugin in mavros_extras converts and sends it | one small node; the plugin ships with mavros and loads by default under the APM plugin config | the airside engine (already MAVROS-based) |
+| **D. Fences only** | pre-declared exclusion fences; Dijkstra or fence-stop | none | pre-surveyed obstacles; zero perception |
+
+B and C emit the identical MAVLink message, so bridge logic written for one moves to the
+other by swapping the transport; either can later be retired to A if a native LiDAR lands.
+
+**Gotchas on the MAVROS route (C), verified in the plugin/firmware source:**
+
+- The plugin assumes the incoming LaserScan is already **body-FRD with clockwise-increasing
+  angles** — it does *not* convert from ROS's usual CCW (REP-103) convention; a compliant
+  scan comes out mirrored. Publish FRD/clockwise or correct with `PRX1_YAW_CORR`/`PRX1_ORIENT`.
+- ArduPilot **ignores `OBSTACLE_DISTANCE`'s `frame` field** entirely (sectors are always
+  interpreted body-frame, offset by `PRX1_YAW_CORR + angle_offset`). Still set the plugin's
+  `mav_frame: BODY_FRD` for spec correctness.
+- The link must be MAVLink 2 (`SERIALx_PROTOCOL=2`) for the 72-sector float-increment
+  extensions; scans with more than 72 rays are downsampled by per-bin minimum.
+
+### 7.1 Link topology on the real aircraft
+
+The officially documented pattern is a **dedicated FC telemetry port for the companion at
+921600 baud** (`SERIAL2_PROTOCOL=2`, `SERIAL2_BAUD=921`), with the bridge talking directly
+to that serial port — no router daemon involved. The GCS radio lives on a *different* FC
+port, and ArduPilot natively routes MAVLink between its ports, so both coexist. Bandwidth
+is a non-issue on that link (~179 bytes/message → 10 Hz ≈ 1.9 % of 921600 baud) but would
+consume roughly a third of a 57600 radio link — set `SERIALx_OPTIONS` bit 10 ("don't
+forward MAVLink") on the slow GCS port so the obstacle stream is not forwarded to it.
+A companion-side router (mavlink-router / MAVProxy / mavp2p) is only needed when several
+companion processes must share one UART (bridge + MAVROS + logging); the ArduPilot
+Raspberry Pi guide documents all three and prefers `mavlink-routerd` when the Pi is loaded.
+
+### 7.2 Failure behavior: ArduPilot fails *open* when the feed dies
+
+Verified in Copter-4.5 source — a dead obstacle feed is treated as "no obstacles", not as
+an emergency:
+
+| Feed dies at t=0 | What happens |
+|---|---|
+| +0.5 s | proximity status → NoData (`PROXIMITY_MAV_TIMEOUT_MS`); SYS_STATUS proximity health bit clears (Mission Planner shows "Bad Proximity"); **no STATUSTEXT** |
+| +1–1.75 s | proximity boundary faces expire → **simple avoidance silently stops limiting velocity** |
+| +10 s (`OA_DB_EXPIRE`) | obstacle database empties → **BendyRuler plans straight as if the world were empty** (until then it avoids stale "ghost" points) |
+| never | no failsafe, no mode change — the only hard gate is the *prearm* check ("PRX1: No Data"), which never re-runs in flight |
+
+Implication: if the bridge process crashes mid-flight, avoidance evaporates within seconds
+with only a GCS health bit to show for it. **Fail-closed behavior is a companion-side
+responsibility** — the bridge (or a sibling watchdog) should monitor its own output and
+command BRAKE/LOITER on failure, mirroring the deadman pattern the follow stack already
+uses. This belongs in the reliability gates (§8).
+
+## 8. Proposed next steps
 
 1. **Review this doc + demo** with the lead / Sophie; confirm sensor request (SF45/B).
 2. **OAK-D → `OBSTACLE_DISTANCE` bridge** (software ticket, no new hardware): replace
@@ -145,10 +203,13 @@ converge on the identical FC configuration proven here.
    pop-up obstacle, obstacle during follow, sensor dropout, approach at mission speeds —
    with an N/N pass bar, then a physical demonstration with soft obstacles at a flight test
    (M-series) before any comp use.
-4. **Parameter hygiene for other tickets**: any GUIDED-goto code needs `GUID_OPTIONS=64`;
+4. **Fail-closed watchdog** (§7.2): ArduPilot fails open on feed loss, so the bridge needs
+   a companion-side watchdog that commands BRAKE/LOITER when its sensor/output dies —
+   include a feed-kill drill in the reliability gates.
+5. **Parameter hygiene for other tickets**: any GUIDED-goto code needs `GUID_OPTIONS=64`;
    margin params (`AVOID_MARGIN`, `OA_MARGIN_MAX`) tuned to flight speeds.
 
-## 8. References
+## 9. References
 
 - ArduPilot object avoidance: <https://ardupilot.org/copter/docs/common-object-avoidance-landing-page.html>
 - BendyRuler: <https://ardupilot.org/copter/docs/common-oa-bendyruler.html> · Dijkstra: <https://ardupilot.org/copter/docs/common-oa-dijkstras.html>
@@ -156,5 +217,8 @@ converge on the identical FC configuration proven here.
 - Companion depth-camera pattern (RealSense): <https://ardupilot.org/copter/docs/common-realsense-depth-camera.html>
 - SF45/B setup: <https://ardupilot.org/copter/docs/common-lightware-sf45b.html>
 - `OBSTACLE_DISTANCE` message: <https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE>
+- MAVROS `obstacle_distance` plugin (ROS2): <https://github.com/mavlink/mavros/blob/ros2/mavros_extras/src/plugins/obstacle_distance.cpp>
+- MAVLink routing between FC ports: <https://ardupilot.org/dev/docs/mavlink-routing-in-ardupilot.html> · companion/router options: <https://ardupilot.org/dev/docs/raspberry-pi-via-mavlink.html>
+- Proximity feed timeout + fail-open behavior: `libraries/AP_Proximity/AP_Proximity_MAV.cpp` (`PROXIMITY_MAV_TIMEOUT_MS`) and `libraries/AC_Avoidance/AP_OADatabase.cpp` (`OA_DB_EXPIRE`) on <https://github.com/ArduPilot/ardupilot/tree/Copter-4.5>
 - Prior WARG implementation: <https://github.com/UWARG/obstacle-avoidance> and the CV-space Confluence page above
 - Demo + logs: `airside/scripts/avoidance/` in this repo
