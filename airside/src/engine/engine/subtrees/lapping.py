@@ -2,29 +2,34 @@
 Lapping subtree: fly waypoint laps until the deadline is reached, then return SUCCESS.
 
 Lapping
-├── LoadWaypointList
+├── SetLappingDeadline
 └── LapUntilDeadline [FailureIsSuccess]
     └── RepeatLap [Repeat forever]
         └── SingleLap
             ├── EnoughTimeForAnotherLap
-            ├── RecordLapStart
+            ├── ResetLapWaypoints
             ├── UntilWaypointsExhausted [FailureIsSuccess]
             │   └── ForEachWaypoint [Repeat forever]
             │       └── SingleWaypoint
             │           ├── LoadNextWaypoint
             │           ├── EnoughTimeRemaining
-            │           └── FlyToWaypoint
+            │           ├── FlyToWaypoint
+            │           └── StartLapTimer (first waypoint only)
             └── RecordLapEnd
 """
 
 from __future__ import annotations
 
 import py_trees
-from airside.src.engine.engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
-from airside.src.engine.engine.behaviors.navigation.lap_timing import RecordLapEnd, RecordLapStart
-from airside.src.engine.engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
-from airside.src.engine.engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
-from airside.src.engine.engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
+from engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
+from engine.behaviors.navigation.lap_timing import (
+    RecordLapEnd,
+    ResetLapWaypoints,
+    SetLappingDeadline,
+    StartLapTimer,
+)
+from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
+from engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
 
 
 def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
@@ -36,6 +41,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
             LoadNextWaypoint(),
             EnoughTimeRemaining(),
             FlyToWaypoint(),
+            StartLapTimer(),
         ],
     )
 
@@ -53,7 +59,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             EnoughTimeForAnotherLap(),
-            RecordLapStart(),
+            ResetLapWaypoints(),
             waypoint_loop,
             RecordLapEnd(),
         ],
@@ -72,7 +78,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         name="Lapping",
         memory=True,
         children=[
-            LoadWaypointList(),
+            SetLappingDeadline(),
             lap_until_deadline,
         ],
     )

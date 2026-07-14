@@ -8,6 +8,9 @@ LAPPING_END_TIME_SEC = "lapping_end_time_sec"
 # Ordered list of waypoints for the laps
 WAYPOINTS = "waypoints"
 
+# Home coordinate (None if not configured)
+HOME_WAYPOINT = "home_waypoint"
+
 # The next waypoint index to fly to
 WAYPOINT_INDEX = "waypoint_index"
 

@@ -6,7 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 from engine import blackboard_keys
 from utils.src.waypoint_utils import parse_waypoints_file, sort_clockwise_sweep
 
-WAYPOINTS_FILE_PARAMETER = "waypoints_file"
+_WAYPOINTS_FILE_PARAMETER = "waypoints_file"
 
 
 class LoadWaypointList(py_trees.behaviour.Behaviour):
@@ -16,8 +16,9 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
     Parses the waypoints file and orders the waypoints as a clockwise
     sweep around their centroid, starting from the waypoint nearest home's
     direction off the centroid (or north if no home is marked). Writes the
-    resulting list to ``waypoints``. Returns SUCCESS once loaded, FAILURE
-    if the file is missing, malformed, or has no lap waypoints.
+    resulting list to ``waypoints`` and the home coordinate (or None) to
+    ``home_waypoint``. Returns SUCCESS once loaded, FAILURE if the file is
+    missing, malformed, or has no lap waypoints.
     """
 
     def __init__(self, name: str = "LoadWaypointList") -> None:
@@ -27,6 +28,9 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             key=blackboard_keys.WAYPOINTS, access=py_trees.common.Access.WRITE
         )
+        self.blackboard.register_key(
+            key=blackboard_keys.HOME_WAYPOINT, access=py_trees.common.Access.WRITE
+        )
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
@@ -34,12 +38,12 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         default_path = (
             f"{get_package_share_directory('engine')}/config/waypoints.yaml"
         )
-        if not self._node.has_parameter(WAYPOINTS_FILE_PARAMETER):
-            self._node.declare_parameter(WAYPOINTS_FILE_PARAMETER, default_path)
+        if not self._node.has_parameter(_WAYPOINTS_FILE_PARAMETER):
+            self._node.declare_parameter(_WAYPOINTS_FILE_PARAMETER, default_path)
 
     def update(self) -> py_trees.common.Status:
         waypoints_file = (
-            self._node.get_parameter(WAYPOINTS_FILE_PARAMETER)
+            self._node.get_parameter(_WAYPOINTS_FILE_PARAMETER)
             .get_parameter_value()
             .string_value
         )
@@ -61,6 +65,7 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         waypoints = sort_clockwise_sweep(lap_waypoints, home=home)
 
         self.blackboard.set(blackboard_keys.WAYPOINTS, waypoints)
+        self.blackboard.set(blackboard_keys.HOME_WAYPOINT, home)
         self._node.get_logger().info(
             f"{self.name}: loaded {len(waypoints)} waypoints from "
             f"'{waypoints_file}' (home: {home}): {waypoints}"

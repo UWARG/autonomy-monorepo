@@ -5,7 +5,11 @@ import math
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
-from engine.constants import WAYPOINT_ACCEPTANCE_RADIUS_M, WAYPOINT_NAV_TIMEOUT_S
+from engine.constants import (
+    GUIDED_MODE,
+    WAYPOINT_ACCEPTANCE_RADIUS_M,
+    WAYPOINT_NAV_TIMEOUT_S,
+)
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 from mavros_msgs.msg import GlobalPositionTarget, State
 from rclpy.qos import qos_profile_sensor_data
@@ -17,8 +21,6 @@ _SETPOINT_TOPIC = "mavros/setpoint_raw/global"
 _GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
 _REL_ALT_TOPIC = "mavros/global_position/rel_alt"
 _STATE_TOPIC = "mavros/state"
-
-_GUIDED_MODE = "GUIDED"
 
 # Position-only setpoint: ignores velocity, acceleration and yaw fields
 _TYPE_MASK = (
@@ -136,10 +138,10 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.RUNNING
 
-        if self._latest_state.mode != _GUIDED_MODE:
+        if self._latest_state.mode != GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
-                f"mode, not '{_GUIDED_MODE}' - holding off on setpoints",
+                f"mode, not '{GUIDED_MODE}' - holding off on setpoints",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
