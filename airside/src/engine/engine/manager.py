@@ -10,6 +10,7 @@ import py_trees
 import py_trees_ros
 import rclpy
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
 from engine.behaviors.navigation.takeoff import Takeoff
 from engine.behaviors.rc.rc_switch import KillSwitch
 from engine.constants import (
@@ -33,16 +34,17 @@ def create_root() -> py_trees.behaviour.Behaviour:
     resumes the mission where it left off. The final MissionComplete node
     holds the tree in RUNNING after landing.
 
-    ````
+    ```
     KillSwitch
     └── Mission [Sequence]
         ├── ConfigureStreamRates
+        ├── LoadWaypointList
         ├── Takeoff
         ├── Lapping
         ├── TargetReconnaissance
         ├── LandPhase
         └── MissionComplete [Running]
-    ````
+    ```
     """
 
     mission = py_trees.composites.Sequence(
@@ -50,6 +52,7 @@ def create_root() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             ConfigureStreamRates(),
+            LoadWaypointList(),
             Takeoff(),
             create_lapping_subtree(),
             create_target_reconnaissance_subtree(),

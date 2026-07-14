@@ -3,7 +3,6 @@ Lapping subtree: fly waypoint laps until the deadline is reached, then return SU
 
 Lapping
 ├── SetLappingDeadline
-├── LoadWaypointList
 └── LapUntilDeadline [FailureIsSuccess]
     └── RepeatLap [Repeat forever]
         └── SingleLap
@@ -30,7 +29,6 @@ from engine.behaviors.navigation.lap_timing import (
     StartLapTimer,
 )
 from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
-from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
 from engine.behaviors.navigation.time_checks import EnoughTimeForAnotherLap, EnoughTimeRemaining
 
 
@@ -81,7 +79,6 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             SetLappingDeadline(),
-            LoadWaypointList(),
             lap_until_deadline,
         ],
     )
