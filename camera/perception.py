@@ -29,11 +29,32 @@ class Detection:
 class OakDPerception:
     """Builds an OAK-D pipeline with spatial object detection."""
 
-    WIDTH = 640
-    HEIGHT = 640
-
-    def __init__(self, blob_path: str) -> None:
+    def __init__(
+        self,
+        blob_path: str,
+        width: int = 640,
+        height: int = 640,
+        confidence_threshold: float = 0.5,
+        num_classes: int = 4,
+        coordinate_size: int = 1,
+        anchors: list[float] | None = None,
+        anchor_masks: dict | None = None,
+        depth_lower_threshold: int = 100,
+        depth_upper_threshold: int = 10000,
+        bounding_box_scale_factor: float = 0.5,
+    ) -> None:
         self._blob_path = blob_path
+        self._width = width
+        self._height = height
+        self._confidence_threshold = confidence_threshold
+        self._num_classes = num_classes
+        self._coordinate_size = coordinate_size
+        self._anchors = anchors if anchors is not None else []
+        self._anchor_masks = anchor_masks if anchor_masks is not None else {}
+        self._depth_lower_threshold = depth_lower_threshold
+        self._depth_upper_threshold = depth_upper_threshold
+        self._bounding_box_scale_factor = bounding_box_scale_factor
+
         self._pipeline = None
         self._device = None
         self._detection_queue = None
@@ -46,7 +67,7 @@ class OakDPerception:
 
             # RGB stream
             cam_rgb = self._pipeline.create(dai.node.ColorCamera)
-            cam_rgb.setPreviewSize(self.WIDTH, self.HEIGHT)
+            cam_rgb.setPreviewSize(self._width, self._height)
             cam_rgb.setInterleaved(False)
             cam_rgb.setColorOrder(dai.ColorCameraProperties.ColorOrder.BGR)
 
@@ -74,19 +95,17 @@ class OakDPerception:
             det = self._pipeline.create(dai.node.YoloSpatialDetectionNetwork)
             det.setBlobPath(self._blob_path)
 
-            # Set to 0.5 for now
-            det.setConfidenceThreshold(0.5)
+            det.setConfidenceThreshold(self._confidence_threshold)
 
-            # Waiting for test model to set these params
-            det.setNumClasses(4)
-            det.setCoordinateSize(1)
-            det.setAnchors([])
-            det.setAnchorMasks({})
+            # defaults are placeholders until old model's values found
+            det.setNumClasses(self._num_classes)
+            det.setCoordinateSize(self._coordinate_size)
+            det.setAnchors(self._anchors)
+            det.setAnchorMasks(self._anchor_masks)
 
-            # Set to random values for now
-            det.setDepthLowerThreshold(100)
-            det.setDepthUpperThreshold(10000)
-            det.setBoundingBoxScaleFactor(0.5)
+            det.setDepthLowerThreshold(self._depth_lower_threshold)
+            det.setDepthUpperThreshold(self._depth_upper_threshold)
+            det.setBoundingBoxScaleFactor(self._bounding_box_scale_factor)
 
             cam_rgb.preview.link(det.input)
             stereo.depth.link(det.inputDepth)
@@ -126,10 +145,10 @@ class OakDPerception:
 
                 results.append(
                     Detection(
-                        x1=d.xmin * self.WIDTH,
-                        y1=d.ymin * self.HEIGHT,
-                        x2=d.xmax * self.WIDTH,
-                        y2=d.ymax * self.HEIGHT,
+                        x1=d.xmin * self._width,
+                        y1=d.ymin * self._height,
+                        x2=d.xmax * self._width,
+                        y2=d.ymax * self._height,
                         confidence=d.confidence,
                         label=d.label,
                         depth=depth,
