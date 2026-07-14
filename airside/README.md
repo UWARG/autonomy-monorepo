@@ -63,7 +63,7 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
-| `FCU_URL` | `serial:///dev/ttyAMA0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
 
 ### Networking
 
