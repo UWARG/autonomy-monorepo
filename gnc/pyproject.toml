@@ -6,14 +6,20 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+  "utils",
+]
+
+[tool.uv.sources]
+utils = { path = "../utils" }
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/gnc"
 Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.8.0", "hypothesis>=6.0.0"]
+viz = ["matplotlib>=3.5.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -21,7 +27,11 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", ".."]
+markers = [
+  "soak: full Monte-Carlo soak (500 episodes, minutes-long); run with -m soak",
+]
+addopts = "-m 'not soak'"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]

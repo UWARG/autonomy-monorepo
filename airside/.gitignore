@@ -2,3 +2,4 @@ build/
 install/
 log/
 data/
+test_artifacts/

@@ -12,7 +12,9 @@ from .src.types import Attitude as Attitude
 from .src.types import Coordinate as Coordinate
 from .src.types import MappedTarget as MappedTarget
 from .src.types import Plane as Plane
+from .src.types import Pose as Pose
 from .src.types import Quaternion as Quaternion
 from .src.types import RcChannelsMessage as RcChannelsMessage
+from .src.types import Rotation as Rotation
 from .src.types import Target as Target
 from .src.types import Vector3D as Vector3D

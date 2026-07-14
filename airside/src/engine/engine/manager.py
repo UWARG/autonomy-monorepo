@@ -26,27 +26,7 @@ from engine.subtrees.target_reconnaissance import (
 
 
 def create_root() -> py_trees.behaviour.Behaviour:
-    """
-    Builds the full mission tree.
-
-    The KillSwitch decorator freezes the mission (without resetting its
-    progress) while the kill switch is high, so flipping the switch back
-    resumes the mission where it left off. The final MissionComplete node
-    holds the tree in RUNNING after landing.
-
-    ```
-    KillSwitch
-    └── Mission [Sequence]
-        ├── ConfigureStreamRates
-        ├── LoadWaypointList
-        ├── Takeoff
-        ├── Lapping
-        ├── TargetReconnaissance
-        ├── LandPhase
-        └── MissionComplete [Running]
-    ```
-    """
-
+    """Build the full-auto mission tree."""
     mission = py_trees.composites.Sequence(
         name="Mission",
         memory=True,
@@ -68,9 +48,7 @@ def create_root() -> py_trees.behaviour.Behaviour:
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
-
     root = create_root()
-
     tree = py_trees_ros.trees.BehaviourTree(
         root=root,
         unicode_tree_debug=UNICODE_TREE_DEBUG,

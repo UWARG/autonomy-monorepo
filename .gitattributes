@@ -1,0 +1,5 @@
+# Shell scripts run inside WSL/Linux containers (SITL harness, entrypoints):
+# a CRLF checkout on Windows breaks them ($'\r': command not found), so force
+# LF in the working tree regardless of core.autocrlf.
+*.sh text eol=lf
+*.parm text eol=lf

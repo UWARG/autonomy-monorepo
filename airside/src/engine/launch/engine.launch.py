@@ -3,8 +3,6 @@ from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
-# Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
-# where the RC bridge listens for RC_CHANNELS.
 _RC_BRIDGE_PORT = 14550
 _MAVROS_GCS_URL = f"udp://@127.0.0.1:{_RC_BRIDGE_PORT}"
 _RC_BRIDGE_MAVLINK_URL = f"udpin:127.0.0.1:{_RC_BRIDGE_PORT}"

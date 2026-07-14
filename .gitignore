@@ -10,3 +10,7 @@ build/
 *.egg-info/
 .vscode/
 
+# Local SITL/docker build + debug logs and generated sim plots
+airside/*.log
+gnc/sim_output/
+

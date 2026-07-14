@@ -27,6 +27,8 @@ setup(
             'camera = wrapper.camera_node:main',
             'map_manager = wrapper.map_manager_node:main',
             'ground_fusion = wrapper.ground_fusion_node:main',
+            'sim_target = wrapper.sim_target_node:main',
+            'viz = wrapper.viz_node:main',
         ],
     },
 )
