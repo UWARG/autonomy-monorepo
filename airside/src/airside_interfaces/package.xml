@@ -3,18 +3,19 @@
 <package format="3">
   <name>airside_interfaces</name>
   <version>0.1.0</version>
-  <description>ROS 2 message definitions for the airside system</description>
+  <description>Custom ROS 2 message definitions shared across the airside workspace.</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+
   <build_depend>rosidl_default_generators</build_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
-  <member_of_group>rosidl_interface_packages</member_of_group>
 
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <export>
     <build_type>ament_cmake</build_type>

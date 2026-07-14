@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, Range, Imu, RCIn
-from std_msgs.msg import String
+
+from airside_interfaces.msg import FusedComms
 
 
 class GroundFusionNode(Node):
@@ -14,7 +13,6 @@ class GroundFusionNode(Node):
     ATTITUDE_TOPIC = "/mavros/imu/data"
     RC_TOPIC = "/mavros/rc/in"
     COMM_TOPIC = "airside_comms/info"
-    FUSED_IMAGE_TOPIC = "airside_comms/image"
     PUBLISH_INTERVAL_S = 0.2
 
     #PARAMETER INPUTS FOR RC TRIGGERS 
@@ -23,6 +21,8 @@ class GroundFusionNode(Node):
 
     def __init__(self, ) -> None:
         super().__init__("ground_fusion_node")
+        self._rc_trigger_channel = self.RC_TRIGGER_CHANNELS
+        self._rc_trigger_threshold = self.RC_TRIGGER_THRESHOLD
         self.get_logger().info(
             f"RC trigger configured channel={self._rc_trigger_channel} threshold={self._rc_trigger_threshold}"
         )
@@ -57,8 +57,7 @@ class GroundFusionNode(Node):
             10,
         )
 
-        self._publisher = self.create_publisher(String, self.COMM_TOPIC, 10)
-        self._image_publisher = self.create_publisher(Image, self.FUSED_IMAGE_TOPIC, 10)
+        self._publisher = self.create_publisher(FusedComms, self.COMM_TOPIC, 10)
         self.create_timer(self.PUBLISH_INTERVAL_S, self._publish_if_triggered)
 
         self.get_logger().info(
@@ -90,16 +89,9 @@ class GroundFusionNode(Node):
             self.get_logger().debug("Waiting for all sensor data before publishing.")
             return
 
-        payload = self._build_payload()
-        message = String(data=json.dumps(payload))
+        message = self._build_message()
         self._publisher.publish(message)
-        self.get_logger().info("Published fused airside_comms payload")
-
-        if self._latest_image is not None:
-            self._image_publisher.publish(self._latest_image)
-            self.get_logger().info(
-                f"Published triggered image frame to '{self.FUSED_IMAGE_TOPIC}'"
-            )
+        self.get_logger().info(f"Published fused airside_comms message to '{self.COMM_TOPIC}'")
 
     def _rc_triggered(self) -> bool:
         if self._latest_rc is None:
@@ -126,63 +118,25 @@ class GroundFusionNode(Node):
             and self._latest_rc is not None
         )
 
-    def _build_payload(self) -> dict[str, object]:
+    def _build_message(self) -> FusedComms:
         assert self._latest_image is not None
         assert self._latest_range is not None
         assert self._latest_attitude is not None
         assert self._latest_rc is not None
 
-        return {
-            # sensor_msgs/Range message fields
-            # https://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/Range.html
-            "range": {
-                "header": {
-                    "frame_id": self._latest_range.header.frame_id,
-                    "stamp": self._latest_range.header.stamp.sec,
-                },
-                "radiation_type": int(self._latest_range.radiation_type),
-                "field_of_view": self._latest_range.field_of_view,
-                "min_range": self._latest_range.min_range,
-                "max_range": self._latest_range.max_range,
-                "range": self._latest_range.range,
-            },
-            # sensor_msgs/Imu message fields
-            # https://docs.ros.org/en/humble/api/sensor_msgs/html/msg/Imu.html
-            "imu": {
-                "header": {
-                    "stamp": self._latest_attitude.header.stamp.sec,
-                    "frame_id": self._latest_attitude.header.frame_id,
-                },
-                "orientation": {
-                    "x": self._latest_attitude.orientation.x,
-                    "y": self._latest_attitude.orientation.y,
-                    "z": self._latest_attitude.orientation.z,
-                    "w": self._latest_attitude.orientation.w,
-                },
-                "orientation_covariance": self._latest_attitude.orientation_covariance,
-                "angular_velocity": {
-                    "x": self._latest_attitude.angular_velocity.x,
-                    "y": self._latest_attitude.angular_velocity.y,
-                    "z": self._latest_attitude.angular_velocity.z,
-                },
-                "angular_velocity_covariance": self._latest_attitude.angular_velocity_covariance,
-                "linear_acceleration": {
-                    "x": self._latest_attitude.linear_acceleration.x,
-                    "y": self._latest_attitude.linear_acceleration.y,
-                    "z": self._latest_attitude.linear_acceleration.z,
-                },
-                "linear_acceleration_covariance": self._latest_attitude.linear_acceleration_covariance,
-            },
-            "rc": {
-                "triggered": len(self._last_triggered_channels) > 0,
-                "triggered_channels": self._last_triggered_channels,
-                "triggered_values": [
-                    int(self._latest_rc.channels[i])
-                    for i in self._last_triggered_channels
-                    if i < len(self._latest_rc.channels)
-                ],
-            },
-        }
+        message = FusedComms()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.image = self._latest_image
+        message.range = self._latest_range
+        message.imu = self._latest_attitude
+        message.rc_triggered = len(self._last_triggered_channels) > 0
+        message.triggered_channels = list(self._last_triggered_channels)
+        message.triggered_values = [
+            int(self._latest_rc.channels[i])
+            for i in self._last_triggered_channels
+            if i < len(self._latest_rc.channels)
+        ]
+        return message
 
 
 def main(args: list[str] | None = None) -> None:
