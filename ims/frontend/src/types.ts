@@ -9,12 +9,8 @@ export type ConnectionStatus = 'active' | 'degraded' | 'lost';
  */
 export interface ConnectionMessage {
   status: ConnectionStatus;
-  protocol: string;
   transport: string;
   heartbeatHz: number; //Hz
-  latencyMs: number; //ms
-  packetLossPct: number; // 0-100
-  msgRate: number; //  messages per second
 }
 
 /**
@@ -33,16 +29,12 @@ export interface AttitudeMessage {
 
 /**
  * payload for { "type": "camera" }
- *
- * PROVISIONAL
  */
 export interface CameraMessage {
-  online: boolean;
+  src?: string;
   width?: number; //px
   height?: number; //px
-  encoding?: string;
-  fps?: number;
-  latencyMs?: number; //ms
+  latencyMs?: number; 
 }
 
 /**

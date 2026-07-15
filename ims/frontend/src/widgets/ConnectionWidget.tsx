@@ -2,7 +2,6 @@ import type { ConnectionMessage, ConnectionStatus } from '../types';
 
 const DASH = '\u2014';
 
-/** Pill styling + copy for each link state. `undefined` = no telemetry received yet. */
 const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
   active: { className: 'pill-ok', label: 'ACTIVE' },
   degraded: { className: 'pill-warn', label: 'DEGRADED' },
@@ -14,13 +13,6 @@ const STATUS_SUMMARY: Record<ConnectionStatus, string> = {
   degraded: 'Heartbeat irregular \u2014 check link quality',
   lost: 'No heartbeat \u2014 drone unreachable',
 };
-
-/** Values that read as healthy stay muted; only trouble earns colour. */
-function lossTone(pct: number): string {
-  if (pct < 1) return 'text-ok';
-  if (pct < 5) return 'text-warn';
-  return 'text-bad';
-}
 
 function Row({
   label,
@@ -67,29 +59,15 @@ export default function ConnectionWidget({
         </span>
       </header>
 
-      <p className={`mt-3 text-[13px] ${connection ? 'text-ink-2' : 'text-ink-3'}`}>
+      <p className={`mt-2 text-[13px] ${connection ? 'text-ink-2' : 'text-ink-3'}`}>
         {summary}
       </p>
 
-      <dl className="mt-4 flex flex-col gap-2">
-        <Row label="Protocol" value={connection?.protocol ?? DASH} />
+      <dl className="mt-3 flex flex-col gap-1.5">
         <Row label="Transport" value={connection?.transport ?? DASH} />
         <Row
           label="Heartbeat"
           value={connection ? `${connection.heartbeatHz.toFixed(1)} Hz` : DASH}
-        />
-        <Row
-          label="Latency"
-          value={connection ? `${Math.round(connection.latencyMs)} ms` : DASH}
-        />
-        <Row
-          label="Packet loss"
-          value={connection ? `${connection.packetLossPct.toFixed(1)} %` : DASH}
-          tone={connection ? lossTone(connection.packetLossPct) : 'text-ink-3'}
-        />
-        <Row
-          label="Msg rate"
-          value={connection ? `${Math.round(connection.msgRate)} /s` : DASH}
         />
       </dl>
     </section>
