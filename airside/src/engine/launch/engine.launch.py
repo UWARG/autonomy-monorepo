@@ -1,9 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
-
-IMS_SERVER_DIR = "/monorepo/ims/server"
 
 # Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
 # where the RC bridge listens for RC_CHANNELS.
@@ -18,7 +16,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "fcu_url",
                 default_value=EnvironmentVariable(
-                    "FCU_URL", default_value="serial:///dev/ttyAMA0:115200"
+                    "FCU_URL", default_value="serial:///dev/serial0:115200"
                 ),
                 description="MAVROS connection URL to ArduPilot",
             ),
@@ -66,11 +64,6 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
-            ),
-            ExecuteProcess(
-                cmd=["python3", "streamer.py"],
-                cwd=IMS_SERVER_DIR,
-                output="screen",
             ),
         ]
     )

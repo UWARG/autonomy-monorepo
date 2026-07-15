@@ -1,4 +1,28 @@
-"""Tuning constants for the airside lapping behaviors."""
+"""Tuning constants for the airside engine behaviors."""
+
+# ArduPilot flight mode in which the engine is allowed to command the drone.
+GUIDED_MODE = "GUIDED"
+
+# Behavior tree tick period, milliseconds.
+TICK_PERIOD_MS = 500.0
+# Whether or not to print the tree with Unicode characters on every tick.
+UNICODE_TREE_DEBUG = False
+
+# Lapping deadline, from engine startup, seconds.
+LAPPING_DURATION_SEC = 120.0
+
+# MAVLink message IDs the engine needs streamed from the FCU.
+MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
+MAVLINK_MSG_ID_RC_CHANNELS = 65
+
+# Per-message stream rates requested from ArduPilot (message ID -> Hz).
+STREAM_RATE_REQUESTS_HZ = {
+    MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
+    MAVLINK_MSG_ID_RC_CHANNELS: 5.0,
+}
+
+# Baseline rate for all legacy streams (REQUEST_DATA_STREAM fallback), Hz.
+BASELINE_STREAM_RATE_HZ = 4
 
 # Behavior tree tick period, milliseconds.
 TICK_PERIOD_MS = 500.0
