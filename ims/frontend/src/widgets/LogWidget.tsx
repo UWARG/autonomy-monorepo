@@ -1,17 +1,44 @@
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 
 export interface LogEntry {
   message: string;
   t: number;
 }
 
+const LOG_MAX = 200;
+const DEG = 180 / Math.PI;
+
+interface PoseStamped {
+  pose: {
+    position: { x: number; y: number; z: number };
+    orientation: { x: number; y: number; z: number; w: number };
+  };
+}
+
+/** (roll, pitch, yaw) degrees from a (w, x, y, z) quaternion, ZYX aerospace convention. */
+function quaternionToEulerDeg(q: { w: number; x: number; y: number; z: number }): {
+  roll: number;
+  pitch: number;
+  yaw: number;
+} {
+  const sinrCosp = 2 * (q.w * q.x + q.y * q.z);
+  const cosrCosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+  const roll = Math.atan2(sinrCosp, cosrCosp);
+
+  const sinp = Math.max(-1, Math.min(1, 2 * (q.w * q.y - q.z * q.x)));
+  const pitch = Math.asin(sinp);
+
+  const sinyCosp = 2 * (q.w * q.z + q.x * q.y);
+  const cosyCosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+  const yaw = Math.atan2(sinyCosp, cosyCosp);
+
+  return { roll: roll * DEG, pitch: pitch * DEG, yaw: yaw * DEG };
+}
+
 type Severity = 'INF' | 'WRN' | 'ERR';
 
-/**
- * Pull an optional leading "HH:MM:SS" and a severity token (INF/WRN/ERR) out of
- * the raw message. Airside may format lines like "04:19:35 WRN Wind gust...".
- * Anything not present falls back: no embedded time -> client receipt time,
- * no severity -> INF.
- */
 function parseLine(message: string, t: number): {
   time: string;
   severity: Severity;
@@ -44,11 +71,29 @@ const SEV_TONE: Record<Severity, string> = {
   ERR: 'text-bad',
 };
 
-export default function LogWidget({
-  entries = [],
-}: {
-  entries?: LogEntry[];
-}) {
+export default function LogWidget() {
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+
+  useEffect(() => {
+    const poseTopic = new ROSLIB.Topic<PoseStamped>({
+      ros,
+      name: '/mavros/local_position/pose',
+      messageType: 'geometry_msgs/PoseStamped',
+    });
+
+    const onPose = (message: PoseStamped) => {
+      const { x, y, z } = message.pose.position;
+      const { roll, pitch, yaw } = quaternionToEulerDeg(message.pose.orientation);
+      const line =
+        `pos x=${x.toFixed(2)} y=${y.toFixed(2)} z=${z.toFixed(2)} | ` +
+        `att roll=${roll.toFixed(1)} pitch=${pitch.toFixed(1)} yaw=${yaw.toFixed(1)}`;
+      setEntries((prev) => [...prev, { message: line, t: Date.now() }].slice(-LOG_MAX));
+    };
+
+    poseTopic.subscribe(onPose);
+    return () => poseTopic.unsubscribe(onPose);
+  }, []);
+
   const rows = [...entries].reverse(); // newest first
 
   return (

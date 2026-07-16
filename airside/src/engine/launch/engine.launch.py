@@ -48,6 +48,15 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[{"mavlink_url": _RC_BRIDGE_MAVLINK_URL}],
             ),
             Node(
+                package="rosbridge_server",
+                executable="rosbridge_websocket",
+                name="rosbridge_websocket",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"port": 9090}],
+            ),
+            Node(
                 package="wrapper",
                 executable="camera",
                 name="camera_node",
