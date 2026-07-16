@@ -17,7 +17,6 @@ interface PoseStamped {
   };
 }
 
-/** (roll, pitch, yaw) degrees from a (w, x, y, z) quaternion, ZYX aerospace convention. */
 function quaternionToEulerDeg(q: { w: number; x: number; y: number; z: number }): {
   roll: number;
   pitch: number;
@@ -94,7 +93,7 @@ export default function LogWidget() {
     return () => poseTopic.unsubscribe(onPose);
   }, []);
 
-  const rows = [...entries].reverse(); // newest first
+  const rows = [...entries].reverse(); 
 
   return (
     <section className="widget flex h-full min-h-[120px] flex-col overflow-hidden p-4">
