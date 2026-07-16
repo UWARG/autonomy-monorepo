@@ -15,14 +15,14 @@ class GroundFusionNode(Node):
     COMM_TOPIC = "airside_comms/info"
     PUBLISH_INTERVAL_S = 0.2
 
-    #PARAMETER INPUTS FOR RC TRIGGERS 
-    RC_TRIGGER_CHANNELS: int = 4
-    RC_TRIGGER_THRESHOLD = 1500
+    #PARAMETER INPUTS FOR RC TRIGGERS
+    _RC_TRIGGER_CHANNELS: int = 4
+    _RC_TRIGGER_THRESHOLD = 1500
 
     def __init__(self, ) -> None:
         super().__init__("ground_fusion_node")
-        self._rc_trigger_channel = self.RC_TRIGGER_CHANNELS
-        self._rc_trigger_threshold = self.RC_TRIGGER_THRESHOLD
+        self._rc_trigger_channel = self._RC_TRIGGER_CHANNELS
+        self._rc_trigger_threshold = self._RC_TRIGGER_THRESHOLD
         self.get_logger().info(
             f"RC trigger configured channel={self._rc_trigger_channel} threshold={self._rc_trigger_threshold}"
         )
@@ -122,20 +122,12 @@ class GroundFusionNode(Node):
         assert self._latest_image is not None
         assert self._latest_range is not None
         assert self._latest_attitude is not None
-        assert self._latest_rc is not None
 
         message = FusedComms()
         message.header.stamp = self.get_clock().now().to_msg()
         message.image = self._latest_image
         message.range = self._latest_range
         message.imu = self._latest_attitude
-        message.rc_triggered = len(self._last_triggered_channels) > 0
-        message.triggered_channels = list(self._last_triggered_channels)
-        message.triggered_values = [
-            int(self._latest_rc.channels[i])
-            for i in self._last_triggered_channels
-            if i < len(self._latest_rc.channels)
-        ]
         return message
 
 
