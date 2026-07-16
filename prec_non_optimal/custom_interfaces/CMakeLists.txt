@@ -29,8 +29,9 @@ if(BUILD_TESTING)
 endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/Landing.action"
   "action/Takeoff.action"
-  "srv/Landing.srv"
+  "msg/Error.msg"
 )
 
 ament_package()

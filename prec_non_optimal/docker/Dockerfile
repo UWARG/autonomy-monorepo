@@ -29,7 +29,7 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install numpy scipy
+RUN pip install numpy scipy sortedcontainers
 
 WORKDIR /ros_ws
 
