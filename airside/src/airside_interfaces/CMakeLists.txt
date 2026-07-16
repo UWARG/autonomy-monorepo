@@ -13,7 +13,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs sensor_msgs
 )
 
-
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
