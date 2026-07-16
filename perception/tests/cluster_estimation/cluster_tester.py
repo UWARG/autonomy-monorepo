@@ -9,10 +9,6 @@ Small tester for cluster_estimation.
         -w / --write   save cluster locations (out/)
 """
 
-import argparse
-import os
-import sys
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
@@ -22,6 +18,9 @@ from cluster_estimation import (
     write_grouped_cluster_locations,
 )
 
+import argparse
+import os
+import sys
 
 # --- generate ---------------------------------------------------------------
 
@@ -66,14 +65,17 @@ def plot(name, buckets, results, dim, outdir):
             ax.scatter(*[[m] for m in mean[:dim]], color=col, marker="X",
                        s=220, edgecolors="black", linewidths=1.5)
 
-    ax.set_xlabel("x"); ax.set_ylabel("y")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
     if dim == 3:
         ax.set_zlabel("z")
     ax.set_title(name)
     ax.legend(loc="best", fontsize=8)
     os.makedirs(outdir, exist_ok=True)
     out = os.path.join(outdir, f"{name}.png")
-    fig.tight_layout(); fig.savefig(out, dpi=120); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out, dpi=120)
+    plt.close(fig)
     print(f"  plot -> {out}")
 
 
@@ -140,4 +142,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
