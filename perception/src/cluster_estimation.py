@@ -88,10 +88,31 @@ def cluster_by_tag(points, tags, key, include_untagged=True):
 
     buckets = bucket_points_by_tag(points, tags, key, include_untagged)
     results = {}
-    for value, bucket_points in buckets.items():
-        results[value] = cluster_estimation(bucket_points)
+    for tag, bucket_points in buckets.items():
+        results[tag] = cluster_estimation(bucket_points)
     return results
 
+
+def write_cluster_locations(clusters, path, tag=None):
+    """Write cluster centers to a file with just location and tag"""
+    with open(path, "w") as f:
+        for mean, _weight, _cov in clusters:
+            
+            coords = " ".join(f"{v:.3f}" for v in mean)
+
+            if tag is not None:
+                f.write(f"{coords} | tag={tag}\n")
+            else:
+                f.write(f"{coords}\n")
+
+
+def write_grouped_cluster_locations(results_by_tag, path):
+    """results_by_tag: {tag: clusters}, is what should be returned by cluster_by_tag()."""
+    with open(path, "w") as f:
+        for tag, clusters in results_by_tag.items():
+            for mean, _weight, _covariance in clusters:
+                coords = " ".join(f"{v:.3f}" for v in mean)
+                f.write(f"{coords} | tag={tag}\n")
 
 
 class ClusterEstimation:
