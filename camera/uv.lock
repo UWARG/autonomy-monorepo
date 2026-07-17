@@ -23,14 +23,18 @@ dev = [
     { name = "pytest", version = "9.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "ruff" },
 ]
+oakd = [
+    { name = "depthai" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "depthai", marker = "extra == 'oakd'" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "oakd"]
 
 [[package]]
 name = "colorama"
@@ -39,6 +43,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "depthai"
+version = "3.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/7c/1f295a8294ac133f94876861eb377e9ed8af8bdc0fef7092e4dbdaf9be2e/depthai-3.7.1-cp39.cp310.cp311.cp312.cp313.cp314-cp39.cp310.cp311.cp312.cp313.cp314-macosx_11_0_arm64.whl", hash = "sha256:a37158f7a98c2f50f2df195c1e73e70efaba6d00841147bce51a51a10749fa10", size = 63433318, upload-time = "2026-06-07T19:41:08.402Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/82/ce282a53a1df67b932536b766f0e97fd4ab0ffca40e7379e6fe592b5065f/depthai-3.7.1-cp39.cp310.cp311.cp312.cp313.cp314-cp39.cp310.cp311.cp312.cp313.cp314-macosx_11_0_x86_64.whl", hash = "sha256:f7f231b2169824e9dd233b07c22f00412f8d765737ee0043cc11ed2353e0e0e0", size = 66940650, upload-time = "2026-06-07T19:41:16.135Z" },
+    { url = "https://files.pythonhosted.org/packages/08/58/344f8340cc70dc358c7578e0d581a958847eb9814cbca52463f0f606419e/depthai-3.7.1-cp39.cp310.cp311.cp312.cp313.cp314-cp39.cp310.cp311.cp312.cp313.cp314-manylinux_2_28_aarch64.whl", hash = "sha256:64b10ce0790efa1ba1b0f59a023626847305d50e19758226a7a65e1cd51e982e", size = 77561801, upload-time = "2026-06-07T19:41:24.944Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/d1/c9da1551188e0b0e3c8557d1f2ca96f5032f1c551fa51ae662537888466e/depthai-3.7.1-cp39.cp310.cp311.cp312.cp313.cp314-cp39.cp310.cp311.cp312.cp313.cp314-manylinux_2_28_x86_64.whl", hash = "sha256:c0ace72d6cb4ae0806430892d8634fdb5f2a0a51101e1791cd49b7417cfd2a2b", size = 82659963, upload-time = "2026-06-07T19:41:30.544Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/b9/49b78d1adb538a61aef5b8980df4b1af5b5661a279a4f064c8d906b0c84c/depthai-3.7.1-cp39.cp310.cp311.cp312.cp313.cp314-cp39.cp310.cp311.cp312.cp313.cp314-win_amd64.whl", hash = "sha256:adc2ec31e5fd42d32c15416ef522ba4065e2d21b06327770506b344d6e55a83b", size = 67740097, upload-time = "2026-06-07T19:41:35.527Z" },
 ]
 
 [[package]]

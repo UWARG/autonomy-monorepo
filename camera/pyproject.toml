@@ -12,6 +12,7 @@ Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
+oakd = ["depthai"]
 
 [build-system]
 requires = ["hatchling"]
