@@ -18,22 +18,19 @@ class OakD(AbstractCamera):
     """
 
     def initialize_camera(self) -> bool:
-        raise NotImplementedError("OAK-D pipeline setup is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")
 
     def capture_frame(self) -> CameraFrame | None:
-        raise NotImplementedError("OAK-D frame capture is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")
 
     def close_camera(self) -> None:
-        raise NotImplementedError("OAK-D shutdown is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")
 
     def get_point_cloud(self) -> object | None:
-        """Return the latest point cloud if the active pipeline produces one."""
-        raise NotImplementedError("OAK-D point cloud support is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")
 
     def get_visual_odometry(self) -> object | None:
-        """Return the latest VO estimate if the active pipeline produces one."""
-        raise NotImplementedError("OAK-D visual odometry support is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")
 
     def get_imu_data(self) -> object | None:
-        """Return the latest IMU sample if the active pipeline produces one."""
-        raise NotImplementedError("OAK-D IMU support is not implemented yet.")
+        raise NotImplementedError("not implemented yet.")

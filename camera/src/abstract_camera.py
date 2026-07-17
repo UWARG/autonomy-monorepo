@@ -57,13 +57,13 @@ class AbstractCamera(abc.ABC):
                 time.sleep(self._frame_interval_s)
 
     @abc.abstractmethod
-    def initialize_camera(self) -> bool: 
+    def initialize_camera(self) -> bool:
         """Camera specific initialization logic, returns True on Success"""
         pass
 
     @abc.abstractmethod
-    def capture_frame(self) -> CameraFrame | None: 
-        """Camera specific frame capture logic, returns a CameraFrame or None if capture failed."""
+    def capture_frame(self) -> CameraFrame | None:
+        """Returns a CameraFrame or None if capture failed."""
         pass
 
     @abc.abstractmethod
