@@ -1,7 +1,7 @@
 [project]
 name = "gnc"
-version = "0.1.0"
-description = "WARG autonomy airside Guidance, Navigation, and Control module"
+version = "0.1.1"
+description = "Guidance, Navigation, and Control module"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
@@ -12,7 +12,6 @@ dependencies = [
 
 [tool.uv.sources]
 utils = { path = "../utils" }
-
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/gnc"

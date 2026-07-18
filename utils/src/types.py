@@ -19,38 +19,38 @@ class Coordinate:
 @dataclass
 class Vector3D:
     """Data class for a 3D vector."""
-    lat: float
-    lon: float
-    alt: float
+    x: float
+    y: float
+    z: float
 
     def __str__(self) -> str:
-        return f"({self.lat}, {self.lon}, {self.alt})"
+        return f"({self.x}, {self.y}, {self.z})"
 
     def __add__(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D, Coordinate])
         return Vector3D(
-            self.lat + other.lat,
-            self.lon + other.lon,
-            self.alt + other.alt
+            self.x + other.x,
+            self.y + other.y,
+            self.z + other.z
         )
 
     def __sub__(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D, Coordinate])
         return Vector3D(
-            self.lat - other.lat,
-            self.lon - other.lon,
-            self.alt - other.alt
+            self.x - other.x,
+            self.y - other.y,
+            self.z - other.z
         )
 
     def __neg__(self) -> Vector3D:
-        return Vector3D(-self.lat, -self.lon, -self.alt)
+        return Vector3D(-self.x, -self.y, -self.z)
 
     def __mul__(self, scalar: float) -> Vector3D:
         checkInput(scalar, [float, int])
         return Vector3D(
-            self.lat * scalar,
-            self.lon * scalar,
-            self.alt * scalar
+            self.x * scalar,
+            self.y * scalar,
+            self.z * scalar
         )
 
     def __rmul__(self, scalar: float) -> Vector3D:
@@ -58,31 +58,31 @@ class Vector3D:
         return self.__mul__(scalar)
 
     def __repr__(self) -> str:
-        return f"Vector3D({self.lat}, {self.lon}, {self.alt})"
+        return f"Vector3D({self.x}, {self.y}, {self.z})"
 
     def norm(self) -> float:
-        return math.sqrt(self.lat**2 + self.lon**2 + self.alt**2)
+        return math.sqrt(self.x**2 + self.y**2 + self.z**2)
 
     def normalized(self) -> Vector3D:
         return self * (1 / self.norm())
 
     def to_pure_quaternion(self) -> Quaternion:
-        return Quaternion(0, self.lat, self.lon, self.alt)
+        return Quaternion(0, self.x, self.y, self.z)
 
     def cross(self, other: Vector3D) -> Vector3D:
         checkInput(other, [Vector3D])
         return Vector3D(
-            self.lon * other.alt - self.alt * other.lon,
-            self.alt * other.lat - self.lat * other.alt,
-            self.lat * other.lon - self.lon * other.lat
+            self.y * other.z - self.z * other.y,
+            self.z * other.x - self.x * other.z,
+            self.x * other.y - self.y * other.x
         )
 
     def dot(self, other: Vector3D) -> float:
         checkInput(other, [Vector3D])
         return (
-            self.lat * other.lat +
-            self.lon * other.lon +
-            self.alt * other.alt
+            self.x * other.x +
+            self.y * other.y +
+            self.z * other.z
         )
 
 @dataclass
