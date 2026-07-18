@@ -9,16 +9,61 @@ import sys
 import py_trees
 import py_trees_ros
 import rclpy
-from engine.behaviors.read_camera import ReadCameraBehavior
-
-TICK_PERIOD_MS: float = 500.0  # Tree clock speed
-UNICODE_TREE_DEBUG: bool = True  # Whether or not to print the tree with Unicode characters on every tick
+from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
+from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.rc.rc_switch import KillSwitch
+from engine.constants import (
+    RC_SWITCHES_ENABLED,
+    TICK_PERIOD_MS,
+    UNICODE_TREE_DEBUG,
+)
+from engine.subtrees.land import create_land_subtree
+from engine.subtrees.lapping import create_lapping_subtree
+from engine.subtrees.target_reconnaissance import (
+    create_target_reconnaissance_subtree,
+)
 
 
 def create_root() -> py_trees.behaviour.Behaviour:
-    root = py_trees.composites.Sequence(name="Root", memory=False)
-    root.add_child(ReadCameraBehavior(name="ReadCamera"))
-    return root
+    """
+    Builds the full mission tree.
+
+    The KillSwitch decorator freezes the mission (without resetting its
+    progress) while the kill switch is high, so flipping the switch back
+    resumes the mission where it left off. The final MissionComplete node
+    holds the tree in RUNNING after landing.
+
+    ```
+    KillSwitch
+    └── Mission [Sequence]
+        ├── ConfigureStreamRates
+        ├── LoadWaypointList
+        ├── Takeoff
+        ├── Lapping
+        ├── TargetReconnaissance
+        ├── LandPhase
+        └── MissionComplete [Running]
+    ```
+    """
+
+    mission = py_trees.composites.Sequence(
+        name="Mission",
+        memory=True,
+        children=[
+            ConfigureStreamRates(),
+            LoadWaypointList(),
+            Takeoff(),
+            create_lapping_subtree(),
+            create_target_reconnaissance_subtree(),
+            create_land_subtree(),
+            py_trees.behaviours.Running(name="MissionComplete"),
+        ],
+    )
+
+    if RC_SWITCHES_ENABLED:
+        return KillSwitch(child=mission)
+    return mission
 
 
 def main(args: list[str] | None = None) -> None:
@@ -49,7 +94,7 @@ def main(args: list[str] | None = None) -> None:
     try:
         if tree.node is not None:
             rclpy.spin(tree.node)
-    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  #type: ignore[attr-defined]
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  # type: ignore[attr-defined]
         pass
     finally:
         tree.shutdown()
