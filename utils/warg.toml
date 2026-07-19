@@ -4,9 +4,9 @@ description = "Shared constants, enums, and dataclasses used across all Airside 
 depends_on = []
 
 [commands]
-setup = "uv sync"
-test = "uv run --extra dev pytest"
-lint = "uv run --extra dev ruff check ."
+setup = "uv sync --no-editable"
+test = "uv run --no-editable --extra dev pytest"
+lint = "uv run --no-editable --extra dev ruff check ."
 
 [ci]
 pr = ["lint", "test"]
