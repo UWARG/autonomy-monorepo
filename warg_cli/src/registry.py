@@ -71,13 +71,38 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: project '{name}' path must be "
                     "repo-relative."
                 )
+            extra_paths = self._parse_extra_paths(name, metadata)
             if name in entries:
                 raise ManifestError(
                     f"{ROOT_REGISTRY_FILENAME}: duplicate project '{name}'."
                 )
-            entries[name] = ProjectEntry(name=name, path=path)
+            entries[name] = ProjectEntry(name=name, path=path, extra_paths=extra_paths)
 
         return dict(sorted(entries.items()))
+
+    def _parse_extra_paths(
+        self, name: str, metadata: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raw = metadata.get("extra_paths", [])
+        if not isinstance(raw, list) or not all(
+            isinstance(item, str) for item in raw
+        ):
+            raise ManifestError(
+                f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must be "
+                "a list of strings."
+            )
+        for item in raw:
+            if not item:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
+                    "not contain empty strings."
+                )
+            if Path(item).is_absolute() or ".." in Path(item).parts:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
+                    "be repo-relative."
+                )
+        return tuple(raw)
 
     def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}

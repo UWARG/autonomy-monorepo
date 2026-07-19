@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from ci import affected_projects, run_ci_pipeline
+from constants import ALWAYS_INCLUDE_PATHS
 from errors import WargError
 from errors import GitError
 from git_adapter import GitAdapter
@@ -74,6 +75,8 @@ def clone(
             raise typer.Exit(1)
         repository = _resolve_repository(repository, organization, include_archived)
         _clone_repository(repository, destination, full)
+        if not full and ALWAYS_INCLUDE_PATHS:
+            _include_always_paths(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -82,7 +85,7 @@ def clone(
         console.print("Cloned full repository.")
     else:
         console.print("Cloned repository with sparse checkout enabled.")
-        console.print("Only root files are checked out. Run 'warg up <project>' next.")
+        console.print("Root files and " f"{', '.join(ALWAYS_INCLUDE_PATHS)} are checked out. ""Run 'warg up <project>' next.")
 
 
 @app.command("list")
@@ -340,6 +343,21 @@ def _clone_repository(repository: str, destination: str | None, full: bool) -> N
             GitAdapter.clone_sparse(fallback, destination)
 
 
+def _include_always_paths(repository: str, destination: str | None) -> None:
+    clone_dir = _clone_directory(repository, destination)
+    git = GitAdapter(clone_dir)
+    git.materialize_paths(list(ALWAYS_INCLUDE_PATHS))
+
+
+def _clone_directory(repository: str, destination: str | None) -> Path:
+    if destination:
+        return Path(destination)
+    name = repository.rstrip("/").rsplit("/", 1)[-1]
+    if name.endswith(".git"):
+        name = name[: -len(".git")]
+    return Path(name)
+
+
 def _github_ssh_url_to_https(repository: str) -> str | None:
     match = re.fullmatch(r"git@github\.com:([^/]+)/(.+?)(?:\.git)?", repository)
     if not match:
@@ -384,11 +402,23 @@ def _materialize_dependency_graph(
         materialized.update(git.materialize_paths(sorted(requested_paths)))
         registry = Registry(root)
         order, discovered_paths = _discover_dependency_order(registry, project_name)
+        discovered_paths |= _extra_paths_for_order(registry, order)
         missing_paths = discovered_paths - requested_paths
         if not missing_paths:
             paths = sorted(requested_paths)
             return paths, order, materialized
         requested_paths.update(missing_paths)
+
+
+def _extra_paths_for_order(
+    registry: Registry, order: list[Project]
+) -> set[str]:
+    extra: set[str] = set()
+    for project in order:
+        entry = registry.entries.get(project.name)
+        if entry is not None:
+            extra.update(entry.extra_paths)
+    return extra
 
 
 def _discover_dependency_order(

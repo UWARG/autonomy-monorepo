@@ -89,6 +89,12 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone(cls, repository: str, destination: str | None) -> None:
             raise AssertionError("unexpected full clone")
@@ -110,13 +116,19 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert calls == [("git@github.com:warg/autonomy-monorepo.git", "autonomy-monorepo")]
-    assert "Only root files are checked out" in result.stdout
+    assert ".github are checked out" in result.stdout
 
 
 def test_clone_warns_when_repository_uses_https(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -147,6 +159,12 @@ def test_clone_falls_back_to_https_when_github_ssh_clone_fails(monkeypatch) -> N
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -177,6 +195,12 @@ def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone_sparse(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -204,6 +228,12 @@ def test_clone_full_uses_normal_clone(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -236,6 +266,12 @@ def test_clone_full_falls_back_to_https_when_github_ssh_clone_fails(
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone(cls, repository: str, destination: str | None) -> None:
             calls.append((repository, destination))
@@ -270,6 +306,12 @@ def test_clone_picks_repository_when_missing(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone(cls, repository: str, destination: str | None) -> None:
             raise AssertionError("unexpected full clone")
@@ -294,6 +336,12 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
     calls = []
 
     class FakeGit:
+        def __init__(self, root=None):
+            self.root = root
+
+        def materialize_paths(self, paths):
+            return set(paths)
+
         @classmethod
         def clone(cls, repository: str, destination: str | None) -> None:
             raise AssertionError("unexpected full clone")
@@ -816,3 +864,38 @@ path = "mavlink_comm"
         "gesture_control",
     ]
     assert materialized == {"camera", "gesture_control", "mavlink_comm"}
+
+
+def test_up_materializes_project_extra_paths(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "projects.toml").write_text(
+        """
+[projects.airside]
+path = "airside"
+extra_paths = ["shared/protos"]
+""".strip()
+        + "\n"
+    )
+
+    class FakeGit:
+        def materialize_paths(self, paths: list[str]) -> set[str]:
+            for path in paths:
+                project_dir = tmp_path / path
+                project_dir.mkdir(parents=True, exist_ok=True)
+                manifest = project_dir / "warg.toml"
+                if path == "airside" and not manifest.exists():
+                    manifest.write_text(
+                        'name = "airside"\n'
+                        "depends_on = []\n"
+                        "[commands]\n"
+                        'setup = "echo setup-airside"\n'
+                    )
+            return set(paths)
+
+    paths, order, materialized = _materialize_dependency_graph(
+        tmp_path, FakeGit(), "airside"
+    )
+
+    assert "shared/protos" in paths
+    assert "airside" in paths
+    assert "shared/protos" in materialized
