@@ -2,8 +2,8 @@ import math
 
 import pytest
 
-from src.types import Coordinate
-from src.waypoint_utils import (
+from utils.src.types import Coordinate
+from utils.src.waypoint_utils import (
     east_north_coordinate_offset_m,
     parse_waypoints_file,
     sort_clockwise_sweep,
