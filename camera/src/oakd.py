@@ -1,12 +1,4 @@
-"""
-OakD camera implementation.
-
----
-
-"""
-
 from __future__ import annotations
-
 from abstract_camera import AbstractCamera
 from frame import CameraFrame
 
@@ -14,7 +6,7 @@ from frame import CameraFrame
 class OakD(AbstractCamera):
     """Concrete OAK-D camera adapter.
 
-    hardware-specific pipeline should be built here
+    Hardware-specific pipeline should be built here
     """
 
     def initialize_camera(self) -> bool:

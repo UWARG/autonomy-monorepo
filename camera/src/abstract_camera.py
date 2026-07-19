@@ -23,6 +23,7 @@ class AbstractCamera(abc.ABC):
         self._stop_event = threading.Event()
         self._frame_lock = threading.Lock()
         self._last_frame: CameraFrame | None = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> bool:
         """Initializes the camera, returns True on Success."""
@@ -34,18 +35,34 @@ class AbstractCamera(abc.ABC):
 
         self._stop_event.clear()
         self._running = True
+        self._thread = threading.Thread(
+            target=self.run,
+            name=f"{type(self).__name__}Thread",
+            daemon=True,
+        )
+        self._thread.start()
         return True
 
     def stop(self) -> None:
         """Stop the Camera and release any resources."""
+        if not self._running:
+            return
+
         self._running = False
         self._stop_event.set()
+        if (
+            self._thread is not None
+            and self._thread.is_alive()
+            and threading.current_thread() is not self._thread
+        ):
+            self._thread.join()
+        self._thread = None
         self.close_camera()
 
     def run(self) -> None:
         """Main loop for the camera, should be run in a separate thread."""
-        if not self._running and not self.start():
-            raise RuntimeError("Camera failed to initialize.")
+        if not self._running:
+            raise RuntimeError("Camera must be started before run().")
 
         while self._running and not self._stop_event.is_set():
             frame = self.capture_frame()
