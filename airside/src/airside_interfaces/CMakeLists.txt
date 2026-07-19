@@ -4,11 +4,13 @@ project(airside_interfaces)
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/BuildingWing.msg"
   "msg/Coordinate.msg"
+  "msg/FusedComms.msg"
   "msg/LocalizationResult.msg"
   "msg/LocalizedTarget.msg"
   "msg/Plane.msg"
@@ -17,7 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SpatialTarget.msg"
   "msg/Target.msg"
   "msg/WingBoundary.msg"
-  DEPENDENCIES geometry_msgs std_msgs
+  DEPENDENCIES geometry_msgs sensor_msgs std_msgs
 )
 
 if(BUILD_TESTING)
