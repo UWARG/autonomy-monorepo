@@ -12,6 +12,7 @@ airside/
 │   └── airside_entrypoint.sh
 ├── src/
 │   ├── airside_interfaces/
+│   ├── building_target_localizer/
 │   ├── engine/
 │   └── wrapper/
 └── warg.toml
@@ -158,6 +159,51 @@ The `map_manager` node (in the `wrapper` package) is launched alongside the engi
 | `/trigger_post_processing` | `std_msgs/Empty` | subscribe | Snapshots the current target log to a timestamped file for post processing |
 
 Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is wiped at every startup (one file per run). Each trigger copies it to `targets_<YYYY-MM-DDTHH-MM-SS>.jsonl` in the same directory.
+
+### Building-space target localizer
+
+The `building_target_localizer` node converts processed building planes and
+target points into structured, firefighter-readable locations. It is launched
+with the rest of the Airside stack.
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/processed_map` | `airside_interfaces/ProcessedMap` | subscribe | Complete building geometry and target snapshot |
+| `/targets_located` | `airside_interfaces/LocalizationResult` | publish | Per-target status, semantic measurements, uncertainty, and description |
+
+Both topics use reliable, transient-local, depth-one QoS. Input geometry must
+use `header.frame_id = "mission_frd"`, where +x is north/forward, +y is
+east/right, and +z is down. Plane normals point out of the building and use
+`normal · point + offset = 0`.
+
+Each rectangular wing references two adjacent observed wall planes and gives
+the distance to each opposing wall. The node completes those walls, merges
+connected wings, removes internal faces, and derives outer and inside corners.
+All wings share the supplied ground plane and building height. Disconnected
+wings and footprints containing holes are rejected at snapshot level.
+
+Targets that cannot be snapped safely or have ambiguous geometry remain in the
+output with a failure status and no authoritative description. Other targets
+in the same snapshot continue to be reported. Plane covariance is row-major for
+`[normal.x, normal.y, normal.z, offset]`; target covariance is row-major for
+`[x, y, z]`. The output reports the 95th-percentile propagated error.
+
+The default node parameters are:
+
+| Parameter | Default |
+|---|---:|
+| `expected_frame_id` | `mission_frd` |
+| `max_snap_distance_m` | `0.5` |
+| `surface_tie_tolerance_m` | `0.1` |
+| `near_wall_distance_m` | `5.0` |
+| `anchor_tie_tolerance_m` | `0.25` |
+| `wall_vertical_tolerance_deg` | `5.0` |
+| `wing_orthogonality_tolerance_deg` | `5.0` |
+| `wing_join_tolerance_m` | `0.05` |
+| `condition_epsilon` | `1e-6` |
+| `uncertainty_samples` | `1000` |
+| `uncertainty_seed` | `97` |
+| `max_unstable_sample_fraction` | `0.05` |
 
 ### ROS integration inside a behavior
 
