@@ -1,7 +1,8 @@
+from ast import And
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
 from sensor_msgs.msg import NavSatFix
@@ -11,10 +12,9 @@ import yaml
 from sensor_msgs.msg import Imu
 import cv2
 import numpy as np
-from mavros_msgs.msg import Mavlink
+from sortedcontainers import SortedDict
 from rclpy.qos import qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
-from std_msgs.msg import String
 from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
 from custom_interfaces.action import Takeoff
@@ -22,13 +22,15 @@ from custom_interfaces.action import Landing
 from enums import Status
 from std_msgs.msg import Float64
 from custom_interfaces.msg import Error
+import math
 
 
 class Processor(Node):
     def __init__(self) -> None:
         super().__init__("processor")
         self._cb_group=ReentrantCallbackGroup()
-        self.image_subscriber = self.create_subscription(Image, "camera/image", self.process, 10, callback_group=self._cb_group)
+        self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
+        self.image_subscriber = self.create_subscription(Image, "camera/image", self.image_callback, 1, callback_group=self._cb_group)
         self.imu_subscriber = self.create_subscription(Imu, "imu/data", self.imu_callback, 10, callback_group=self._cb_group)
         self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, callback_group=self._cb_group)
         self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, callback_group=self._cb_group)
@@ -38,11 +40,15 @@ class Processor(Node):
 
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
 
-        self.imu_dict={0:[]}
+        self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
+
+        self.imu_dict=SortedDict()
+        self.image=None
         self.latitude=0.0
         self.longitude=0.0
         self.rel_alt=None
         self.last_altitude=0
+        self.BFMatcher=cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
         self.altitude_threshold=0.1
         self.status=Status.TAKEOFF
         self.last_image_altitude=7.5
@@ -56,8 +62,7 @@ class Processor(Node):
         self.landing_goal_handle=None
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
-
-    
+        self.last_landing_key=None
 
     def fix_callback(self, msg: NavSatFix):
         self.latitude=msg.latitude
@@ -77,7 +82,7 @@ class Processor(Node):
         self.landing_goal_handle=goal_handle
         result=Landing.Result()
         rate=self.create_rate(10)
-
+        self.last_landing_key=None
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
@@ -115,24 +120,80 @@ class Processor(Node):
         finally:
             self.takeoff_goal_handle=None
 
-    def process(self, image: Image):
-        if self.takeoff_goal_handle is None:
+    def pixel_to_3d(self, x: float, y: float, roll: float, pitch: float, alt:float):
+        x_px=x-self.cx
+        y_px=y-self.cy
+        pz=alt*math.cos(pitch)*math.cos(roll)
+        px=(-x_px-math.sin(pitch)*self.fx)*pz/self.fx
+        py=(-y_px+math.sin(roll)*self.fy)*pz/self.fy
+        return px,py
+    
+    def image_callback(self, image: Image):
+        self.image=image
+
+    def process(self):
+        if self.image is None:
+            return
+        if self.takeoff_goal_handle is None and self.landing_goal_handle is None:
             return
         if self.rel_alt is None or self.pitch is None or self.roll is None:
             return
-        if self.last_altitude>self.last_image_altitude:
+        if self.last_altitude>self.last_image_altitude and self.takeoff_goal_handle:
             return
         if self.takeoff_goal_handle:
-            if self.rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
+            #snapshot
+            image=self.image
+            rel_alt=self.rel_alt
+            roll=self.roll
+            pitch=self.pitch
+            if rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
                     return
-                self.imu_dict[self.rel_alt]=[kp,des,self.roll,self.pitch]
+                self.imu_dict[self.rel_alt]=[kp,des,roll,pitch]
                 self.last_altitude=self.rel_alt
         elif self.landing_goal_handle:
-            pass
-
+            #snapshot
+            image=self.image
+            rel_alt=self.rel_alt
+            land_roll=self.roll
+            land_pitch=self.pitch
+            index=self.imu_dict.bisect_right(rel_alt)-1
+            if index<0:
+                self.get_logger().error("No takeoff key found")
+                return
+            key,entry=self.imu_dict.peekitem(index)
+            if self.last_landing_key is not None and key>=self.last_landing_key:
+                return
+            kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
+            gray=self.undistort_image(image)
+            kp,des=self.generate_orb_descriptors(gray)
+            if kp is None or des is None:
+                return
+            if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
+                return
+            gpu_landing_des=cv2.cuda.GpuMat()
+            gpu_takeoff_des=cv2.cuda.GpuMat()
+            gpu_landing_des.upload(des)
+            gpu_takeoff_des.upload(des_takeoff)
+            matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+            matches=sorted(matches, key=lambda x: x.distance)
+            if len(matches)<50:
+                return
+            good_matches=matches[:50]
+            for match in good_matches:
+                x_land_px,y_land_px=kp[match.queryIdx]
+                x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
+                if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
+                    continue
+                self.get_logger().info(f"Landing match: {x_land_px}, {y_land_px}, {x_takeoff_px}, {y_takeoff_px}")
+                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,rel_alt)
+                x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
+            
+            #implement RANSAC 
+            
+            self.last_landing_key=key
 
 
     def generate_orb_descriptors(self, image: Image):
@@ -178,6 +239,11 @@ class Processor(Node):
         reshaped_d=np.array(self.d)
         self.new_camera_matrix,self.roi=cv2.getOptimalNewCameraMatrix(reshaped_k, reshaped_d, (self.width, self.height), 0)
         self.mapx,self.mapy=cv2.initUndistortRectifyMap(reshaped_k, reshaped_d, None, self.new_camera_matrix, (self.width, self.height), cv2.CV_32FC1)
+        x,y,w,h=self.roi
+        self.fx=self.new_camera_matrix[0,0]
+        self.fy=self.new_camera_matrix[1,1]
+        self.cx=self.new_camera_matrix[0,2]-x
+        self.cy=self.new_camera_matrix[1,2]-y
 
 if __name__ == "__main__":
     rclpy.init()

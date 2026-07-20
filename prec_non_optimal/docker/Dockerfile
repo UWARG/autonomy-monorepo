@@ -33,17 +33,17 @@ RUN pip install numpy scipy sortedcontainers
 
 WORKDIR /ros_ws
 
-COPY airside_prec/src/ src/
+COPY prec_non_optimal/src/ src/
 
 RUN source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
   && colcon build --symlink-install
 
-COPY airside_prec/docker/airside_entrypoint.sh /airside_entrypoint.sh
-RUN chmod +x /airside_entrypoint.sh
+COPY prec_non_optimal/docker/prec_non_optimal_entrypoint.sh /prec_non_optimal_entrypoint.sh
+RUN chmod +x /prec_non_optimal_entrypoint.sh
 
 RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 
 
-ENTRYPOINT ["/airside_entrypoint.sh"]
+ENTRYPOINT ["/prec_non_optimal_entrypoint.sh"]
 CMD ["bash"]
