@@ -63,6 +63,8 @@ class Processor(Node):
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
         self.last_landing_key=None
+        self.landing_3d_points=np.array([])
+        self.takeoff_3d_points=np.array([])
 
     def fix_callback(self, msg: NavSatFix):
         self.latitude=msg.latitude
@@ -190,11 +192,31 @@ class Processor(Node):
                 self.get_logger().info(f"Landing match: {x_land_px}, {y_land_px}, {x_takeoff_px}, {y_takeoff_px}")
                 x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,rel_alt)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
-            
+                self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
+                self.landing_3d_points.append([x_land_3d,y_land_3d])
             #implement RANSAC 
-            
-            self.last_landing_key=key
-
+            H,inliers=cv2.estimateAffinePartial2D(
+                self.takeoff_3d_points, 
+                self.landing_3d_points,
+                method=cv2.RANSAC,
+                ransacReprojThreshold=0.01,
+                maxIters=1000,
+                confidence=0.99,
+                refineIters=10,
+                )
+            if H is None:
+                return
+            translation_x=H[0,2]
+            translation_y=H[1,2]
+            rotation_angle=math.atan2(H[1,0], H[0,0])
+            scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
+            if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
+                return
+            error=Error()
+            error.x=translation_x
+            error.y=translation_y
+            error.angle=rotation_angle
+            self.error_publisher.publish(error)
 
     def generate_orb_descriptors(self, image: Image):
         kp,des=self.orb.detectAndCompute(image, None)
