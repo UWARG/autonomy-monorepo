@@ -2,7 +2,7 @@ from rclpy.node import Node
 from mavros_msgs.msg import Mavlink, RCIn
 from std_msgs.msg import String
 import struct
-
+import rclpy
 class RCNode(Node):
     def __init__(self):
         super().__init__("rc_node")
@@ -42,4 +42,13 @@ class RCNode(Node):
         rc_msg.rssi=255
         self.rc_publisher.publish(rc_msg)
 
+def main(args=None):
+    rclpy.init(args=args)
+    rc_node=RCNode()
+    rclpy.spin(rc_node)
+    rc_node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
 

@@ -23,6 +23,7 @@ setup(
         "console_scripts": [
             "processor = nodes.processor:main",
             "controller = nodes.controller:main",
+            "rc_node = nodes.rc_node:main",
         ],
     },
 )

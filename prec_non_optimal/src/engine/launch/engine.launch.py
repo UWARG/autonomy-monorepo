@@ -75,5 +75,11 @@ def generate_launch_description() -> LaunchDescription:
                 name="controller",
                 output="screen",
             ),
+            Node(
+                package="nodes",
+                executable="rc_node",
+                name="rc_node",
+                output="screen",
+            ),
         ]
     )
