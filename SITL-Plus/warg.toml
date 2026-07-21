@@ -1,0 +1,15 @@
+name = "SITL-Plus"
+description = "WARG's SITL archtecture"
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+build = "uv build"
+test = "uv run --extra dev pytest"
+run = "uv run python -m sitl_plus.main"
+lint = "uv run --extra dev ruff check ."
+
+[ci]
+pr = ["lint", "test"]
+main = ["test", "build"]
