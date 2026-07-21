@@ -45,11 +45,14 @@ class Controller(Node):
         self.get_logger().info('Controller node initialized')
         self.pi_x=PI(0.01,0.1,10,10)
         self.pi_y=PI(0.01,0.1,10,10)
-        self.vx=0
-        self.vy=0
-        self.vz=0
+        self.vx=0.0
+        self.vy=0.0
+        self.vz=0.0
+        self.commanding=False
 
     def publish_velocity(self):
+        if not self.commanding:
+            return
         velocity=PositionTarget()
         now = self.get_clock().now()
         velocity.header.stamp = now.to_msg()
@@ -65,7 +68,33 @@ class Controller(Node):
         velocity.velocity.z=self.vz
         self.velocity_publisher.publish(velocity)
 
+    def _publish_zero_velocity(self):
+        velocity=PositionTarget()
+        now = self.get_clock().now()
+        velocity.header.stamp = now.to_msg()
+        velocity.header.frame_id = "base_link"
+        velocity.type_mask = (
+            PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
+            PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
+            PositionTarget.IGNORE_YAW | PositionTarget.IGNORE_YAW_RATE
+        )
+        velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
+        velocity.velocity.x=0.0
+        velocity.velocity.y=0.0
+        velocity.velocity.z=0.0
+        self.velocity_publisher.publish(velocity)
+
     def PI_control(self,error):
+        if error.landing_complete:
+            self.vx=0.0
+            self.vy=0.0
+            self.vz=0.0
+            self._publish_zero_velocity()
+            self.commanding=False
+            self.pi_x.update_prev_time()
+            self.pi_y.update_prev_time()
+            return
+        self.commanding=True
         if error.below_last_landing_altitude:
             self.vx=0
             self.vy=0

@@ -9,7 +9,7 @@ import rclpy.node
 from mavros_msgs.msg import RCIn
 from action_msgs.msg import GoalStatus
 from rclpy.action import ActionClient
-from custom_interfaces.action import Takeoff as Takeoff
+from custom_interfaces.action import Takeoff as TakeoffAction
 
 class Takeoff(py_trees.behaviour.Behaviour):
 
@@ -28,7 +28,7 @@ class Takeoff(py_trees.behaviour.Behaviour):
 
         self._node = kwargs["node"]
         self._rc_subscriber=self._node.create_subscription(RCIn, "/rc", self.rc_callback, 10)
-        self._takeoff_action_client=ActionClient(self._node, Takeoff, "/takeoff")
+        self._takeoff_action_client=ActionClient(self._node, TakeoffAction, "/takeoff")
     
     def rc_callback(self, msg: RCIn):
         self.channel6=msg.channels[6]
@@ -43,7 +43,7 @@ class Takeoff(py_trees.behaviour.Behaviour):
         self.status=None
         while not self._takeoff_action_client.wait_for_server(timeout_sec=5.0):
             self._node.get_logger().info("Waiting for takeoff action server")
-        goal=Takeoff.Goal()
+        goal=TakeoffAction.Goal()
         self.goal_future=self._takeoff_action_client.send_goal_async(goal)
         self.goal_future.add_done_callback(self.goal_response_callback)
    

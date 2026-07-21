@@ -22,6 +22,7 @@ from std_msgs.msg import Float64
 from custom_interfaces.msg import Error
 import math
 
+ACCEPTABLE_OFFSET=0.05
 
 class Processor(Node):
     def __init__(self) -> None:
@@ -70,6 +71,7 @@ class Processor(Node):
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,valid_error=False,
             below_last_landing_altitude=False,align_before_descent=align_before_descent,
+            landing_complete=False,
         ))
 
     def fix_callback(self, msg: NavSatFix):
@@ -109,6 +111,7 @@ class Processor(Node):
         self.get_logger().info("Takeoff requested")
         self.takeoff_goal_handle=goal_handle
         self.last_altitude=0
+        self.imu_dict.clear()
         result=Takeoff.Result()
         rate=self.create_rate(10)
 
@@ -172,13 +175,19 @@ class Processor(Node):
             land_roll=self.roll
             land_pitch=self.pitch
             align_before_descent=rel_alt<=self.align_altitude
-            if rel_alt<=0.0+self.error_margin:
+            if rel_alt<=0.0+ACCEPTABLE_OFFSET:
+                self.error_publisher.publish(Error(
+                    x=0.0,y=0.0,angle=0.0,valid_error=False,
+                    below_last_landing_altitude=False,align_before_descent=False,
+                    landing_complete=True,
+                ))
                 self.landing_complete=True
                 return
             if rel_alt<=self.last_landing_altitude:
                 self.error_publisher.publish(Error(
                     x=0,y=0,angle=0,valid_error=False,
                     below_last_landing_altitude=True,align_before_descent=False,
+                    landing_complete=False,
                 ))
                 return
             index=self.imu_dict.bisect_right(rel_alt)-1
@@ -252,6 +261,7 @@ class Processor(Node):
             error.valid_error=True
             error.below_last_landing_altitude=False
             error.align_before_descent=align_before_descent
+            error.landing_complete=False
             self.error_publisher.publish(error)
 
     def generate_orb_descriptors(self, image: Image):
@@ -266,7 +276,7 @@ class Processor(Node):
         dst=cv2.remap(image, self.mapx, self.mapy, cv2.INTER_LINEAR)
         x,y,w,h=self.roi
         dst=dst[y:y+h, x:x+w]
-        gray=cv2.cvtColor(dst, cv2.COLOR_BGR2GRAY)
+        gray=cv2.cvtColor(dst, cv2.COLOR_RGB2GRAY)
         return gray
     
     def imu_callback(self, msg: Imu):
