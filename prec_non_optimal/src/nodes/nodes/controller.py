@@ -35,6 +35,10 @@ class PI():
         return clamped_output
     def update_prev_time(self):
         self.previous_time=time.time_ns()/1e9
+    def reset(self):
+        self.integral=0
+        self.previous_error=0
+        self.previous_time=time.time_ns()/1e9
 
 class Controller(Node):
     def __init__(self):
@@ -91,9 +95,12 @@ class Controller(Node):
             self.vz=0.0
             self._publish_zero_velocity()
             self.commanding=False
-            self.pi_x.update_prev_time()
-            self.pi_y.update_prev_time()
+            self.pi_x.reset()
+            self.pi_y.reset()
             return
+        if not self.commanding:
+            self.pi_x.reset()
+            self.pi_y.reset()
         self.commanding=True
         if error.below_last_landing_altitude:
             self.vx=0

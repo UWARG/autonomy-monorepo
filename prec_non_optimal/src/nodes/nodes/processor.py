@@ -59,6 +59,7 @@ class Processor(Node):
         self.takeoff_goal_handle=None
         self.landing_goal_handle=None
         self.landing_complete=False
+        self.landing_failed=False
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
@@ -87,17 +88,37 @@ class Processor(Node):
             self.error_margin=0.05
         self.rel_alt=msg.data
 
+    def fail_landing(self, reason: str):
+        self.get_logger().error(reason)
+        self.error_publisher.publish(Error(
+            x=0.0,y=0.0,angle=0.0,valid_error=False,
+            below_last_landing_altitude=False,align_before_descent=False,
+            landing_complete=True,
+        ))
+        self.landing_failed=True
+
     def landing_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Landing requested")
         self.landing_goal_handle=goal_handle
         self.landing_complete=False
+        self.landing_failed=False
         result=Landing.Result()
+        if not self.imu_dict:
+            self.fail_landing("Empty teach map; cannot land")
+            result.success=False
+            goal_handle.abort()
+            self.landing_goal_handle=None
+            return result
         rate=self.create_rate(10)
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
                     result.success=False
                     goal_handle.canceled()
+                    return result
+                if self.landing_failed:
+                    result.success=False
+                    goal_handle.abort()
                     return result
                 if self.landing_complete:
                     result.success=True
@@ -175,6 +196,9 @@ class Processor(Node):
             land_roll=self.roll
             land_pitch=self.pitch
             align_before_descent=rel_alt<=self.align_altitude
+            if not self.imu_dict:
+                self.fail_landing("Empty map")
+                return
             if rel_alt<=0.0+ACCEPTABLE_OFFSET:
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,valid_error=False,
