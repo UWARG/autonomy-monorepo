@@ -63,8 +63,9 @@ class Processor(Node):
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
         self.last_landing_key=None
-        self.landing_3d_points=np.array([])
-        self.takeoff_3d_points=np.array([])
+        self.landing_3d_points=[]
+        self.takeoff_3d_points=[]
+        self.last_landing_altitude=0.25
 
     def fix_callback(self, msg: NavSatFix):
         self.latitude=msg.latitude
@@ -156,6 +157,9 @@ class Processor(Node):
                 self.imu_dict[self.rel_alt]=[kp,des,roll,pitch]
                 self.last_altitude=self.rel_alt
         elif self.landing_goal_handle:
+            if self.rel_alt<=self.last_landing_altitude:
+                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=True))
+                return
             #snapshot
             image=self.image
             rel_alt=self.rel_alt
@@ -184,6 +188,8 @@ class Processor(Node):
             if len(matches)<50:
                 return
             good_matches=matches[:50]
+            self.takeoff_3d_points=[]
+            self.landing_3d_points=[]
             for match in good_matches:
                 x_land_px,y_land_px=kp[match.queryIdx]
                 x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
@@ -196,8 +202,8 @@ class Processor(Node):
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D(
-                self.takeoff_3d_points, 
-                self.landing_3d_points,
+                np.asarray(self.takeoff_3d_points,dtype=np.float32),
+                np.asarray(self.landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
                 ransacReprojThreshold=0.01,
                 maxIters=1000,
@@ -205,17 +211,21 @@ class Processor(Node):
                 refineIters=10,
                 )
             if H is None:
+                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=False))
                 return
             translation_x=H[0,2]
             translation_y=H[1,2]
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
+                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=False))
                 return
             error=Error()
             error.x=translation_x
             error.y=translation_y
             error.angle=rotation_angle
+            error.valid_error=True
+            error.below_last_landing_altitude=False
             self.error_publisher.publish(error)
 
     def generate_orb_descriptors(self, image: Image):

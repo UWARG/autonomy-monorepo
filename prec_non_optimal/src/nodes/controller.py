@@ -1,10 +1,10 @@
 from rclpy.node import Node
 import rclpy
-from geometry_msgs.msg import PositionTarget
+from mavros_msgs.msg import PositionTarget
 from custom_interfaces.msg import Error
 import time
 
-
+HZ=20
 
 class PI():
     def __init__(self,ki,kp,max_integral,max_output):
@@ -38,12 +38,15 @@ class Controller(Node):
         super().__init__('controller')
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
         self.velocity_publisher=self.create_publisher(PositionTarget, "/setpoint_raw/local", 10)
+        self.create_timer(1/HZ, self.publish_velocity)
         self.get_logger().info('Controller node initialized')
         self.pi_x=PI(0.01,0.1,10,10)
         self.pi_y=PI(0.01,0.1,10,10)
+        self.vx=0
+        self.vy=0
+        self.vz=0
 
-
-    def PI_control(self,error):
+    def publish_velocity(self):
         velocity=PositionTarget()
         now = self.get_clock().now()
         velocity.header.stamp = now.to_msg()
@@ -54,19 +57,29 @@ class Controller(Node):
             PositionTarget.IGNORE_YAW | PositionTarget.IGNORE_YAW_RATE
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
-        #pid loop logic
-        if not error.acceptable_consensus:
-            velocity.velocity.x=0
-            velocity.velocity.y=0
-            velocity.velocity.z=-0.1
+        velocity.velocity.x=self.vx
+        velocity.velocity.y=self.vy
+        velocity.velocity.z=self.vz
+        self.velocity_publisher.publish(velocity)
+
+    def PI_control(self,error):
+        if error.below_last_landing_altitude:
+            self.vx=0
+            self.vy=0
+            self.vz=-0.1
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
-            self.velocity_publisher.publish(velocity)
             return
-        velocity.velocity.x=-self.pi_y.update(error.y)
-        velocity.velocity.y=self.pi_x.update(error.x)
-        velocity.velocity.z=0.1 #change depend on computation time
-        self.velocity_publisher.publish(velocity)
+        #pid loop logic
+        if not error.valid_error:
+            #ascend a bit to increase fov
+            self.vz=-0.05
+            self.pi_x.update_prev_time()
+            self.pi_y.update_prev_time()
+            return
+        self.vx=-self.pi_y.update(error.y)
+        self.vy=self.pi_x.update(error.x)
+        self.vz=0.1 #change depend on computation time
 
 def main(args=None):
     rclpy.init(args=args)
