@@ -5,7 +5,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 
 from camera.src.abstract_camera import AbstractCamera
-from camera.src.arducam import Arducam
+from camera.src.sim import SimCamera
 
 
 class CameraNode(Node):
@@ -17,7 +17,7 @@ class CameraNode(Node):
     def __init__(self) -> None:
         super().__init__("camera_node")
 
-        self._camera: AbstractCamera = Arducam()
+        self._camera: AbstractCamera = SimCamera()
         self._camera.initialize_camera()
 
         self._publisher = self.create_publisher(Image, self.TOPIC, 10)

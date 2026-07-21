@@ -1,8 +1,6 @@
 [projects.warg_cli]
 path = "warg_cli"
 
-[projects.sitl-plus]
-path="sitl-plus"
 
 [projects.gnc]
 path = "gnc"
