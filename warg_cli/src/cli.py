@@ -12,7 +12,6 @@ from rich.console import Console
 from rich.table import Table
 
 from ci import affected_projects, run_ci_pipeline
-from constants import ALWAYS_INCLUDE_PATHS
 from errors import WargError
 from errors import GitError
 from git_adapter import GitAdapter
@@ -75,8 +74,6 @@ def clone(
             raise typer.Exit(1)
         repository = _resolve_repository(repository, organization, include_archived)
         _clone_repository(repository, destination, full)
-        if not full and ALWAYS_INCLUDE_PATHS:
-            _include_always_paths(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
@@ -85,7 +82,10 @@ def clone(
         console.print("Cloned full repository.")
     else:
         console.print("Cloned repository with sparse checkout enabled.")
-        console.print("Root files and " f"{', '.join(ALWAYS_INCLUDE_PATHS)} are checked out. ""Run 'warg up <project>' next.")
+        console.print(
+            "Root files and any configured include_paths are checked out. "
+            "Run 'warg up <project>' next."
+        )
 
 
 @app.command("list")
@@ -328,7 +328,8 @@ def _clone_repository(repository: str, destination: str | None, full: bool) -> N
                 GitAdapter.clone(repository, destination)
         else:
             with console.status("Cloning repository with sparse checkout..."):
-                GitAdapter.clone_sparse(repository, destination)
+                clone_dir = GitAdapter.clone_sparse(repository, destination)
+                _materialize_always_paths(clone_dir)
     except GitError:
         fallback = _github_ssh_url_to_https(repository)
         if fallback is None:
@@ -340,22 +341,19 @@ def _clone_repository(repository: str, destination: str | None, full: bool) -> N
         if full:
             GitAdapter.clone(fallback, destination)
         else:
-            GitAdapter.clone_sparse(fallback, destination)
+            clone_dir = GitAdapter.clone_sparse(fallback, destination)
+            _materialize_always_paths(clone_dir)
 
 
-def _include_always_paths(repository: str, destination: str | None) -> None:
-    clone_dir = _clone_directory(repository, destination)
+def _materialize_always_paths(clone_dir: Path) -> None:
+    try:
+        include_paths = Registry(clone_dir).include_paths
+    except WargError:
+        return
+    if not include_paths:
+        return
     git = GitAdapter(clone_dir)
-    git.materialize_paths(list(ALWAYS_INCLUDE_PATHS))
-
-
-def _clone_directory(repository: str, destination: str | None) -> Path:
-    if destination:
-        return Path(destination)
-    name = repository.rstrip("/").rsplit("/", 1)[-1]
-    if name.endswith(".git"):
-        name = name[: -len(".git")]
-    return Path(name)
+    git.materialize_paths(list(include_paths))
 
 
 def _github_ssh_url_to_https(repository: str) -> str | None:
