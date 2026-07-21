@@ -49,7 +49,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="v4l2_camera_node",
                 parameters=[
                     {"device": "/dev/video0"},
-                    {"image_size": [640, 480]},
+                    {"image_size": [1280, 720]},
                     {"pixel_format": "YUYV"},
                     {"output_encoding": "rgb8"},
                 ],

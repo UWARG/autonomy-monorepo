@@ -2,9 +2,12 @@ from rclpy.node import Node
 import rclpy
 from mavros_msgs.msg import PositionTarget
 from custom_interfaces.msg import Error
+import math
 import time
 
 HZ=20
+ALIGN_XY_TOLERANCE_M=0.15
+DESCENT_VZ=0.1
 
 class PI():
     def __init__(self,ki,kp,max_integral,max_output):
@@ -66,20 +69,26 @@ class Controller(Node):
         if error.below_last_landing_altitude:
             self.vx=0
             self.vy=0
-            self.vz=-0.1
+            self.vz=0.1
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
             return
-        #pid loop logic
         if not error.valid_error:
             #ascend a bit to increase fov
+            self.vx=0.0
+            self.vy=0.0
             self.vz=-0.05
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
             return
         self.vx=-self.pi_y.update(error.y)
         self.vy=self.pi_x.update(error.x)
-        self.vz=0.1 #change depend on computation time
+        #Aligning before descent
+        if error.align_before_descent:
+            xy_error=math.hypot(error.x, error.y)
+            self.vz=DESCENT_VZ if xy_error<=ALIGN_XY_TOLERANCE_M else 0.0
+        else:
+            self.vz=DESCENT_VZ
 
 def main(args=None):
     rclpy.init(args=args)

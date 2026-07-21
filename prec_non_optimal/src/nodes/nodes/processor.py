@@ -63,6 +63,14 @@ class Processor(Node):
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
         self.last_landing_altitude=0.25
+        self.align_altitude=1.5
+        self.min_inlier_ratio=0.7
+
+    def publish_invalid_error(self, align_before_descent: bool=False):
+        self.error_publisher.publish(Error(
+            x=0.0,y=0.0,angle=0.0,valid_error=False,
+            below_last_landing_altitude=False,align_before_descent=align_before_descent,
+        ))
 
     def fix_callback(self, msg: NavSatFix):
         self.latitude=msg.latitude
@@ -163,21 +171,30 @@ class Processor(Node):
             rel_alt=self.rel_alt
             land_roll=self.roll
             land_pitch=self.pitch
-            if rel_alt<=self.last_landing_altitude:
+            align_before_descent=rel_alt<=self.align_altitude
+            if rel_alt<=0.0+self.error_margin:
                 self.landing_complete=True
-                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=True))
+                return
+            if rel_alt<=self.last_landing_altitude:
+                self.error_publisher.publish(Error(
+                    x=0,y=0,angle=0,valid_error=False,
+                    below_last_landing_altitude=True,align_before_descent=False,
+                ))
                 return
             index=self.imu_dict.bisect_right(rel_alt)-1
             if index<0:
                 self.get_logger().error("No takeoff key found")
+                self.publish_invalid_error(align_before_descent)
                 return
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
             gray=self.undistort_image(image)
             kp,des=self.generate_orb_descriptors(gray)
             if kp is None or des is None:
+                self.publish_invalid_error(align_before_descent)
                 return
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
+                self.publish_invalid_error(align_before_descent)
                 return
             gpu_landing_des=cv2.cuda.GpuMat()
             gpu_takeoff_des=cv2.cuda.GpuMat()
@@ -186,6 +203,7 @@ class Processor(Node):
             matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
             matches=sorted(matches, key=lambda x: x.distance)
             if len(matches)<50:
+                self.publish_invalid_error(align_before_descent)
                 return
             good_matches=matches[:50]
             self.takeoff_3d_points=[]
@@ -200,6 +218,9 @@ class Processor(Node):
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
+            if len(self.takeoff_3d_points)<50:
+                self.publish_invalid_error(align_before_descent)
+                return
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D(
                 np.asarray(self.takeoff_3d_points,dtype=np.float32),
@@ -210,15 +231,19 @@ class Processor(Node):
                 confidence=0.99,
                 refineIters=10,
                 )
-            if H is None:
-                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=False))
+            if H is None or inliers is None:
+                self.publish_invalid_error(align_before_descent)
+                return
+            inlier_ratio=float(np.count_nonzero(inliers))/len(inliers)
+            if inlier_ratio<self.min_inlier_ratio:
+                self.publish_invalid_error(align_before_descent)
                 return
             translation_x=H[0,2]
             translation_y=H[1,2]
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
-                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=False))
+                self.publish_invalid_error(align_before_descent)
                 return
             error=Error()
             error.x=translation_x
@@ -226,6 +251,7 @@ class Processor(Node):
             error.angle=rotation_angle
             error.valid_error=True
             error.below_last_landing_altitude=False
+            error.align_before_descent=align_before_descent
             self.error_publisher.publish(error)
 
     def generate_orb_descriptors(self, image: Image):
@@ -236,7 +262,7 @@ class Processor(Node):
         return kp_pts,des
         
     def undistort_image(self, image: Image):
-        image=self._bridge.imgmsg_to_cv2(image, "bgr8")
+        image=self._bridge.imgmsg_to_cv2(image, "rgb8")
         dst=cv2.remap(image, self.mapx, self.mapy, cv2.INTER_LINEAR)
         x,y,w,h=self.roi
         dst=dst[y:y+h, x:x+w]
