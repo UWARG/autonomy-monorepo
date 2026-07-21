@@ -9,8 +9,11 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
 
+  <depend>airside_interfaces</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
