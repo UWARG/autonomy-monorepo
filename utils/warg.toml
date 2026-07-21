@@ -5,7 +5,8 @@ depends_on = []
 
 [commands]
 setup = "uv sync"
+test = "uv run --extra dev pytest"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
-pr = ["lint"]
+pr = ["lint", "test"]

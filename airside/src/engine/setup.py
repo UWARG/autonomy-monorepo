@@ -15,6 +15,7 @@ setup(
         ),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
+        (f"share/{package_name}/config", ["config/waypoints.yaml"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -26,6 +27,7 @@ setup(
     entry_points={
         "console_scripts": [
             "manager = engine.manager:main",
+            "rc_bridge = engine.rc_bridge:main",
         ],
     },
 )

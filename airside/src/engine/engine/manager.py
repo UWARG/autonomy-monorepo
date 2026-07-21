@@ -1,41 +1,101 @@
+"""
+Entry-point for the airside behavior-tree engine.
+"""
+
 from __future__ import annotations
 
+import sys
+
+import py_trees
+import py_trees_ros
 import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import Image
+from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
+from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.rc.rc_switch import KillSwitch
+from engine.constants import (
+    RC_SWITCHES_ENABLED,
+    TICK_PERIOD_MS,
+    UNICODE_TREE_DEBUG,
+)
+from engine.subtrees.land import create_land_subtree
+from engine.subtrees.lapping import create_lapping_subtree
+from engine.subtrees.target_reconnaissance import (
+    create_target_reconnaissance_subtree,
+)
 
 
-class EngineManager(Node):
-    TOPIC = "camera/image_raw"
+def create_root() -> py_trees.behaviour.Behaviour:
+    """
+    Builds the full mission tree.
 
-    def __init__(self) -> None:
-        super().__init__("engine_manager")
+    The KillSwitch decorator freezes the mission (without resetting its
+    progress) while the kill switch is high, so flipping the switch back
+    resumes the mission where it left off. The final MissionComplete node
+    holds the tree in RUNNING after landing.
 
-        self._subscription = self.create_subscription(
-            Image,
-            self.TOPIC,
-            self._on_image,
-            10,
-        )
-        self._frame_count = 0
+    ```
+    KillSwitch
+    └── Mission [Sequence]
+        ├── ConfigureStreamRates
+        ├── LoadWaypointList
+        ├── Takeoff
+        ├── Lapping
+        ├── TargetReconnaissance
+        ├── LandPhase
+        └── MissionComplete [Running]
+    ```
+    """
 
-        self.get_logger().info(
-            f"Engine manager ready - listening on '{self.TOPIC}'."
-        )
+    mission = py_trees.composites.Sequence(
+        name="Mission",
+        memory=True,
+        children=[
+            ConfigureStreamRates(),
+            LoadWaypointList(),
+            Takeoff(),
+            create_lapping_subtree(),
+            create_target_reconnaissance_subtree(),
+            create_land_subtree(),
+            py_trees.behaviours.Running(name="MissionComplete"),
+        ],
+    )
 
-    def _on_image(self, msg: Image) -> None:
-        self._frame_count += 1
-        self.get_logger().info(
-            f"Frame {self._frame_count}: {msg.width}x{msg.height} [{msg.encoding}]"
-        )
+    if RC_SWITCHES_ENABLED:
+        return KillSwitch(child=mission)
+    return mission
 
 
 def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
-    node = EngineManager()
+
+    root = create_root()
+
+    tree = py_trees_ros.trees.BehaviourTree(
+        root=root,
+        unicode_tree_debug=UNICODE_TREE_DEBUG,
+    )
 
     try:
-        rclpy.spin(node)
+        tree.setup(node_name="engine_manager", timeout=15.0)
+    except py_trees_ros.exceptions.TimedOutError:
+        if tree.node is not None:
+            tree.node.get_logger().error(
+                "Failed to set up the behavior tree within the timeout."
+            )
+        rclpy.try_shutdown()
+        sys.exit(1)
+    except KeyboardInterrupt:
+        rclpy.try_shutdown()
+        return
+
+    tree.tick_tock(period_ms=TICK_PERIOD_MS)
+
+    try:
+        if tree.node is not None:
+            rclpy.spin(tree.node)
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):  # type: ignore[attr-defined]
+        pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        tree.shutdown()
+        rclpy.try_shutdown()
