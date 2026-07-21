@@ -1,4 +1,3 @@
-from ast import And
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
@@ -19,7 +18,6 @@ from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
 from custom_interfaces.action import Takeoff
 from custom_interfaces.action import Landing
-from enums import Status
 from std_msgs.msg import Float64
 from custom_interfaces.msg import Error
 import math
@@ -50,7 +48,6 @@ class Processor(Node):
         self.last_altitude=0
         self.BFMatcher=cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
         self.altitude_threshold=0.1
-        self.status=Status.TAKEOFF
         self.last_image_altitude=7.5
         self.orb=cv2.ORB_create(nfeatures=1000)
         self._bridge=CvBridge()
@@ -60,9 +57,9 @@ class Processor(Node):
         self.pitch=None
         self.takeoff_goal_handle=None
         self.landing_goal_handle=None
+        self.landing_complete=False
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
-        self.last_landing_key=None
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
         self.last_landing_altitude=0.25
@@ -83,14 +80,18 @@ class Processor(Node):
     def landing_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Landing requested")
         self.landing_goal_handle=goal_handle
+        self.landing_complete=False
         result=Landing.Result()
         rate=self.create_rate(10)
-        self.last_landing_key=None
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
                     result.success=False
                     goal_handle.canceled()
+                    return result
+                if self.landing_complete:
+                    result.success=True
+                    goal_handle.succeed()
                     return result
                 rate.sleep()
         finally:
@@ -154,24 +155,23 @@ class Processor(Node):
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
                     return
-                self.imu_dict[self.rel_alt]=[kp,des,roll,pitch]
-                self.last_altitude=self.rel_alt
+                self.imu_dict[rel_alt]=[kp,des,roll,pitch]
+                self.last_altitude=rel_alt
         elif self.landing_goal_handle:
-            if self.rel_alt<=self.last_landing_altitude:
-                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=True))
-                return
             #snapshot
             image=self.image
             rel_alt=self.rel_alt
             land_roll=self.roll
             land_pitch=self.pitch
+            if rel_alt<=self.last_landing_altitude:
+                self.landing_complete=True
+                self.error_publisher.publish(Error(x=0,y=0,angle=0,valid_error=False,below_last_landing_altitude=True))
+                return
             index=self.imu_dict.bisect_right(rel_alt)-1
             if index<0:
                 self.get_logger().error("No takeoff key found")
                 return
             key,entry=self.imu_dict.peekitem(index)
-            if self.last_landing_key is not None and key>=self.last_landing_key:
-                return
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
             gray=self.undistort_image(image)
             kp,des=self.generate_orb_descriptors(gray)
@@ -277,8 +277,8 @@ class Processor(Node):
         self.cx=self.new_camera_matrix[0,2]-x
         self.cy=self.new_camera_matrix[1,2]-y
 
-if __name__ == "__main__":
-    rclpy.init()
+def main(args=None):
+    rclpy.init(args=args)
     processor=Processor()
     executor=MultiThreadedExecutor()
     executor.add_node(processor)
@@ -287,3 +287,7 @@ if __name__ == "__main__":
     finally:
         processor.destroy_node()
         rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

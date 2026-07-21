@@ -63,5 +63,17 @@ def generate_launch_description() -> LaunchDescription:
                 name="engine_manager",
                 output="screen",
             ),
-           ]
+            Node(
+                package="nodes",
+                executable="processor",
+                name="processor",
+                output="screen",
+            ),
+            Node(
+                package="nodes",
+                executable="controller",
+                name="controller",
+                output="screen",
+            ),
+        ]
     )
