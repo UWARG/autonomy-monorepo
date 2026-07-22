@@ -59,7 +59,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="engine",
-                executable="manager",
+                executable="manager_non_optimal",
                 name="engine_manager",
                 output="screen",
             ),

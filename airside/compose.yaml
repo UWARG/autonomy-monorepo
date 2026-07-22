@@ -1,10 +1,12 @@
 services:
   airside:
+    profiles: ["default"]
     build:
       context: ..
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    ipc: private
     # Fallback if host networking is unavailable:
     # ports:
     #   - "14550:14550/udp"
@@ -25,3 +27,26 @@ services:
     privileged: true
     command: ros2 launch engine engine.launch.py
     restart: on-failure
+
+  airside_non_optimal:
+    profiles: ["non-optimal"]
+    build:
+      context: ..
+      dockerfile: airside/docker/Dockerfile
+    image: warg/airside:latest
+    network_mode: host
+    ipc: private
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_LOG_DIR: /ros_ws/log/ros
+    devices:
+      - /dev/ttyAMA0:/dev/ttyAMA0
+      - /dev/video0:/dev/video0
+    volumes:
+      - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
+      - ..:/monorepo
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    command: ros2 launch engine engine_non_optimal.launch.py
+    restart: unless-stopped

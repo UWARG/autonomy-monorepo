@@ -14,8 +14,22 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
+        (
+            f"share/{package_name}/launch",
+            [
+                "launch/engine.launch.py",
+                "launch/engine_non_optimal.launch.py",
+            ],
+        ),
         (f"share/{package_name}/config", ["config/waypoints.yaml"]),
+        (
+            f"share/{package_name}",
+            [
+                "camera_info.yaml",
+                "pluginlists.yaml",
+                "mavros.yaml",
+            ],
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -28,6 +42,7 @@ setup(
         "console_scripts": [
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
+            "manager_non_optimal = engine.manager_non_optimal:main",
         ],
     },
 )

@@ -29,22 +29,24 @@ running `docker compose` directly inside `airside/`.
 ### Via warg CLI
 
 ```bash
-warg run airside build          # Build the Docker image
-warg run airside compose-up     # Start the engine service (detached)
-warg run airside compose-down   # Stop the engine service
-warg run airside logs           # Follow service logs
-warg run airside test           # Run the test suite
-warg run airside shell          # Open an interactive shell in the container
+warg run airside build                 # Build the Docker image
+warg run airside compose-up            # Default profile (detached)
+warg run airside run-non-optimal       # Non-optimal / precision landing profile
+warg run airside compose-down          # Stop services
+warg run airside logs                  # Follow service logs
+warg run airside test                  # Run the test suite
+warg run airside shell                 # Open an interactive shell in the container
 ```
 
 ### Via docker compose
 
 ```bash
 docker compose build
-docker compose up -d
-docker compose down
+docker compose --profile default up          # competition BT
+docker compose --profile non-optimal up      # teach / fly-around / RTL / visual land
+docker compose --profile default --profile non-optimal down
 docker compose logs -f
-docker compose run --rm airside bash
+docker compose --profile default run --rm airside bash
 ```
 
 ## Adding a monorepo library

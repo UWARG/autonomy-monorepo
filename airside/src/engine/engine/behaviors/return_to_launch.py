@@ -12,10 +12,10 @@ from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
 
 
-_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
-_GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
-_REL_ALT_TOPIC = "mavros/global_position/rel_alt"
-_STATE_TOPIC = "mavros/state"
+_SETPOINT_TOPIC = "/setpoint_raw/global"
+_GLOBAL_POSITION_TOPIC = "/global_position/global"
+_REL_ALT_TOPIC = "/global_position/rel_alt"
+_STATE_TOPIC = "/state"
 
 _GUIDED_MODE = "GUIDED"
 
@@ -36,7 +36,6 @@ class ReturnToLaunch(py_trees.behaviour.Behaviour):
     """
     Return to the launch site.
     """
-
 
     def __init__(self) -> None:
         super().__init__(name="ReturnToLaunch")
