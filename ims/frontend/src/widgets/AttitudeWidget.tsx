@@ -1,6 +1,6 @@
 import type { AttitudeMessage } from '../types';
 
-const DASH = '—';
+const DASH = '\u2014';
 const DEG = 180 / Math.PI;
 
 /** Degrees of pitch from horizon centre to the visible edge of the ball. */

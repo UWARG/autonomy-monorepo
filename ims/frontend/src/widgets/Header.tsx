@@ -11,7 +11,7 @@ import type { ConnectionMessage, StatusMessage } from '../types';
  * once airside defines those messages.
  */
 
-const DASH = '—';
+const DASH = '\u2014';
 
 function parseWaypoints(text?: string): { current: number; total: number } | null {
   if (!text) return null;

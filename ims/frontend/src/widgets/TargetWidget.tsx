@@ -17,7 +17,7 @@ const TRAIL_WINDOW_S = 20;
 
 const PLOT_HALF_RANGE_M = 60;
 
-const DASH = '—';
+const DASH = '\u2014';
 
 const R_EARTH_M = 6_371_000;
 const toRad = (d: number) => (d * Math.PI) / 180;
