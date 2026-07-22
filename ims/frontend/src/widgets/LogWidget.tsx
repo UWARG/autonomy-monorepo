@@ -16,6 +16,14 @@ interface PoseStamped {
   };
 }
 
+type Severity = 'INF' | 'WRN' | 'ERR';
+
+const SEV_TONE: Record<Severity, string> = {
+  INF: 'text-accent',
+  WRN: 'text-warn',
+  ERR: 'text-bad',
+};
+
 export default function LogWidget() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
 
@@ -47,14 +55,18 @@ export default function LogWidget() {
         {rows.length === 0 ? (
           <p className="text-[13px] text-ink-3">Awaiting log messages</p>
         ) : (
-          rows.map((e, i) => (
-            <div key={`${e.t}-${i}`} className="flex gap-2">
-              <span className="shrink-0 text-ink-3">
-                {new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}
-              </span>
-              <span className="break-all text-ink-2">{JSON.stringify(e.raw)}</span>
-            </div>
-          ))
+          rows.map((e, i) => {
+            const severity: Severity = 'INF';
+            return (
+              <div key={`${e.t}-${i}`} className="flex gap-2">
+                <span className="shrink-0 text-ink-3">
+                  {new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}
+                </span>
+                <span className={`shrink-0 font-semibold ${SEV_TONE[severity]}`}>{severity}</span>
+                <span className="break-all text-ink-2">{JSON.stringify(e.raw)}</span>
+              </div>
+            );
+          })
         )}
       </div>
     </section>
