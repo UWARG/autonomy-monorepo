@@ -1,40 +1,37 @@
-FROM ros:humble-ros-base AS dev
+FROM ros:humble-ros-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-lc"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    geographiclib-tools \
-    git \
     python3-colcon-common-extensions \
     python3-pip \
     python3-pytest \
     python3-rosdep \
     ros-humble-mavros \
     ros-humble-mavros-extras \
+    ros-humble-cv-bridge \
+    ros-humble-apriltag-ros \
+    ros-humble-rqt-image-view \
+    ros-humble-camera-calibration \
+    ros-humble-usb-cam \
+    ros-humble-image-proc \
+    ros-humble-v4l2-camera \
+    python3-scipy \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
-    wget \
   && rm -rf /var/lib/apt/lists/*
-
-RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling pymavlink
-
-RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
-
-WORKDIR /ros_ws
-
-FROM dev AS prod
-
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install numpy scipy sortedcontainers
+
+WORKDIR /ros_ws
 
 COPY airside/src/ src/
 
@@ -42,8 +39,11 @@ RUN source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
   && colcon build --symlink-install
 
-COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY airside/docker/airside_entrypoint.sh /airside_entrypoint.sh
+RUN chmod +x /airside_entrypoint.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
+
+
+ENTRYPOINT ["/airside_entrypoint.sh"]
 CMD ["bash"]

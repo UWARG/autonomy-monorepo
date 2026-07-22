@@ -32,11 +32,14 @@ services:
     profiles: ["non-optimal"]
     build:
       context: ..
-      dockerfile: airside/docker/Dockerfile
+      dockerfile: airside/docker/Non_optimal.Dockerfile
     image: warg/airside:latest
     network_mode: host
     ipc: private
+    runtime: nvidia
     environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-all}
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       ROS_LOG_DIR: /ros_ws/log/ros
     devices:
