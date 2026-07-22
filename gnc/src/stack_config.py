@@ -16,8 +16,10 @@ class StackConfig:
     handoff: HandoffConfig = HandoffConfig()
     target_freshness_s: float = 0.3
     command_stale_s: float = 0.75
+    fc_state_freshness_s: float = 0.5
     tree_hz: float = 2.0 
     stream_hz: float = 20.0  
+    ema_alpha: float = 0.5
     recede_speed: float = 1.0
     cmd_slew_mps2: float = 1.0
 

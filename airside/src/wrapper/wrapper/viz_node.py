@@ -5,6 +5,7 @@ from typing import Optional
 
 import rclpy
 import rclpy.node
+from airside_interfaces.msg import TrackedTarget
 from rclpy.qos import qos_profile_sensor_data
 
 from frames import body_to_ned, camera_to_body, ned_to_enu
@@ -32,7 +33,7 @@ class VizNode(rclpy.node.Node):
         super().__init__("viz_node")
         self._pose: Optional[PoseStamped] = None
         self._pose_rx = 0.0
-        self._target: Optional[PointStamped] = None
+        self._target: Optional[TrackedTarget] = None
         self._target_rx = 0.0
         self._state: Optional[State] = None
         self._vel_sp: Optional[PositionTarget] = None
@@ -43,7 +44,7 @@ class VizNode(rclpy.node.Node):
         self.create_subscription(
             PoseStamped, "mavros/local_position/pose", self._on_pose, qos_profile_sensor_data
         )
-        self.create_subscription(PointStamped, "perception/target", self._on_target, 10)
+        self.create_subscription(TrackedTarget, "perception/target", self._on_target, 10)
         self.create_subscription(State, "mavros/state", self._on_state, 10)
         self.create_subscription(
             PositionTarget, "mavros/setpoint_raw/local", self._on_vel_sp, 10
@@ -64,7 +65,7 @@ class VizNode(rclpy.node.Node):
     def _on_pose(self, msg: PoseStamped) -> None:
         self._pose, self._pose_rx = msg, self._now()
 
-    def _on_target(self, msg: PointStamped) -> None:
+    def _on_target(self, msg: TrackedTarget) -> None:
         self._target, self._target_rx = msg, self._now()
 
     def _on_state(self, msg: State) -> None:
@@ -108,7 +109,7 @@ class VizNode(rclpy.node.Node):
             return None
         if (self._now() - self._target_rx) > STALE_S:
             return None
-        p = self._target.point
+        p = self._target.position
         body = camera_to_body(
             p.x * 1000.0, p.y * 1000.0, p.z * 1000.0,
             mount_pitch_rad=DEPLOYED.follow.mount_pitch_rad,

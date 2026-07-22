@@ -1,139 +1,239 @@
+"""High-rate follow control, safety reflexes, and latched command authority."""
+
 from __future__ import annotations
 
 import math
 from typing import Optional
 
-import py_trees
 import rclpy.node
-from rclpy.qos import qos_profile_sensor_data
-from flight_modes import ControlAction, FlightInputs, decide, should_request
-from geometry_msgs.msg import PointStamped, PoseStamped
-from handoff import HandoffAction, HandoffSequencer
-from hold_policy import HoldAction, HoldPolicy
-from mavros_msgs.msg import PositionTarget, State
-from mavros_msgs.srv import CommandBool, CommandTOL, SetMode
-from mavros_setpoint import body_velocity_to_flu, slew
-from range_rate import ReflexMonitor
-from stack_config import DEPLOYED, StackConfig
-from sensor_msgs.msg import NavSatFix
-
-from engine.behaviors.read_target import (
-    KEY_COMMAND,
-    KEY_COMMAND_STAMP,
-    KEY_ESTOP_EMERGENCY,
-    KEY_ESTOP_HOLD,
-    KEY_ESTOP_RECEDE,
+from airside_interfaces.msg import TrackedTarget
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from follow_authority import (
+    AuthorityAction,
+    AuthorityConfig,
+    AuthorityInputs,
+    FollowAuthority,
+    StopReason,
 )
+from follow_runtime import LatestObservationController, RuntimeObservation
+from mavros_msgs.msg import PositionTarget, RCIn, State
+from mavros_msgs.srv import SetMode
+from mavros_setpoint import body_velocity_to_flu, slew
+from stack_config import DEPLOYED, StackConfig
+from std_msgs.msg import Empty
+from std_srvs.srv import SetBool, Trigger
 
 SETPOINT_TOPIC = "mavros/setpoint_raw/local"
-HOLD_TOPIC = "mavros/setpoint_position/local"
 TARGET_TOPIC = "perception/target"
+CANDIDATE_TOPIC = "perception/target_candidate"
+DIAGNOSTICS_TOPIC = "follow/diagnostics"
+RESET_TOPIC = "perception/reset_target"
+ACQUIRE_TOPIC = "perception/acquire_target"
 
 
 class SetpointStreamer:
-    def __init__(
-        self,
-        node: rclpy.node.Node,
-        config: StackConfig = DEPLOYED,
-        auto_arm: bool = False,
-    ) -> None:
+    """Compute each command from the newest capture at the stream rate.
+
+    This production component never requests GUIDED, arming, or takeoff. It
+    only requests BRAKE/LOITER as terminal safety actions.
+    """
+
+    def __init__(self, node: rclpy.node.Node, config: StackConfig = DEPLOYED) -> None:
         self._node = node
         self._config = config
-        self._auto_arm = auto_arm
 
-        self._hold = HoldPolicy(config.hold)
-        self._reflex = ReflexMonitor(config.reflex)
-        self._handoff = HandoffSequencer(config.handoff)
-        if not auto_arm:
-            
-            self._handoff.mark_complete()
+        self._declare("kill_channel", 7)
+        self._declare("enable_channel", 8)
+        self._declare("rc_high_pwm", 1700)
+        self._declare("airborne_altitude_m", 1.0)
+        self._declare("props_off_hitl", False)
+
+        self._kill_channel = int(node.get_parameter("kill_channel").value)
+        self._enable_channel = int(node.get_parameter("enable_channel").value)
+        self._rc_high_pwm = int(node.get_parameter("rc_high_pwm").value)
+        self._airborne_altitude_m = float(node.get_parameter("airborne_altitude_m").value)
+        props_off = bool(node.get_parameter("props_off_hitl").value)
+
+        self._authority = FollowAuthority(
+            AuthorityConfig(
+                fc_state_freshness_s=config.fc_state_freshness_s,
+                lost_target_timeout_s=config.safety.lost_timeout_s,
+                props_off_bypass_airborne=props_off,
+            )
+        )
+        self._controller = LatestObservationController(
+            follow=config.follow,
+            reflex=config.reflex,
+            freshness_s=config.target_freshness_s,
+            ema_alpha=config.ema_alpha,
+        )
 
         self._state: Optional[State] = None
-        self._gps_fix = False  
-        self._gps_rx_s = 0.0
-        self._pose: Optional[PoseStamped] = None
-        self._pose_rx_s: Optional[float] = None
-        self._alt = 0.0 
-        self._hold_pose: Optional[PoseStamped] = None
-        self._target_range: Optional[float] = None
-        self._target_rx_s = 0.0
-
-        self._last_mode_req = ""
-        self._last_mode_req_s = 0.0
-        self._last_action: Optional[ControlAction] = None
+        self._state_rx_s: Optional[float] = None
+        self._altitude_m = 0.0
+        self._rc_kill = False
         self._streamed = (0.0, 0.0, 0.0)
+        self._candidate_capture_s: Optional[float] = None
+        self._last_mode_request = ""
+        self._last_mode_request_s = 0.0
+        self._last_clear_reason: Optional[StopReason] = None
+        self._last_authority_report = None
 
-        self.blackboard = py_trees.blackboard.Client(name="SetpointStreamer")
-        for key in (
-            KEY_COMMAND,
-            KEY_COMMAND_STAMP,
-            KEY_ESTOP_EMERGENCY,
-            KEY_ESTOP_RECEDE,
-            KEY_ESTOP_HOLD,
-        ):
-            self.blackboard.register_key(key=key, access=py_trees.common.Access.READ)
-
-        self._pub = node.create_publisher(PositionTarget, SETPOINT_TOPIC, 10)
-        self._pos_pub = node.create_publisher(PoseStamped, HOLD_TOPIC, 10)
-        node.create_subscription(PointStamped, TARGET_TOPIC, self._on_target, 10)
-        node.create_subscription(State, "mavros/state", self._on_state, 10)
-        node.create_subscription(
-            NavSatFix, "mavros/global_position/global", self._on_global, qos_profile_sensor_data
+        self._setpoint_pub = node.create_publisher(PositionTarget, SETPOINT_TOPIC, 10)
+        self._diagnostics_pub = node.create_publisher(
+            DiagnosticArray, DIAGNOSTICS_TOPIC, 10
         )
+        self._reset_pub = node.create_publisher(Empty, RESET_TOPIC, 10)
+        self._acquire_pub = node.create_publisher(Empty, ACQUIRE_TOPIC, 10)
+        node.create_subscription(TrackedTarget, TARGET_TOPIC, self._on_target, 10)
         node.create_subscription(
-            PoseStamped, "mavros/local_position/pose", self._on_pose, qos_profile_sensor_data
+            TrackedTarget, CANDIDATE_TOPIC, self._on_candidate, 10
+        )
+        node.create_subscription(State, "mavros/state", self._on_state, 10)
+        node.create_subscription(RCIn, "mavros/rc/in", self._on_rc, 10)
+        # Relative altitude is sufficient to enforce the enable precondition.
+        from geometry_msgs.msg import PoseStamped
+        from rclpy.qos import qos_profile_sensor_data
+
+        node.create_subscription(
+            PoseStamped,
+            "mavros/local_position/pose",
+            self._on_pose,
+            qos_profile_sensor_data,
         )
         self._set_mode = node.create_client(SetMode, "mavros/set_mode")
-        self._arming = node.create_client(CommandBool, "mavros/cmd/arming")
-        self._takeoff = node.create_client(CommandTOL, "mavros/cmd/takeoff")
+        node.create_service(SetBool, "follow/set_enabled", self._set_enabled)
+        node.create_service(Trigger, "follow/reset_target", self._reset_target)
         node.create_timer(1.0 / config.stream_hz, self._tick)
+        node.create_timer(0.5, self._publish_diagnostics)
         node.get_logger().info(
-            f"SetpointStreamer: {config.stream_hz} Hz (auto_arm={auto_arm}, "
-            f"hard_min={config.reflex.hard_min_m} m, a_brake={config.reflex.a_brake} m/s^2, "
-            f"command_stale_s={config.command_stale_s})"
+            f"follow streamer ready: {config.stream_hz:.0f} Hz, EMA alpha={config.ema_alpha:.1f}, "
+            f"kill=CH{self._kill_channel}, enable=CH{self._enable_channel}, "
+            f"props_off_hitl={props_off}; pilot retains arm/takeoff/mode authority"
         )
 
-    # --- subscriptions ---
-    def _on_state(self, msg: State) -> None:
-        self._state = msg
+    def _declare(self, name: str, default) -> None:
+        if not self._node.has_parameter(name):
+            self._node.declare_parameter(name, default)
 
-    def _on_global(self, msg: NavSatFix) -> None:
-        self._gps_fix = msg.status.status >= NavSatFix().status.STATUS_FIX
-        self._gps_rx_s = self._now_s()
-
-    def _ekf_ok(self) -> bool:
-        return self._gps_fix and (self._now_s() - self._gps_rx_s) < 1.0
-
-    def _on_pose(self, msg: PoseStamped) -> None:
-        self._pose = msg
-        self._pose_rx_s = self._now_s()
-        self._alt = msg.pose.position.z
-
-    def _on_target(self, msg: PointStamped) -> None:
-        p = msg.point
-        if not (math.isfinite(p.x) and math.isfinite(p.y) and math.isfinite(p.z)) or p.z <= 0.0:
-            return
-        self._target_range = math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z)
-        self._target_rx_s = self._now_s()
-
-    # --- helpers ---
     def _now_s(self) -> float:
         return self._node.get_clock().now().nanoseconds * 1e-9
 
-    def _pose_age_s(self, now: float) -> float:
-        if self._pose_rx_s is None:
-            return math.inf
-        return now - self._pose_rx_s
+    @staticmethod
+    def _stamp_s(stamp) -> float:
+        return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
-    def _reflex_danger(self, now: float) -> bool:
+    def _on_target(self, msg: TrackedTarget) -> None:
+        capture_s = self._stamp_s(msg.header.stamp)
+        if capture_s <= 0.0:
+            return
+        self._controller.update(
+            RuntimeObservation(
+                x_m=float(msg.position.x),
+                y_m=float(msg.position.y),
+                z_m=float(msg.position.z),
+                track_id=int(msg.track_id),
+                sequence_num=int(msg.sequence_num),
+                capture_time_s=capture_s,
+                receive_time_s=self._now_s(),
+            )
+        )
+
+    def _on_candidate(self, msg: TrackedTarget) -> None:
+        capture_s = self._stamp_s(msg.header.stamp)
+        position = msg.position
         if (
-            self._target_range is None
-            or (now - self._target_rx_s) > self._config.target_freshness_s
+            capture_s > 0.0
+            and position.z > 0.0
+            and all(math.isfinite(value) for value in (position.x, position.y, position.z))
         ):
-            return self._reflex.update(None, now)
-        return self._reflex.update(self._target_range, self._target_rx_s)
+            self._candidate_capture_s = capture_s
 
-    def _publish_velocity(self, v_forward, v_right, v_down, yaw_rate) -> None:
+    def _on_state(self, msg: State) -> None:
+        self._state = msg
+        self._state_rx_s = self._now_s()
+
+    def _on_pose(self, msg) -> None:
+        self._altitude_m = float(msg.pose.position.z)
+
+    def _channel_high(self, msg: RCIn, channel: int) -> bool:
+        index = channel - 1
+        return 0 <= index < len(msg.channels) and msg.channels[index] >= self._rc_high_pwm
+
+    def _on_rc(self, msg: RCIn) -> None:
+        self._rc_kill = self._channel_high(msg, self._kill_channel)
+        enable_high = self._channel_high(msg, self._enable_channel)
+        accepted = self._authority.update_rc_enable(
+            enable_high,
+            self._inputs(target_valid=self._target_available_for_enable()),
+        )
+        if accepted:
+            self._last_clear_reason = None
+            self._acquire_pub.publish(Empty())
+            self._node.get_logger().info("follow enabled by RC rising edge")
+
+    def _target_available_for_enable(self) -> bool:
+        output = self._controller.evaluate(self._now_s())
+        candidate_fresh = (
+            self._candidate_capture_s is not None
+            and 0.0 <= self._now_s() - self._candidate_capture_s
+            <= self._config.target_freshness_s
+        )
+        return output.fresh or candidate_fresh
+
+    def _inputs(self, proximity: bool = False, target_valid: Optional[bool] = None):
+        now = self._now_s()
+        output = self._controller.evaluate(now)
+        state = self._state
+        return AuthorityInputs(
+            now_s=now,
+            fc_state_rx_s=self._state_rx_s,
+            connected=bool(state and state.connected),
+            mode=state.mode if state else "",
+            armed=bool(state and state.armed),
+            airborne=self._altitude_m >= self._airborne_altitude_m,
+            target_valid=output.fresh if target_valid is None else target_valid,
+            proximity_emergency=proximity,
+            rc_kill=self._rc_kill,
+        )
+
+    def _set_enabled(self, request: SetBool.Request, response: SetBool.Response):
+        if request.data:
+            response.success = self._authority.request_enable(
+                self._inputs(target_valid=self._target_available_for_enable())
+            )
+            response.message = (
+                "follow enabled" if response.success else "enable rejected: require fresh FC state, "
+                "GUIDED, armed/airborne (unless props-off HITL), valid target, and kill low"
+            )
+            if response.success:
+                self._last_clear_reason = None
+                self._acquire_pub.publish(Empty())
+        else:
+            self._authority.disable()
+            self._clear_target(StopReason.EXPLICIT_DISABLE)
+            response.success = True
+            response.message = "follow disabled and target lock cleared"
+        return response
+
+    def _reset_target(self, _request: Trigger.Request, response: Trigger.Response):
+        self._authority.reset_target()
+        self._controller.clear()
+        self._clear_target(StopReason.RESET_TARGET)
+        response.success = True
+        response.message = "follow disabled; target lock cleared; new enable edge required"
+        return response
+
+    def _clear_target(self, reason: StopReason) -> None:
+        if self._last_clear_reason is reason:
+            return
+        self._controller.clear()
+        self._candidate_capture_s = None
+        self._reset_pub.publish(Empty())
+        self._last_clear_reason = reason
+
+    def _publish_velocity(self, command) -> None:
+        v_forward, v_right, v_down, yaw_rate = command
         flu = body_velocity_to_flu(v_forward, v_right, v_down, yaw_rate)
         msg = PositionTarget()
         msg.header.stamp = self._node.get_clock().now().to_msg()
@@ -147,139 +247,96 @@ class SetpointStreamer:
             | PositionTarget.IGNORE_AFZ
             | PositionTarget.IGNORE_YAW
         )
-        msg.velocity.x = flu.linear_x  # forward
-        msg.velocity.y = flu.linear_y  # left
-        msg.velocity.z = flu.linear_z  # up
-        msg.yaw_rate = flu.angular_z  # CCW (ENU)
-        self._pub.publish(msg)
+        msg.velocity.x = flu.linear_x
+        msg.velocity.y = flu.linear_y
+        msg.velocity.z = flu.linear_z
+        msg.yaw_rate = flu.angular_z
+        self._setpoint_pub.publish(msg)
 
-    def _publish_hold_pose(self) -> None:
-        # Republish the latched ENU pose on the position interface
-        if self._hold_pose is None:
-            self._publish_velocity(0.0, 0.0, 0.0, 0.0)
-            return
-        msg = PoseStamped()
-        msg.header.stamp = self._node.get_clock().now().to_msg()
-        msg.header.frame_id = self._hold_pose.header.frame_id
-        msg.pose = self._hold_pose.pose
-        self._pos_pub.publish(msg)
+    def _publish_smoothed(self, setpoint) -> None:
+        target = (setpoint.v_forward, setpoint.v_right, setpoint.v_down)
+        delta = self._config.cmd_slew_mps2 / self._config.stream_hz
+        self._streamed = tuple(
+            slew(previous, desired, delta)
+            for previous, desired in zip(self._streamed, target)
+        )
+        self._publish_velocity((*self._streamed, setpoint.yaw_rate))
 
     def _request_mode(self, mode: str) -> None:
-        state_mode = self._state.mode if self._state else ""
         now = self._now_s()
-        if not should_request(state_mode, mode, self._last_mode_req, self._last_mode_req_s, now):
+        if mode == self._last_mode_request and now - self._last_mode_request_s < 1.0:
             return
-        if self._set_mode.service_is_ready():
-            req = SetMode.Request()
-            req.custom_mode = mode
-            self._set_mode.call_async(req)
-            self._last_mode_req = mode
-            self._last_mode_req_s = now
-            self._node.get_logger().warn(f"SetpointStreamer: requesting {mode} (from {state_mode})")
+        if not self._set_mode.service_is_ready():
+            return
+        request = SetMode.Request()
+        request.custom_mode = mode
+        self._set_mode.call_async(request)
+        self._last_mode_request = mode
+        self._last_mode_request_s = now
+        self._node.get_logger().error(f"terminal follow stop requesting {mode}")
 
-    def _publish_follow(self, cmd, now: float) -> None:
-        v_forward, v_right, v_down, yaw_rate = cmd
-        speed = max(abs(v_forward), abs(v_right), abs(v_down))
-        dv = self._config.cmd_slew_mps2 / self._config.stream_hz
-        v_forward = slew(self._streamed[0], v_forward, dv)
-        v_right = slew(self._streamed[1], v_right, dv)
-        v_down = slew(self._streamed[2], v_down, dv)
-        self._streamed = (v_forward, v_right, v_down)
-        status = self._hold.step(
-            speed_mps=speed,
-            yaw_rate=yaw_rate,
-            pose_age_s=self._pose_age_s(now),
-            ekf_ok=self._ekf_ok(),
-            now_s=now,
-        )
-        if status.action is HoldAction.LATCH:
-            self._hold_pose = self._pose 
-            p = self._hold_pose.pose.position
-            self._node.get_logger().info(
-                f"SetpointStreamer: position hold engaged at ({p.x:.2f}, {p.y:.2f}, {p.z:.2f}) "
-                f"[latch #{status.relatch_count}]"
-            )
-        elif status.action is HoldAction.FOLLOW and self._hold_pose is not None:
-            self._node.get_logger().info(f"SetpointStreamer: hold released ({status.reason})")
-            self._hold_pose = None
-        if status.action in (HoldAction.LATCH, HoldAction.HOLD):
-            self._publish_hold_pose()
-        else:
-            self._publish_velocity(v_forward, v_right, v_down, yaw_rate)
-
-    def _log_transition(self, action: ControlAction) -> None:
-        if action is not self._last_action:
-            self._node.get_logger().info(
-                f"SetpointStreamer: action {self._last_action.value if self._last_action else 'none'}"
-                f" -> {action.value}"
-            )
-            self._last_action = action
-
-    # --- main loop ---
     def _tick(self) -> None:
         now = self._now_s()
-        if not self._handoff.is_complete:
-            self._run_handoff(now)
-            return
-
-        cmd = self.blackboard.get(KEY_COMMAND)
-        stamp = self.blackboard.get(KEY_COMMAND_STAMP) or 0.0
-        inputs = FlightInputs(
-            in_guided=bool(self._state and self._state.mode == "GUIDED"),
-            ekf_ok=self._ekf_ok(),
-            command_fresh=cmd is not None and (now - stamp) <= self._config.command_stale_s,
-            reflex_danger=self._reflex_danger(now),
-            estop_emergency=bool(self.blackboard.get(KEY_ESTOP_EMERGENCY)),
-            estop_recede=bool(self.blackboard.get(KEY_ESTOP_RECEDE)),
-            estop_hold=bool(self.blackboard.get(KEY_ESTOP_HOLD)),
-            holding=self._hold.is_holding,
-            armed=bool(self._state and self._state.armed),
+        output = self._controller.evaluate(now)
+        result = self._authority.step(
+            self._inputs(
+                proximity=output.proximity_emergency,
+                target_valid=output.fresh,
+            )
         )
-        action = decide(inputs)
-        self._log_transition(action)
+        report = (result.state, result.stop_reason)
+        if report != self._last_authority_report:
+            self._node.get_logger().warning(
+                f"follow authority: state={result.state.value} "
+                f"reason={result.stop_reason.value} action={result.action.value}"
+            )
+            self._last_authority_report = report
+        if result.clear_target_lock:
+            self._clear_target(result.stop_reason)
 
-        if action is ControlAction.STREAM_VELOCITY:
-            self._publish_follow(cmd, now)
-            return
-        if action is ControlAction.HOLD_POSITION:
-            self._publish_hold_pose()
-            return
-        self._hold.reset()
-        self._hold_pose = None
-        self._streamed = (0.0, 0.0, 0.0)
-        if action is ControlAction.STREAM_ZERO:
-            self._publish_velocity(0.0, 0.0, 0.0, 0.0)
-        elif action is ControlAction.SET_BRAKE:
-            self._publish_velocity(0.0, 0.0, 0.0, 0.0) 
+        if result.action is AuthorityAction.STREAM and output.setpoint is not None:
+            self._publish_smoothed(output.setpoint)
+        elif result.action is AuthorityAction.ZERO:
+            self._streamed = (0.0, 0.0, 0.0)
+            self._publish_velocity((0.0, 0.0, 0.0, 0.0))
+        elif result.action is AuthorityAction.BRAKE:
+            self._streamed = (0.0, 0.0, 0.0)
+            self._publish_velocity((0.0, 0.0, 0.0, 0.0))
             self._request_mode("BRAKE")
-        elif action is ControlAction.SET_LOITER:
+        elif result.action is AuthorityAction.LOITER:
+            self._streamed = (0.0, 0.0, 0.0)
             self._request_mode("LOITER")
-        elif action is ControlAction.RELEASE:
-            pass
+        else:
+            # RELEASE is intentional: pilot mode changes stop all publications
+            # no later than this one streamer tick.
+            self._streamed = (0.0, 0.0, 0.0)
 
-    def _run_handoff(self, now: float) -> None:
-        connected = bool(self._state and self._state.connected)
-        mode = self._state.mode if self._state else ""
-        armed = bool(self._state and self._state.armed)
-        action = self._handoff.step(connected, mode, armed, self._alt, now)
-
-        if action is HandoffAction.REQUEST_GUIDED:
-            self._request_mode("GUIDED")
-        elif action is HandoffAction.REQUEST_ARM:
-            if self._arming.service_is_ready():
-                req = CommandBool.Request()
-                req.value = True
-                self._arming.call_async(req)
-                self._node.get_logger().warn("SetpointStreamer: auto-arm requested (SITL)")
-        elif action is HandoffAction.REQUEST_TAKEOFF:
-            if self._takeoff.service_is_ready():
-                req = CommandTOL.Request()
-                req.altitude = float(self._config.handoff.takeoff_alt_m)
-                self._takeoff.call_async(req)
-                self._handoff.notify_takeoff_sent(now)
-                self._node.get_logger().warn(
-                    f"SetpointStreamer: takeoff to {self._config.handoff.takeoff_alt_m} m "
-                    "requested (SITL)"
-                )
-        elif action is HandoffAction.COMPLETE:
-            self._node.get_logger().info("SetpointStreamer: airborne + GUIDED; follow active.")
+    def _publish_diagnostics(self) -> None:
+        now = self._now_s()
+        output = self._controller.evaluate(now)
+        metrics = self._controller.metrics()
+        latest = self._controller.latest
+        diagnostic = DiagnosticArray()
+        diagnostic.header.stamp = self._node.get_clock().now().to_msg()
+        status = DiagnosticStatus()
+        status.name = "follow/authority"
+        status.hardware_id = "follow_stack"
+        status.level = (
+            DiagnosticStatus.OK if self._authority.enabled else DiagnosticStatus.WARN
+        )
+        status.message = self._authority.stop_reason.value
+        values = {
+            "authority_state": self._authority.state.value,
+            "enabled": str(self._authority.enabled).lower(),
+            "target_age_s": f"{output.target_age_s:.6f}",
+            "effective_fps": f"{metrics.effective_fps:.3f}",
+            "latency_p50_ms": f"{metrics.latency_p50_s * 1000.0:.3f}",
+            "latency_p95_ms": f"{metrics.latency_p95_s * 1000.0:.3f}",
+            "latency_p99_ms": f"{metrics.latency_p99_s * 1000.0:.3f}",
+            "sequence_gaps": str(metrics.sequence_gaps),
+            "lock_id": str(latest.track_id if latest else -1),
+            "stop_reason": self._authority.stop_reason.value,
+        }
+        status.values = [KeyValue(key=key, value=value) for key, value in values.items()]
+        diagnostic.status = [status]
+        self._diagnostics_pub.publish(diagnostic)

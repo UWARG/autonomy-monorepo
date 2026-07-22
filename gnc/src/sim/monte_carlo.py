@@ -114,14 +114,25 @@ def _segment_pos(segments, t_now: float) -> Tuple[float, float]:
     return segments[-1][3] if segments else (0.0, 0.0)
 
 
-def run_episode(seed: int, stack: StackConfig = DEPLOYED) -> Tuple[Episode, SimResult, dict]:
+def run_episode(
+    seed: int,
+    stack: StackConfig = DEPLOYED,
+    timing: Optional[dict] = None,
+) -> Tuple[Episode, SimResult, dict]:
     ep = make_episode(seed)
+    timing = timing or {}
     sim_cfg = SimConfig(
         duration_s=ep.duration_s,
         noise_mm=ep.noise_mm,
-        dropout_prob=ep.dropout_prob,
-        latency_s=ep.latency_s,
-        ema_alpha=0.3,
+        camera_hz=float(timing.get("p05_fps", 20.0)),
+        dropout_prob=max(ep.dropout_prob, float(timing.get("dropout_rate", 0.0))),
+        dropout_burst_lengths=tuple(
+            int(value) for value in timing.get("dropout_gap_sizes", [])
+        ),
+        latency_s=max(ep.latency_s, float(timing.get("capture_to_receive_p99_s", 0.0))),
+        camera_jitter_s=float(timing.get("capture_period_jitter_p99_s", 0.0)),
+        latency_jitter_s=float(timing.get("latency_jitter_p99_s", 0.0)),
+        ema_alpha=stack.ema_alpha,
         wind=ep.wind,
         gust_sigma=ep.gust_sigma,
         seed=ep.seed + 2,
@@ -199,11 +210,16 @@ def evaluate_episode(ep: Episode, result: SimResult, stack: StackConfig) -> dict
     }
 
 
-def soak(episodes: int, base_seed: int, outdir: str = "sim_output",
-         stack: StackConfig = DEPLOYED) -> Tuple[bool, dict, List[dict]]:
+def soak(
+    episodes: int,
+    base_seed: int,
+    outdir: str = "sim_output",
+    stack: StackConfig = DEPLOYED,
+    timing: Optional[dict] = None,
+) -> Tuple[bool, dict, List[dict]]:
     rows = []
     for k in range(episodes):
-        _, _, metrics = run_episode(base_seed + k, stack)
+        _, _, metrics = run_episode(base_seed + k, stack, timing=timing)
         rows.append(metrics)
         if (k + 1) % 50 == 0:
             print(f"  {k + 1}/{episodes} episodes...")

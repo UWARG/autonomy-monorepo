@@ -4,7 +4,8 @@ import math
 from typing import Optional
 
 import rclpy
-from geometry_msgs.msg import PointStamped, PoseStamped
+from airside_interfaces.msg import TrackedTarget
+from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
@@ -28,16 +29,22 @@ class SimTargetNode(Node):
         super().__init__("sim_target_node")
         self.declare_parameter("world_target", False)
         self.declare_parameter("lunge", False)
+        self.declare_parameter("crossing", False)
         self._world = self.get_parameter("world_target").value
         self._lunge = self.get_parameter("lunge").value
+        self._crossing = self.get_parameter("crossing").value
 
         self._source: AbstractTargetSource = SimTargetSource()
         self._source.initialize()
         self._pose: Optional[PoseStamped] = None
         self._person: Optional[tuple] = None  # latched world-fixed (x, y, z) ENU
         self._latch_s: Optional[float] = None  # when the person was latched (lunge timing)
+        self._sequence_num = 0
 
-        self._publisher = self.create_publisher(PointStamped, self.TOPIC, 10)
+        self._publisher = self.create_publisher(TrackedTarget, self.TOPIC, 10)
+        self._candidate_publisher = self.create_publisher(
+            TrackedTarget, "perception/target_candidate", 10
+        )
         if self._world:
             # MAVROS publishes pose with best-effort (SensorData) QoS.
             self.create_subscription(
@@ -104,13 +111,29 @@ class SimTargetNode(Node):
                 return
             x_m, y_m, z_m = obs.x_mm / MM_PER_M, obs.y_mm / MM_PER_M, obs.z_mm / MM_PER_M
 
-        msg = PointStamped()
+        self._sequence_num += 1
+        msg = TrackedTarget()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.host_receipt_stamp = msg.header.stamp
+        msg.publish_stamp = msg.header.stamp
         msg.header.frame_id = "camera"
-        msg.point.x = x_m  # right
-        msg.point.y = y_m  # down
-        msg.point.z = z_m  # forward
+        msg.position.x = x_m  # right
+        msg.position.y = y_m  # down
+        msg.position.z = z_m  # forward
+        msg.track_id = 1
+        msg.sequence_num = self._sequence_num
         self._publisher.publish(msg)
+        if self._crossing:
+            bystander = TrackedTarget()
+            bystander.header = msg.header
+            bystander.host_receipt_stamp = msg.host_receipt_stamp
+            bystander.publish_stamp = msg.publish_stamp
+            bystander.position.x = -msg.position.x
+            bystander.position.y = msg.position.y
+            bystander.position.z = max(0.4, msg.position.z * 0.5)
+            bystander.track_id = 99
+            bystander.sequence_num = msg.sequence_num
+            self._candidate_publisher.publish(bystander)
 
 
 def main(args: list[str] | None = None) -> None:

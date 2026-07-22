@@ -1,36 +1,105 @@
+"""Target-source abstractions and OAK-D spatial-tracklet adaptation.
+
+Coordinates are camera-frame millimetres: +X right, +Y down, +Z forward.
+The DepthAI queue adapter deliberately has no ROS dependency so ownership,
+timestamp, and calibration behaviour can be tested without camera hardware.
+"""
+
+from __future__ import annotations
+
 import abc
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 
-@dataclass
+@dataclass(frozen=True)
 class TargetObservation:
-    """One detection of the tracked person"""
+    """One capture-stamped observation of the explicitly selected person."""
 
-    x_mm: float  # right
-    y_mm: float  # down
-    z_mm: float  # forward / depth (> 0, 0 means invalid)
+    x_mm: float
+    y_mm: float
+    z_mm: float
+    track_id: int = -1
+    sequence_num: int = 0
+    capture_time_s: float = field(default_factory=time.time)
+    received_time_s: Optional[float] = None
     tracked: bool = True
-    timestamp: float = field(default_factory=time.time)
+
+    @property
+    def timestamp(self) -> float:
+        """Compatibility alias; new code should use ``capture_time_s``."""
+        return self.capture_time_s
+
+
+@dataclass(frozen=True)
+class TrackletPacket:
+    """Host-synchronised metadata accompanying a DepthAI Tracklets message."""
+
+    tracklets: tuple[Any, ...]
+    capture_time_s: float
+    sequence_num: int
+    received_time_s: float
+
+
+class DepthAITrackletProvider:
+    """Non-blocking adapter for a DepthAI ``Tracklets`` output queue.
+
+    ``getTimestamp()`` is used because it is host-clock synchronised by
+    DepthAI. This makes capture age comparable to ROS/system time. The queue
+    can be injected in tests; importing DepthAI is not required here.
+    """
+
+    def __init__(
+        self,
+        output_queue: Any,
+        clock: Callable[[], float] = time.time,
+        host_sync_now_fn: Optional[Callable[[], Any]] = None,
+    ) -> None:
+        self._queue = output_queue
+        self._clock = clock
+        self._host_sync_now_fn = host_sync_now_fn
+
+    @staticmethod
+    def _seconds(value: Any) -> float:
+        if hasattr(value, "total_seconds"):
+            return float(value.total_seconds())
+        return float(value)
+
+    def poll(self) -> Optional[TrackletPacket]:
+        packet = self._queue.tryGet()
+        if packet is None:
+            return None
+        received_time_s = self._clock()
+        capture_time_s = self._seconds(packet.getTimestamp())
+        if self._host_sync_now_fn is not None:
+            # Translate DepthAI's host-steady epoch into the system/ROS epoch
+            # while retaining the packet's actual capture age.
+            host_sync_now_s = self._seconds(self._host_sync_now_fn())
+            capture_time_s = received_time_s - (host_sync_now_s - capture_time_s)
+        return TrackletPacket(
+            tracklets=tuple(packet.tracklets),
+            capture_time_s=capture_time_s,
+            sequence_num=int(packet.getSequenceNum()),
+            received_time_s=received_time_s,
+        )
 
 
 class AbstractTargetSource(abc.ABC):
-
     def start(self) -> bool:
         return self.initialize()
 
     def stop(self) -> None:
-        """"""
-        
+        pass
+
     @abc.abstractmethod
     def initialize(self) -> bool:
-        """"""
+        pass
 
     @abc.abstractmethod
     def get_target(self) -> Optional[TargetObservation]:
-        """Latest observation, or None on no-detection/failure (never raises)."""
+        """Return the latest selected target, or ``None`` without raising."""
 
 
 class SimTargetSource(AbstractTargetSource):
@@ -44,6 +113,7 @@ class SimTargetSource(AbstractTargetSource):
     ) -> None:
         self._clock = clock
         self._t0 = 0.0
+        self._sequence = 0
         self._z_centre = z_centre_mm
         self._z_amp = z_amplitude_mm
         self._x_amp = x_amplitude_mm
@@ -51,17 +121,27 @@ class SimTargetSource(AbstractTargetSource):
 
     def initialize(self) -> bool:
         self._t0 = self._clock()
+        self._sequence = 0
         return True
 
-    def get_target(self) -> Optional[TargetObservation]:
-        t = self._clock() - self._t0
+    def get_target(self) -> TargetObservation:
+        now = self._clock()
+        t = now - self._t0
         w = 2.0 * math.pi / self._period
-        z = self._z_centre + self._z_amp * math.sin(w * t)
-        x = self._x_amp * math.sin(0.5 * w * t)
-        y = 0.0  
-        return TargetObservation(x_mm=x, y_mm=y, z_mm=z, tracked=True, timestamp=self._clock())
+        self._sequence += 1
+        return TargetObservation(
+            x_mm=self._x_amp * math.sin(0.5 * w * t),
+            y_mm=0.0,
+            z_mm=self._z_centre + self._z_amp * math.sin(w * t),
+            track_id=1,
+            sequence_num=self._sequence,
+            capture_time_s=now,
+        )
+
 
 # Piecewise-linear Z bias correction: (raw_z_mm, offset_to_subtract_mm).
+# These anchors are provisional; the guide's physical XYZ matrix is the gate
+# for making any accuracy claim.
 _Z_CAL_ANCHORS = [
     (527.0, 27.5),
     (1075.0, 75.1),
@@ -70,54 +150,161 @@ _Z_CAL_ANCHORS = [
     (2200.0, 0.0),
 ]
 
+
 def calibrate_z(raw_z_mm: float) -> float:
-    """Apply the measured Z bias correction, trust the factory value beyond 2200 mm"""
+    """Apply the provisional measured Z bias correction."""
     if raw_z_mm <= _Z_CAL_ANCHORS[0][0]:
         return raw_z_mm - _Z_CAL_ANCHORS[0][1]
     if raw_z_mm >= _Z_CAL_ANCHORS[-1][0]:
-        return raw_z_mm  # beyond the validated range, trust the device
+        return raw_z_mm
     for (z0, off0), (z1, off1) in zip(_Z_CAL_ANCHORS, _Z_CAL_ANCHORS[1:]):
         if z0 <= raw_z_mm <= z1:
-            frac = (raw_z_mm - z0) / (z1 - z0)
-            offset = off0 + frac * (off1 - off0)
-            return raw_z_mm - offset
+            fraction = (raw_z_mm - z0) / (z1 - z0)
+            return raw_z_mm - (off0 + fraction * (off1 - off0))
     return raw_z_mm
 
 
-def calibrate_xy(raw_x_mm: float, raw_y_mm: float, raw_z_mm: float, cal_z_mm: float):
-    """Rescale X/Y by the depth-correction ratio"""
+def calibrate_xy(
+    raw_x_mm: float, raw_y_mm: float, raw_z_mm: float, cal_z_mm: float
+) -> tuple[float, float]:
+    """Preserve projection geometry by applying the Z ratio to both X and Y.
+
+    This is mathematically consistent for XYZ projected from the same depth,
+    but it is not evidence that either lateral axis meets the hardware gate.
+    """
     if raw_z_mm == 0.0:
         return raw_x_mm, raw_y_mm
     ratio = cal_z_mm / raw_z_mm
     return raw_x_mm * ratio, raw_y_mm * ratio
 
 
-def select_closest_tracked(tracklets, tracked_status):
-    """Pick the nearest (min spatial z) tracklet whose status == ``tracked_status``."""
-    candidates = [t for t in tracklets if t.status == tracked_status]
-    if not candidates:
-        return None
-    return min(candidates, key=lambda t: t.spatialCoordinates.z)
+def _status_name(tracklet: Any) -> str:
+    status = tracklet.status
+    return str(getattr(status, "name", status)).upper()
+
+
+def _track_id(tracklet: Any) -> int:
+    return int(tracklet.id)
+
+
+def _valid_tracklets(tracklets: Iterable[Any], tracked_status: str) -> list[Any]:
+    expected = tracked_status.upper()
+    return [
+        tracklet
+        for tracklet in tracklets
+        if _status_name(tracklet) == expected
+        and math.isfinite(float(tracklet.spatialCoordinates.z))
+        and float(tracklet.spatialCoordinates.z) > 0.0
+    ]
+
+
+def select_closest_tracked(tracklets: Iterable[Any], tracked_status: str) -> Any | None:
+    """Choose the nearest valid tracklet during explicit acquisition only."""
+    candidates = _valid_tracklets(tracklets, tracked_status)
+    return min(candidates, key=lambda item: item.spatialCoordinates.z, default=None)
+
+
+def observation_from_tracklet(tracklet: Any, packet: TrackletPacket) -> TargetObservation:
+    """Calibrate one valid spatial tracklet while preserving capture metadata."""
+    spatial = tracklet.spatialCoordinates
+    cal_z = calibrate_z(float(spatial.z))
+    cal_x, cal_y = calibrate_xy(
+        float(spatial.x), float(spatial.y), float(spatial.z), cal_z
+    )
+    return TargetObservation(
+        x_mm=cal_x,
+        y_mm=cal_y,
+        z_mm=cal_z,
+        track_id=_track_id(tracklet),
+        sequence_num=packet.sequence_num,
+        capture_time_s=packet.capture_time_s,
+        received_time_s=packet.received_time_s,
+    )
 
 
 class RealTargetSource(AbstractTargetSource):
-    def __init__(self, poll_fn=None, tracked_status="TRACKED", clock: Callable[[], float] = time.time):
+    """Sticky owner of one DepthAI spatial track ID.
+
+    Calling :meth:`enable` acquires the nearest valid person in that packet.
+    Subsequent polls ignore every other ID. A missing/LOST tracklet returns
+    ``None`` while retaining ownership for same-ID reacquisition. Only
+    :meth:`disable`/``reset_target`` clears ownership.
+    """
+
+    def __init__(
+        self,
+        poll_fn: Optional[Callable[[], Any]] = None,
+        tracked_status: str = "TRACKED",
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         self._poll_fn = poll_fn
         self._tracked_status = tracked_status
         self._clock = clock
+        self._enabled = False
+        self._locked_track_id: Optional[int] = None
+        self._pending_packet: Optional[TrackletPacket] = None
+
+    @property
+    def locked_track_id(self) -> Optional[int]:
+        return self._locked_track_id
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
 
     def initialize(self) -> bool:
         return self._poll_fn is not None
 
-    def get_target(self) -> Optional[TargetObservation]:
+    def _poll(self) -> Optional[TrackletPacket]:
         if self._poll_fn is None:
             return None
-        closest = select_closest_tracked(self._poll_fn(), self._tracked_status)
-        if closest is None:
+        value = self._poll_fn()
+        if value is None:
             return None
-        sc = closest.spatialCoordinates
-        if sc.z <= 0.0:  # invalid depth sentinel
+        if isinstance(value, TrackletPacket):
+            return value
+        now = self._clock()
+        return TrackletPacket(tuple(value), now, 0, now)
+
+    def enable(self, packet: Optional[TrackletPacket] = None) -> bool:
+        """Acquire the nearest currently valid person; never switch afterward."""
+        if self._enabled or self._locked_track_id is not None:
+            return False
+        packet = packet or self._poll()
+        if packet is None:
+            return False
+        chosen = select_closest_tracked(packet.tracklets, self._tracked_status)
+        if chosen is None:
+            return False
+        self._locked_track_id = _track_id(chosen)
+        self._enabled = True
+        self._pending_packet = packet
+        return True
+
+    def disable(self) -> None:
+        self._enabled = False
+        self._locked_track_id = None
+        self._pending_packet = None
+
+    reset_target = disable
+
+    def get_target(self) -> Optional[TargetObservation]:
+        if not self._enabled or self._locked_track_id is None:
             return None
-        cal_z = calibrate_z(sc.z)
-        cal_x, cal_y = calibrate_xy(sc.x, sc.y, sc.z, cal_z)
-        return TargetObservation(x_mm=cal_x, y_mm=cal_y, z_mm=cal_z, tracked=True, timestamp=self._clock())
+        packet = self._pending_packet
+        self._pending_packet = None
+        if packet is None:
+            packet = self._poll()
+        if packet is None:
+            return None
+        matching = next(
+            (
+                tracklet
+                for tracklet in _valid_tracklets(packet.tracklets, self._tracked_status)
+                if _track_id(tracklet) == self._locked_track_id
+            ),
+            None,
+        )
+        if matching is None:
+            return None
+        return observation_from_tracklet(matching, packet)

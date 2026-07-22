@@ -38,7 +38,10 @@ class SimConfig:
     camera_hz: float = 20.0  
     noise_mm: float = 0.0 
     dropout_prob: float = 0.0
+    dropout_burst_lengths: Tuple[int, ...] = ()
     latency_s: float = 0.0 
+    camera_jitter_s: float = 0.0
+    latency_jitter_s: float = 0.0
     ema_alpha: Optional[float] = None 
     recede_speed: float = 1.0 
     sign_error: bool = False
@@ -170,10 +173,11 @@ def run_sim(
 
     # Camera/detection pipeline state.
     ema = None
-    pending: List[Tuple[float, Tuple[float, float, float], float]] = []  # (t_avail, cam_mm, range)
+    # availability, capture time, filtered XYZ, raw range
+    pending: List[Tuple[float, float, Tuple[float, float, float], float]] = []
     latest_cam: Optional[Tuple[float, float, float]] = None  # mm
     latest_range: Optional[float] = None
-    latest_rx_t = -math.inf
+    latest_capture_t = -math.inf
 
     # Tree outputs.
     cmd: Optional[Tuple[float, float, float, float]] = None
@@ -182,6 +186,7 @@ def run_sim(
     estop_recede = False
     estop_hold = False
     last_verdict_emergency = False
+    terminal_emergency_latched = False
 
     # Streamer / flight-mode state.
     mode = "GUIDED"
@@ -201,6 +206,7 @@ def run_sim(
     next_cam_t = 0.0
     next_tree_t = 0.0
     next_stream_t = 0.0
+    dropout_remaining = 0
 
     for i in range(steps):
         t = i * sim_cfg.dt
@@ -224,14 +230,27 @@ def run_sim(
 
         # --- camera at camera_hz: capture -> (optional latency) -> deliver ---
         if t >= next_cam_t:
-            next_cam_t += cam_period
-            if rel is not None and rng.random() >= sim_cfg.dropout_prob:
+            next_cam_t += max(
+                sim_cfg.dt,
+                cam_period + rng.uniform(-sim_cfg.camera_jitter_s, sim_cfg.camera_jitter_s),
+            )
+            dropped = dropout_remaining > 0 or rng.random() < sim_cfg.dropout_prob
+            if dropout_remaining > 0:
+                dropout_remaining -= 1
+            elif dropped and sim_cfg.dropout_burst_lengths:
+                dropout_remaining = max(
+                    0, rng.choice(sim_cfg.dropout_burst_lengths) - 1
+                )
+            if rel is not None and not dropped:
                 cam_pitch = follow_cfg.mount_pitch_rad + (
                     theta if sim_cfg.pitch_coupling else 0.0
                 )
                 cam = _camera_reading(
                     rel[0], rel[1], rel[2], cam_pitch, rng, sim_cfg.noise_mm
                 )
+                # Safety always sees raw calibrated range; only controller XYZ
+                # is smoothed.
+                rng_m = math.sqrt(cam[0] ** 2 + cam[1] ** 2 + cam[2] ** 2) / 1000.0
                 if sim_cfg.ema_alpha is not None:
                     a = sim_cfg.ema_alpha
                     ema = (
@@ -240,15 +259,19 @@ def run_sim(
                         else tuple(a * c + (1 - a) * e for c, e in zip(cam, ema))
                     )
                     cam = ema
-                rng_m = math.sqrt(cam[0] ** 2 + cam[1] ** 2 + cam[2] ** 2) / 1000.0
-                pending.append((t + sim_cfg.latency_s, cam, rng_m))
+                latency = max(
+                    0.0,
+                    sim_cfg.latency_s
+                    + rng.uniform(-sim_cfg.latency_jitter_s, sim_cfg.latency_jitter_s),
+                )
+                pending.append((t + latency, t, cam, rng_m))
             elif rel is None:
                 ema = None
         while pending and pending[0][0] <= t:
-            _, latest_cam, latest_range = pending.pop(0)
-            latest_rx_t = t
+            _, latest_capture_t, latest_cam, latest_range = pending.pop(0)
 
-        target_fresh = (t - latest_rx_t) <= target_freshness_s
+        # Runtime freshness is capture age, not time since ROS delivery.
+        target_fresh = (t - latest_capture_t) <= target_freshness_s
 
         # --- behavior tree at tree_hz: SafetyMonitor arbitration + follow command ---
         if t >= next_tree_t:
@@ -268,8 +291,17 @@ def run_sim(
                     cmd = (0.0, 0.0, 0.0, 0.0)
                 cmd_stamp = t
             elif target_fresh and latest_cam is not None:
-                sp = compute_setpoint(latest_cam[0], latest_cam[1], latest_cam[2], follow_cfg)
-                cmd = (sp.v_forward, sp.v_right, sp.v_down, sp.yaw_rate)
+                # The tree grants high-level follow authority. The actual
+                # deployed setpoint is recomputed below at every streamer tick.
+                # The standalone legacy harness keeps tree-rate control so its
+                # historical regression scenarios remain comparable.
+                if stack is not None:
+                    cmd = (0.0, 0.0, 0.0, 0.0)
+                else:
+                    sp = compute_setpoint(
+                        latest_cam[0], latest_cam[1], latest_cam[2], follow_cfg
+                    )
+                    cmd = (sp.v_forward, sp.v_right, sp.v_down, sp.yaw_rate)
                 cmd_stamp = t
             else:
                 cmd = (0.0, 0.0, 0.0, 0.0)
@@ -285,7 +317,7 @@ def run_sim(
                 ekf_ok=sim_cfg.ekf_ok,
                 command_fresh=cmd is not None and (t - cmd_stamp) <= command_stale_s,
                 reflex_danger=reflex.update(
-                    reflex_range, latest_rx_t if reflex_range is not None else t
+                    reflex_range, latest_capture_t if reflex_range is not None else t
                 ),
                 estop_emergency=estop_emergency,
                 estop_recede=estop_recede,
@@ -297,7 +329,20 @@ def run_sim(
             result.stream_actions.append((t, action.value))
 
             if action is ControlAction.STREAM_VELOCITY:
-                v_fwd, v_right, v_down, yaw_cmd = cmd
+                if stack is not None and latest_cam is not None and target_fresh:
+                    sp = compute_setpoint(
+                        latest_cam[0], latest_cam[1], latest_cam[2], follow_cfg
+                    )
+                    v_fwd, v_right, v_down, yaw_cmd = (
+                        sp.v_forward,
+                        sp.v_right,
+                        sp.v_down,
+                        sp.yaw_rate,
+                    )
+                elif stack is not None:
+                    v_fwd, v_right, v_down, yaw_cmd = (0.0, 0.0, 0.0, 0.0)
+                else:
+                    v_fwd, v_right, v_down, yaw_cmd = cmd
                 speed = max(abs(v_fwd), abs(v_right), abs(v_down))
                 v_fwd = slew(streamed[0], v_fwd, dv_max)
                 v_right = slew(streamed[1], v_right, dv_max)
@@ -327,6 +372,7 @@ def run_sim(
                 if action is ControlAction.STREAM_ZERO:
                     control = ("velocity", (0.0, 0.0, 0.0, 0.0))
                 elif action is ControlAction.SET_BRAKE:
+                    terminal_emergency_latched = True
                     mode = "BRAKE"
                     fc_hold_point = (dx, dy, dz)
                     control = ("fc_hold", (0.0, 0.0, 0.0, 0.0))
@@ -412,7 +458,7 @@ def run_sim(
         result.v_brake_cap.append(
             0.0 if kind != "velocity" else _brake_cap_of(cmd, follow_cfg, latest_cam)
         )
-        result.emergency.append(last_verdict_emergency)
+        result.emergency.append(last_verdict_emergency or terminal_emergency_latched)
         result.hold_active.append(kind != "velocity")
         result.action.append(last_action_name)
 

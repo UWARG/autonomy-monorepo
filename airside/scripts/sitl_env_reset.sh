@@ -13,7 +13,7 @@ for arg in "$@"; do
 done
 
 echo "[reset] docker compose down..."
-docker compose down --remove-orphans --timeout 20 || true
+docker compose -f compose.follow.sitl.yaml down --remove-orphans --timeout 20 || true
 
 STRAY=$(docker ps -aq --filter "name=airside" --filter "name=sitl" 2>/dev/null || true)
 if [[ -n "${STRAY}" ]]; then
@@ -41,9 +41,10 @@ fi
 
 if $REBUILD; then
   echo "[reset] rebuilding the airside image (SITL image stays cached)..."
-  docker compose build airside
+  docker compose -f compose.follow.sitl.yaml build airside
 fi
 
 echo "[reset] done. Bring up with e.g.:"
-echo "  AIRSIDE_AUTO_ARM=true AIRSIDE_WORLD_TARGET=true docker compose up -d"
+echo "  docker compose -f compose.follow.sitl.yaml up -d"
+echo "Follow remains disabled until /follow/set_enabled or a CH8 rising edge."
 echo "Give the SITL EKF ~90 s to settle before trusting arm/takeoff behaviour."

@@ -10,12 +10,15 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
+  <depend>airside_interfaces</depend>
   <depend>ament_index_python</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>diagnostic_msgs</depend>
   <depend>py_trees</depend>
   <depend>py_trees_ros</depend>
   <depend>py_trees_ros_interfaces</depend>

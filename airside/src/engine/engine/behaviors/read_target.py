@@ -6,7 +6,7 @@ import math
 
 import py_trees
 import rclpy.node
-from geometry_msgs.msg import PointStamped
+from airside_interfaces.msg import TrackedTarget
 from stack_config import DEPLOYED
 
 KEY_TARGET_M = "follow/target_m"  # (x, y, z) camera-frame metres, or None
@@ -30,16 +30,18 @@ class ReadTargetBehavior(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
-        self._latest: PointStamped | None = None
-        self._latest_rx_s: float = 0.0
+        self._latest: TrackedTarget | None = None
         self._sub = self._node.create_subscription(
-            PointStamped, self.TOPIC, self._callback, qos_profile=10
+            TrackedTarget, self.TOPIC, self._callback, qos_profile=10
         )
         self._node.get_logger().info(f"ReadTarget: subscribed to '{self.TOPIC}'")
 
-    def _callback(self, msg: PointStamped) -> None:
+    def _callback(self, msg: TrackedTarget) -> None:
         self._latest = msg
-        self._latest_rx_s = self._now_s()
+
+    @staticmethod
+    def _capture_s(msg: TrackedTarget) -> float:
+        return float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
 
     def _now_s(self) -> float:
         return self._node.get_clock().now().nanoseconds * 1e-9
@@ -47,8 +49,13 @@ class ReadTargetBehavior(py_trees.behaviour.Behaviour):
     def update(self) -> py_trees.common.Status:
         target = None
         rng = None
-        if self._latest is not None and (self._now_s() - self._latest_rx_s) <= self.FRESHNESS_S:
-            p = self._latest.point
+        age = (
+            self._now_s() - self._capture_s(self._latest)
+            if self._latest is not None
+            else math.inf
+        )
+        if self._latest is not None and 0.0 <= age <= self.FRESHNESS_S:
+            p = self._latest.position
             if math.isfinite(p.z) and p.z > 0.0 and math.isfinite(p.x) and math.isfinite(p.y):
                 target = (p.x, p.y, p.z)
                 rng = math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z)

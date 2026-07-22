@@ -6,17 +6,23 @@ import pytest
 
 from src.target_source import (
     AbstractTargetSource,
+    DepthAITrackletProvider,
     RealTargetSource,
     SimTargetSource,
     TargetObservation,
+    TrackletPacket,
     calibrate_xy,
     calibrate_z,
     select_closest_tracked,
 )
 
 
-def _tracklet(x, y, z, status="TRACKED"):
-    return SimpleNamespace(status=status, spatialCoordinates=SimpleNamespace(x=x, y=y, z=z))
+def _tracklet(x, y, z, status="TRACKED", track_id=1):
+    return SimpleNamespace(
+        id=track_id,
+        status=status,
+        spatialCoordinates=SimpleNamespace(x=x, y=y, z=z),
+    )
 
 
 class FakeClock:
@@ -98,6 +104,7 @@ def test_real_target_source_emits_calibrated_observation():
     tracklets = [_tracklet(300, 0, 1000, status="TRACKED")]
     src = RealTargetSource(poll_fn=lambda: tracklets, tracked_status="TRACKED", clock=lambda: 7.0)
     assert src.initialize() is True
+    assert src.enable() is True
     obs = src.get_target()
     assert isinstance(obs, TargetObservation)
     cal_z = calibrate_z(1000.0)
@@ -105,9 +112,87 @@ def test_real_target_source_emits_calibrated_observation():
     assert abs(obs.z_mm - cal_z) < 1e-9
     assert abs(obs.x_mm - cal_x) < 1e-9
     assert obs.timestamp == 7.0
+    assert obs.track_id == 1
 
 
 def test_real_target_source_none_without_pipeline():
     src = RealTargetSource(poll_fn=None)
     assert src.initialize() is False
     assert src.get_target() is None
+
+
+def _packet(tracklets, sequence=10, capture=5.0, received=5.1):
+    return TrackletPacket(tuple(tracklets), capture, sequence, received)
+
+
+def test_sticky_lock_ignores_closer_bystander_crossing():
+    packets = iter(
+        [
+            _packet([_tracklet(0, 0, 2000, track_id=4), _tracklet(0, 0, 3000, track_id=9)]),
+            _packet([_tracklet(0, 0, 2500, track_id=4), _tracklet(0, 0, 500, track_id=9)], 11),
+        ]
+    )
+    source = RealTargetSource(poll_fn=lambda: next(packets))
+    assert source.enable() is True
+    assert source.locked_track_id == 4
+    assert source.get_target().track_id == 4
+    assert source.get_target().track_id == 4
+
+
+def test_repeated_enable_cannot_replace_existing_owner():
+    first = _packet([_tracklet(0, 0, 2000, track_id=4)])
+    replacement = _packet([_tracklet(0, 0, 500, track_id=9)], 11)
+    source = RealTargetSource(poll_fn=lambda: first)
+    assert source.enable()
+    assert not source.enable(replacement)
+    assert source.locked_track_id == 4
+
+
+def test_brief_loss_preserves_lock_and_same_id_reacquires():
+    packets = iter(
+        [
+            _packet([_tracklet(0, 0, 2000, track_id=4)]),
+            _packet([_tracklet(0, 0, 1900, status="LOST", track_id=4)], 11),
+            _packet([_tracklet(0, 0, 1800, track_id=4)], 12),
+        ]
+    )
+    source = RealTargetSource(poll_fn=lambda: next(packets))
+    assert source.enable()
+    assert source.get_target() is not None
+    assert source.get_target() is None
+    assert source.locked_track_id == 4
+    assert source.get_target().track_id == 4
+
+
+def test_reset_requires_new_explicit_enable():
+    packet = _packet([_tracklet(0, 0, 2000, track_id=4)])
+    source = RealTargetSource(poll_fn=lambda: packet)
+    assert source.enable()
+    source.reset_target()
+    assert source.locked_track_id is None
+    assert source.get_target() is None
+
+
+def test_capture_metadata_passes_through():
+    packet = _packet([_tracklet(1, 2, 1000, track_id=7)], sequence=42, capture=123.5)
+    source = RealTargetSource(poll_fn=lambda: packet)
+    assert source.enable()
+    observation = source.get_target()
+    assert observation.track_id == 7
+    assert observation.sequence_num == 42
+    assert observation.capture_time_s == 123.5
+
+
+def test_depthai_provider_uses_packet_timestamp_and_sequence():
+    class Queue:
+        def tryGet(self):
+            return SimpleNamespace(
+                tracklets=[_tracklet(0, 0, 1000)],
+                getTimestamp=lambda: SimpleNamespace(total_seconds=lambda: 11.25),
+                getSequenceNum=lambda: 99,
+            )
+
+    packet = DepthAITrackletProvider(Queue(), clock=lambda: 11.3).poll()
+    assert packet.capture_time_s == 11.25
+    assert packet.received_time_s == 11.3
+    assert packet.sequence_num == 99

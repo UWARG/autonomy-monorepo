@@ -4,9 +4,10 @@ import sys
 import time
 
 import rclpy
-from geometry_msgs.msg import PointStamped
+from airside_interfaces.msg import TrackedTarget
 from mavros_msgs.msg import PositionTarget
 from rclpy.node import Node
+from std_srvs.srv import SetBool
 
 CASES = [
     ("ahead -> velocity.x > 0 (forward)", (0.0, 0.0, 6.0), lambda m: m.velocity.x > 0.05),
@@ -18,12 +19,17 @@ CASES = [
      lambda m: m.velocity.z < -0.01),
 ]
 
-CASE_GAP_S = 1.2
+CASE_GAP_S = 0.15
 
 class SignCheck(Node):
     def __init__(self) -> None:
         super().__init__("sign_check")
-        self._pub = self.create_publisher(PointStamped, "perception/target", 10)
+        self._pub = self.create_publisher(TrackedTarget, "perception/target", 10)
+        self._candidate_pub = self.create_publisher(
+            TrackedTarget, "perception/target_candidate", 10
+        )
+        self._enable = self.create_client(SetBool, "follow/set_enabled")
+        self._sequence = 0
         self._msg: PositionTarget | None = None
         self.create_subscription(PositionTarget, "mavros/setpoint_raw/local", self._on_sp, 10)
 
@@ -31,11 +37,24 @@ class SignCheck(Node):
         self._msg = msg
 
     def _publish(self, point) -> None:
-        msg = PointStamped()
+        self._sequence += 1
+        msg = TrackedTarget()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.host_receipt_stamp = msg.header.stamp
+        msg.publish_stamp = msg.header.stamp
         msg.header.frame_id = "camera"
-        msg.point.x, msg.point.y, msg.point.z = point
+        msg.position.x, msg.position.y, msg.position.z = point
+        msg.track_id = 1
+        msg.sequence_num = self._sequence
+        self._candidate_pub.publish(msg)
         self._pub.publish(msg)
+
+    def _request_enable(self) -> None:
+        if not self._enable.wait_for_service(timeout_sec=2.0):
+            return
+        request = SetBool.Request()
+        request.data = True
+        self._enable.call_async(request)
 
     def _silent_gap(self) -> None:
         deadline = time.time() + CASE_GAP_S
@@ -46,6 +65,9 @@ class SignCheck(Node):
         all_ok = True
         for label, point, predicate in CASES:
             self._silent_gap()
+            self._publish(point)
+            rclpy.spin_once(self, timeout_sec=0.1)
+            self._request_enable()
             deadline = time.time() + 3.5
             self._msg = None
             settle = time.time() + 2.0
