@@ -53,12 +53,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
-RUN git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git
+# CUDA needs opencv_contrib (cudev). Same version tag as opencv.
+RUN git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git \
+  && git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
 
 WORKDIR /tmp/opencv/build
 # BFMatcher needs cudafeatures2d; skip cuDNN/DNN — processor does not use them.
 RUN cmake -D CMAKE_BUILD_TYPE=RELEASE \
       -D CMAKE_INSTALL_PREFIX=/opt/opencv \
+      -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib/modules \
       -D WITH_CUDA=ON \
       -D WITH_CUDNN=OFF \
       -D OPENCV_DNN_CUDA=OFF \
