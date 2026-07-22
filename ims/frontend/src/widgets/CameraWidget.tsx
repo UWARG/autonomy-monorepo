@@ -1,6 +1,6 @@
 import type { CameraMessage } from '../types';
 
-const DASH = '\u2014';
+const DASH = '—';
 
 function formatMeta(camera?: CameraMessage): string {
   if (!camera?.width || !camera?.height) return DASH;

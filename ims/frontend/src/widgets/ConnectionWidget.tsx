@@ -1,6 +1,6 @@
 import type { ConnectionMessage, ConnectionStatus } from '../types';
 
-const DASH = '\u2014';
+const DASH = '—';
 
 const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
   active: { className: 'pill-ok', label: 'ACTIVE' },
