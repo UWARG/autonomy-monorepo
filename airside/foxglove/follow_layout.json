@@ -1,0 +1,176 @@
+{
+  "configById": {
+    "3D!follow3d": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 18,
+        "phi": 55,
+        "thetaOffset": 45,
+        "targetOffset": [4, 0, 1.5],
+        "target": [0, 0, 0],
+        "targetOrientation": [0, 0, 0, 1],
+        "fovy": 45,
+        "near": 0.5,
+        "far": 5000
+      },
+      "followMode": "follow-pose",
+      "followTf": "map",
+      "scene": {
+        "enableStats": false,
+        "backgroundColor": "#15151a"
+      },
+      "transforms": {},
+      "topics": {
+        "/viz/markers": { "visible": true },
+        "/mavros/local_position/pose": {
+          "visible": true,
+          "type": "arrow",
+          "arrowScale": [0.6, 0.12, 0.12],
+          "color": "#4a7cff"
+        },
+        "/mavros/setpoint_position/local": {
+          "visible": true,
+          "type": "axis",
+          "axisScale": 0.6
+        }
+      },
+      "layers": {
+        "grid": {
+          "layerId": "foxglove.Grid",
+          "visible": true,
+          "size": 40,
+          "divisions": 40,
+          "color": "#248f8f45",
+          "position": [0, 0, 0]
+        }
+      },
+      "publish": { "type": "point" }
+    },
+    "Plot!range": {
+      "title": "range to person (m)",
+      "paths": [
+        {
+          "value": "/viz/range.data",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "range"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 60
+    },
+    "Plot!altitude": {
+      "title": "altitude vs hold setpoint (m, ENU z)",
+      "paths": [
+        {
+          "value": "/mavros/local_position/pose.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "altitude"
+        },
+        {
+          "value": "/mavros/setpoint_position/local.pose.position.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "hold z (latched)"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 60
+    },
+    "Plot!cmdvel": {
+      "title": "commanded body velocity (FLU) + yaw rate",
+      "paths": [
+        {
+          "value": "/mavros/setpoint_raw/local.velocity.x",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "forward"
+        },
+        {
+          "value": "/mavros/setpoint_raw/local.velocity.y",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "left"
+        },
+        {
+          "value": "/mavros/setpoint_raw/local.velocity.z",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "up"
+        },
+        {
+          "value": "/mavros/setpoint_raw/local.yaw_rate",
+          "enabled": true,
+          "timestampMethod": "receiveTime",
+          "label": "yaw rate (CCW)"
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "followingViewWidth": 60
+    },
+    "Indicator!mode": {
+      "path": "/mavros/state.mode",
+      "style": "background",
+      "fallbackColor": "#a0a0a0",
+      "fallbackLabel": "no FCU",
+      "rules": [
+        { "operator": "=", "rawValue": "GUIDED", "color": "#2e7d32", "label": "GUIDED" },
+        { "operator": "=", "rawValue": "BRAKE", "color": "#c62828", "label": "BRAKE (e-stop)" },
+        { "operator": "=", "rawValue": "LOITER", "color": "#ef6c00", "label": "LOITER (lost)" }
+      ]
+    },
+    "RawMessages!vizstate": {
+      "topicPath": "/viz/state.data",
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "expansion": "all"
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "playbackConfig": { "speed": 1 },
+  "layout": {
+    "direction": "row",
+    "first": "3D!follow3d",
+    "second": {
+      "direction": "column",
+      "first": {
+        "direction": "column",
+        "first": "Plot!range",
+        "second": "Plot!altitude",
+        "splitPercentage": 50
+      },
+      "second": {
+        "direction": "column",
+        "first": "Plot!cmdvel",
+        "second": {
+          "direction": "row",
+          "first": "Indicator!mode",
+          "second": "RawMessages!vizstate",
+          "splitPercentage": 40
+        },
+        "splitPercentage": 60
+      },
+      "splitPercentage": 55
+    },
+    "splitPercentage": 58
+  }
+}

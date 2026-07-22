@@ -1,7 +1,7 @@
 name = "airside"
 description = "ROS 2 Humble workspace for airside autonomy."
 
-depends_on = ["utils", "camera"]
+depends_on = ["utils", "camera", "gnc"]
 
 [commands]
 setup = "docker compose build"

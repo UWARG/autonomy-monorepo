@@ -1,0 +1,31 @@
+services:
+  sitl:
+    build:
+      context: docker
+      dockerfile: Dockerfile.sitl
+    image: warg/sitl:latest
+    ports:
+      - "5760:5760"
+
+  airside:
+    build:
+      context: ..
+      dockerfile: airside/docker/Dockerfile
+    image: warg/airside:latest
+    depends_on:
+      - sitl
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      PYTHONPATH: /monorepo/gnc/src
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
+      - ..:/monorepo
+    command: >
+      ros2 launch engine ${AIRSIDE_FOLLOW_LAUNCH:-follow_sitl.launch.py}
+      fcu_url:=tcp://sitl:5760
+      world_target:=${AIRSIDE_WORLD_TARGET:-true}
+      lunge:=${AIRSIDE_LUNGE:-false}
+      crossing:=${AIRSIDE_CROSSING:-false}
