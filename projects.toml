@@ -3,8 +3,11 @@ path = "warg_cli"
 [projects.SITL-Plus]
 path="SITL-Plus"
 
-[projects.kernel]
-path = "kernel"
+[projects.gnc]
+path = "gnc"
+
+[projects.perception]
+path = "perception"
 
 [projects.camera]
 path = "camera"
@@ -17,3 +20,12 @@ path = "mav_comms"
 
 [projects.ims]
 path = "ims"
+
+[projects.airside]
+path = "airside"
+
+[projects.gesture_control]
+path = "gesture_control"
+
+[projects.target_tracking]
+path = "target_tracking"
