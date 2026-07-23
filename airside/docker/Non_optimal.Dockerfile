@@ -154,9 +154,12 @@ RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep in
 
 RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 
+# Ubuntu 22.04's pip is too old for modern hatchling (needs packaging.licenses).
+RUN pip3 install --no-cache-dir --upgrade pip packaging hatchling
+
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip3 install --no-cache-dir numpy scipy sortedcontainers \
+RUN pip3 install --no-cache-dir sortedcontainers \
   && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils
 
 WORKDIR /ros_ws

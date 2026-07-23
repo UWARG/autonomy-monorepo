@@ -47,7 +47,12 @@ class Processor(Node):
         self.longitude=0.0
         self.rel_alt=None
         self.last_altitude=0
-        self.BFMatcher=cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
+        self._use_cuda=False
+        try:
+             self._use_cuda = hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0
+        except Exception:
+             self._use_cuda = False
+        self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING) if self._use_cuda else cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
         self.altitude_threshold=0.1
         self.last_image_altitude=7.5
         self.orb=cv2.ORB_create(nfeatures=1000)

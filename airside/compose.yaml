@@ -29,7 +29,7 @@ services:
     restart: on-failure
 
   airside_non_optimal:
-    profiles: ["non-optimal"]
+    profiles: ["jetson"]
     build:
       context: ..
       dockerfile: airside/docker/Non_optimal.Dockerfile
