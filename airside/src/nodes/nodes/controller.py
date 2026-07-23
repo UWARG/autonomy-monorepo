@@ -22,7 +22,7 @@ class PI():
         dt=time.time_ns()/1e9-self.previous_time
         self.previous_time=time.time_ns()/1e9
         if dt<=0:
-            return 0
+            return 0.0
         self.integral+=error*dt
         current_integral=self.integral
         self.integral=max(-self.max_integral,min(self.max_integral,self.integral))
@@ -52,6 +52,7 @@ class Controller(Node):
         self.vx=0.0
         self.vy=0.0
         self.vz=0.0
+        self.yaw=0.0
         self.commanding=False
 
     def publish_velocity(self):
@@ -64,12 +65,13 @@ class Controller(Node):
         velocity.type_mask = (
             PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW | PositionTarget.IGNORE_YAW_RATE
+            PositionTarget.IGNORE_YAW_RATE
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
         velocity.velocity.x=self.vx
         velocity.velocity.y=self.vy
         velocity.velocity.z=self.vz
+        velocity.yaw=self.yaw
         self.velocity_publisher.publish(velocity)
 
     def _publish_zero_velocity(self):
@@ -80,12 +82,13 @@ class Controller(Node):
         velocity.type_mask = (
             PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW | PositionTarget.IGNORE_YAW_RATE
+            PositionTarget.IGNORE_YAW_RATE
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
         velocity.velocity.x=0.0
         velocity.velocity.y=0.0
         velocity.velocity.z=0.0
+        velocity.yaw=0.0
         self.velocity_publisher.publish(velocity)
 
     def PI_control(self,error):

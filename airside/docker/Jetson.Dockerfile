@@ -184,7 +184,7 @@ COPY airside/src/ src/
 
 RUN source /opt/ros/humble/setup.bash \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y \
-       --skip-keys "ament_python libopencv-dev python3-opencv cv_bridge" \
+       --skip-keys "ament_python libopencv-dev python3-opencv cv_bridge python3-sortedcontainers" \
   && colcon build --symlink-install \
        --cmake-args -DOpenCV_DIR=/opt/opencv/lib/cmake/opencv4
 
