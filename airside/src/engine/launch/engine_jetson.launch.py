@@ -54,12 +54,12 @@ def generate_launch_description() -> LaunchDescription:
                     {"output_encoding": "rgb8"},
                 ],
                 remappings=[
-                    ("image", "camera/image"),
+                    ("image_raw", "camera/image"),
                 ],
             ),
             Node(
                 package="engine",
-                executable="manager_non_optimal",
+                executable="manager_jetson",
                 name="engine_manager",
                 output="screen",
             ),

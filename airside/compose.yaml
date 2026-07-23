@@ -28,16 +28,16 @@ services:
     command: ros2 launch engine engine.launch.py
     restart: on-failure
 
-  airside_non_optimal:
+  airside_jetson:
     profiles: ["jetson"]
     build:
       context: ..
-      dockerfile: airside/docker/Non_optimal.Dockerfile
+      dockerfile: airside/docker/Jetson.Dockerfile
       # Orin Nano (8GB): lower if OpenCV compile OOMs, e.g. OPENCV_JOBS=2
       args:
         OPENCV_JOBS: ${OPENCV_JOBS:-4}
     # Separate tag so default profile keeps warg/airside:latest
-    image: warg/airside:non-optimal
+    image: warg/airside:jetson
     network_mode: host
     ipc: private
     runtime: nvidia
@@ -55,5 +55,5 @@ services:
       - ..:/monorepo
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
-    command: ros2 launch engine engine_non_optimal.launch.py
+    command: ros2 launch engine engine_jetson.launch.py
     restart: unless-stopped

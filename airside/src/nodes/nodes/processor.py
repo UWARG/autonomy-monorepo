@@ -234,11 +234,14 @@ class Processor(Node):
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
                 self.publish_invalid_error(align_before_descent)
                 return
-            gpu_landing_des=cv2.cuda.GpuMat()
-            gpu_takeoff_des=cv2.cuda.GpuMat()
-            gpu_landing_des.upload(des)
-            gpu_takeoff_des.upload(des_takeoff)
-            matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+            if self._use_cuda:
+                gpu_landing_des=cv2.cuda.GpuMat()
+                gpu_takeoff_des=cv2.cuda.GpuMat()
+                gpu_landing_des.upload(des)
+                gpu_takeoff_des.upload(des_takeoff)
+                matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+            else:
+                matches=self.BFMatcher.match(des, des_takeoff)
             matches=sorted(matches, key=lambda x: x.distance)
             if len(matches)<50:
                 self.publish_invalid_error(align_before_descent)

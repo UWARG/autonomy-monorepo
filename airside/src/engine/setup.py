@@ -18,7 +18,7 @@ setup(
             f"share/{package_name}/launch",
             [
                 "launch/engine.launch.py",
-                "launch/engine_non_optimal.launch.py",
+                "launch/engine_jetson.launch.py",
             ],
         ),
         (f"share/{package_name}/config", ["config/waypoints.yaml"]),
@@ -42,7 +42,7 @@ setup(
         "console_scripts": [
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
-            "manager_non_optimal = engine.manager_non_optimal:main",
+            "manager_jetson = engine.manager_jetson:main",
         ],
     },
 )

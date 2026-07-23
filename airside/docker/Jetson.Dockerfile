@@ -1,4 +1,4 @@
-# Non-optimal / precision-landing image for Jetson Orin Nano
+# Jetson / precision-landing image for Jetson Orin Nano
 #
 # Target hardware / software (from your board):
 #   Jetson Orin Nano Developer Kit
@@ -11,10 +11,10 @@
 #     can coexist. GPU access at runtime comes from compose `runtime: nvidia`.
 #
 # Build ON the Jetson (arm64), not on WSL/x86:
-#   cd airside && docker compose --profile non-optimal build
+#   cd airside && docker compose --profile jetson build
 #
 # Orin Nano is memory-tight; if the OpenCV build OOMs, rebuild with:
-#   docker build --build-arg OPENCV_JOBS=2 -f airside/docker/Non_optimal.Dockerfile ...
+#   docker build --build-arg OPENCV_JOBS=2 -f airside/docker/Jetson.Dockerfile ...
 
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13.2.0-devel-ubuntu22.04
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:13.2.0-runtime-ubuntu22.04
