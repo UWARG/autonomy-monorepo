@@ -13,7 +13,10 @@
 # Build ON the Jetson (arm64), not on WSL/x86:
 #   cd airside && docker compose --profile jetson build
 #
-# Orin Nano is memory-tight; if the OpenCV build OOMs, rebuild with:
+# Orin Nano is memory- and disk-tight:
+#   - OpenCV OOM: OPENCV_JOBS=2
+#   - apt "not enough free space": free host disk first, then rebuild
+#       df -h && docker system prune -af
 #   docker build --build-arg OPENCV_JOBS=2 -f airside/docker/Jetson.Dockerfile ...
 
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13.2.0-devel-ubuntu22.04
@@ -113,7 +116,10 @@ RUN echo "/opt/opencv/lib" > /etc/ld.so.conf.d/opencv.conf && ldconfig \
   && echo "export PYTHONPATH=${CV2_PARENT}\${PYTHONPATH:+:\${PYTHONPATH}}" > /etc/profile.d/opencv-python.sh \
   && echo "${CV2_PARENT}" > /etc/opencv-python-path
 
-# ROS 2 Humble apt repo (Ubuntu 22.04 / Jammy)
+# ROS 2 Humble apt repo (Ubuntu 22.04 / Jammy).
+# Split installs + clear apt archives between batches — Orin Nano disk is tight
+# (~400MB download / ~1.7GB install for ros-base+mavros in one shot often fails with
+# "not enough free space in /var/cache/apt/archives/").
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gnupg2 \
@@ -121,7 +127,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     python3 \
     python3-numpy \
-  && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
        -o /usr/share/keyrings/ros-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
        > /etc/apt/sources.list.d/ros2.list \
@@ -132,6 +140,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-rosdep \
     python3-scipy \
     ros-humble-ros-base \
+    git \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-v4l2-camera \
@@ -143,9 +155,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-diagnostic-updater \
     ros-humble-tf2-ros \
     geographiclib-tools \
-    git \
     # Do NOT install ros-humble-cv-bridge / python3-opencv from apt — CPU OpenCV.
-  && rm -rf /var/lib/apt/lists/* \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
   && export PYTHONPATH="$(cat /etc/opencv-python-path)${PYTHONPATH:+:${PYTHONPATH}}" \
   && python3 -c "import cv2; print('OpenCV', cv2.__version__); assert hasattr(cv2, 'cuda'), 'cv2.cuda missing'"
 

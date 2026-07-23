@@ -71,7 +71,7 @@ class Processor(Node):
         self.takeoff_3d_points=[]
         self.last_landing_altitude=0.25
         self.align_altitude=1.5
-        self.min_inlier_ratio=0.7
+        self.min_inlier_ratio=0.6
 
     def publish_invalid_error(self, align_before_descent: bool=False):
         self.error_publisher.publish(Error(
@@ -214,7 +214,7 @@ class Processor(Node):
                 return
             if rel_alt<=self.last_landing_altitude:
                 self.error_publisher.publish(Error(
-                    x=0,y=0,angle=0,valid_error=False,
+                    x=0.0,y=0.0,angle=0.0,valid_error=False,
                     below_last_landing_altitude=True,align_before_descent=False,
                     landing_complete=False,
                 ))
@@ -263,11 +263,11 @@ class Processor(Node):
                 self.publish_invalid_error(align_before_descent)
                 return
             #implement RANSAC 
-            H,inliers=cv2.estimateAffinePartial2D(
+            H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
                 np.asarray(self.takeoff_3d_points,dtype=np.float32),
                 np.asarray(self.landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
-                ransacReprojThreshold=0.01,
+                ransacReprojThreshold=0.02,
                 maxIters=1000,
                 confidence=0.99,
                 refineIters=10,

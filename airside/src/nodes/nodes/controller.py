@@ -103,8 +103,8 @@ class Controller(Node):
             self.pi_y.reset()
         self.commanding=True
         if error.below_last_landing_altitude:
-            self.vx=0
-            self.vy=0
+            self.vx=0.0
+            self.vy=0.0
             self.vz=0.1
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
@@ -117,8 +117,8 @@ class Controller(Node):
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
             return
-        self.vx=-self.pi_y.update(error.y)
-        self.vy=self.pi_x.update(error.x)
+        self.vx=self.pi_y.update(error.y)
+        self.vy=-self.pi_x.update(error.x)
         #Aligning before descent
         if error.align_before_descent:
             xy_error=math.hypot(error.x, error.y)
