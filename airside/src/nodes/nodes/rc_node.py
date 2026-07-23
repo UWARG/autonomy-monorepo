@@ -1,6 +1,5 @@
 from rclpy.node import Node
 from mavros_msgs.msg import Mavlink, RCIn
-from std_msgs.msg import String
 import struct
 import rclpy
 class RCNode(Node):

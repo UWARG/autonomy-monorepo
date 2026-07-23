@@ -18,7 +18,8 @@
 
 ARG CUDA_DEVEL_IMAGE=nvidia/cuda:13.2.0-devel-ubuntu22.04
 ARG CUDA_RUNTIME_IMAGE=nvidia/cuda:13.2.0-runtime-ubuntu22.04
-ARG OPENCV_VERSION=4.10.0
+# CUDA 13.2 needs OpenCV 4.x tip (cudev/CCCL fixes). Tagged 4.10–4.13.0 fail to compile.
+ARG OPENCV_VERSION=4.x
 ARG OPENCV_JOBS=4
 
 # -----------------------------------------------------------------------------
@@ -53,18 +54,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp
-# CUDA needs opencv_contrib (cudev). Same version tag as opencv.
+# CUDA needs opencv_contrib (cudev). Same ref as opencv (use 4.x for CUDA 13.2).
 RUN git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git \
   && git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git
 
 WORKDIR /tmp/opencv/build
 # BFMatcher needs cudafeatures2d; skip cuDNN/DNN — processor does not use them.
+# CUDA 13.2 CCCL/Thrust requires C++17 (OpenCV defaults are too old).
+# cudacodec needs libcuda (CUDA_CUDA_LIBRARY) at configure time — unused; leave OFF.
 RUN cmake -D CMAKE_BUILD_TYPE=RELEASE \
       -D CMAKE_INSTALL_PREFIX=/opt/opencv \
       -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib/modules \
+      -D CMAKE_CXX_STANDARD=17 \
+      -D CMAKE_CXX_STANDARD_REQUIRED=ON \
+      -D CMAKE_CUDA_STANDARD=17 \
+      -D CMAKE_CUDA_STANDARD_REQUIRED=ON \
+      -D CUDA_NVCC_FLAGS="-std=c++17" \
       -D WITH_CUDA=ON \
       -D WITH_CUDNN=OFF \
       -D OPENCV_DNN_CUDA=OFF \
+      -D BUILD_opencv_cudacodec=OFF \
       -D CUDA_ARCH_BIN=8.7 \
       -D CUDA_ARCH_PTX=8.7 \
       -D CUDA_FAST_MATH=ON \
@@ -96,13 +105,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
 SHELL ["/bin/bash", "-lc"]
 
 COPY --from=opencv-builder /opt/opencv /opt/opencv
+# nvidia/cuda runtime image has no python3 yet — only wire linker/PYTHONPATH here.
 RUN echo "/opt/opencv/lib" > /etc/ld.so.conf.d/opencv.conf && ldconfig \
   && CV2_PATH="$(find /opt/opencv -type d -name 'cv2' | head -n1)" \
+  && test -n "${CV2_PATH}" \
   && CV2_PARENT="$(dirname "${CV2_PATH}")" \
   && echo "export PYTHONPATH=${CV2_PARENT}\${PYTHONPATH:+:\${PYTHONPATH}}" > /etc/profile.d/opencv-python.sh \
-  && echo "${CV2_PARENT}" > /etc/opencv-python-path \
-  && export PYTHONPATH="${CV2_PARENT}${PYTHONPATH:+:${PYTHONPATH}}" \
-  && python3 -c "import cv2; print('OpenCV', cv2.__version__); assert hasattr(cv2, 'cuda'), 'cv2.cuda missing'"
+  && echo "${CV2_PARENT}" > /etc/opencv-python-path
 
 # ROS 2 Humble apt repo (Ubuntu 22.04 / Jammy)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -110,6 +119,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg2 \
     lsb-release \
     ca-certificates \
+    python3 \
+    python3-numpy \
   && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
        -o /usr/share/keyrings/ros-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
@@ -134,7 +145,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
     # Do NOT install ros-humble-cv-bridge / python3-opencv from apt — CPU OpenCV.
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && export PYTHONPATH="$(cat /etc/opencv-python-path)${PYTHONPATH:+:${PYTHONPATH}}" \
+  && python3 -c "import cv2; print('OpenCV', cv2.__version__); assert hasattr(cv2, 'cuda'), 'cv2.cuda missing'"
 
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble

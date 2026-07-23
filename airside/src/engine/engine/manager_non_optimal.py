@@ -7,7 +7,7 @@ from engine.behaviors.return_to_launch import ReturnToLaunch
 from engine.behaviors.landing import Landing
 
 def create_sequence():
-    sequence=py_trees.composite.Sequence("Sequence")
+    sequence=py_trees.composites.Sequence(name="Sequence",memory=True)
     sequence.add_children([
         Takeoff(),
         FlyAround(),
@@ -32,7 +32,7 @@ def main():
     sequence=create_sequence()
     tree=py_trees_ros.trees.BehaviourTree(root=sequence)
     try:
-        tree.setup(name="engine_tree",timeout=15.0)
+        tree.setup(node_name="engine_tree",timeout=15.0)
     except Exception as e:
         tree.node.get_logger().error(f"Error setting up tree: {e}")
         rclpy.try_shutdown()

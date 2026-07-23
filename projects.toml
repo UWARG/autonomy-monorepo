@@ -28,6 +28,3 @@ path = "gesture_control"
 
 [projects.target_tracking]
 path = "target_tracking"
-
-[projects.prec_non_optimal]
-path = "prec_non_optimal"
