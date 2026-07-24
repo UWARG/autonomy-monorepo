@@ -1,55 +1,48 @@
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 
-export interface LogEntry {
-  message: string;
+type LogEntry = {
+  topic: string;
+  raw: unknown;
   t: number;
-}
-
-type Severity = 'INF' | 'WRN' | 'ERR';
-
-/**
- * Pull an optional leading "HH:MM:SS" and a severity token (INF/WRN/ERR) out of
- * the raw message. Airside may format lines like "04:19:35 WRN Wind gust...".
- * Anything not present falls back: no embedded time -> client receipt time,
- * no severity -> INF.
- */
-function parseLine(message: string, t: number): {
-  time: string;
-  severity: Severity;
-  body: string;
-} {
-  let rest = message.trim();
-
-  const timeMatch = rest.match(/^(\d{2}:\d{2}:\d{2})\s+/);
-  let time: string;
-  if (timeMatch) {
-    time = timeMatch[1];
-    rest = rest.slice(timeMatch[0].length);
-  } else {
-    time = new Date(t).toLocaleTimeString('en-GB', { hour12: false });
-  }
-
-  const sevMatch = rest.match(/^(INF|WRN|ERR)\s+/i);
-  let severity: Severity = 'INF';
-  if (sevMatch) {
-    severity = sevMatch[1].toUpperCase() as Severity;
-    rest = rest.slice(sevMatch[0].length);
-  }
-
-  return { time, severity, body: rest };
-}
-
-const SEV_TONE: Record<Severity, string> = {
-  INF: 'text-ink-3',
-  WRN: 'text-warn',
-  ERR: 'text-bad',
 };
 
-export default function LogWidget({
-  entries = [],
-}: {
-  entries?: LogEntry[];
-}) {
-  const rows = [...entries].reverse(); // newest first
+const LOG_MAX = 200;
+
+export default function LogWidget() {
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+
+  useEffect(() => {
+    const topics: ROSLIB.Topic[] = [];
+
+    const onMessage = (name: string) => (message: unknown) => {
+      setEntries((prev) => [...prev, { topic: name, raw: message, t: Date.now() }].slice(-LOG_MAX));
+    };
+
+    const TOPIC_NAMES = ['/heartbeat'];
+    ros.getTopics(
+      ({ topics: allTopics, types }) => {
+        for (const name of TOPIC_NAMES) {
+          const i = allTopics.indexOf(name);
+          if (i === -1) {
+            console.warn(`rosapi: ${name} topic not found on the graph`);
+            continue;
+          }
+          const topic = new ROSLIB.Topic({ ros, name, messageType: types[i] });
+          topic.subscribe(onMessage(name));
+          topics.push(topic);
+        }
+      },
+      (error) => console.error('rosapi getTopics failed:', error),
+    );
+
+    return () => {
+      topics.forEach((t) => t.unsubscribe());
+    };
+  }, []);
+
+  const rows = [...entries].reverse();
 
   return (
     <section className="widget flex h-full min-h-[120px] flex-col overflow-hidden p-4">
@@ -62,16 +55,17 @@ export default function LogWidget({
         {rows.length === 0 ? (
           <p className="text-[13px] text-ink-3">Awaiting log messages</p>
         ) : (
-          rows.map((e, i) => {
-            const { time, severity, body } = parseLine(e.message, e.t);
-            return (
-              <div key={`${e.t}-${i}`} className="flex gap-2">
-                <span className="text-ink-3">{time}</span>
-                <span className={`${SEV_TONE[severity]} font-semibold`}>{severity}</span>
-                <span className="text-ink-2">{body}</span>
-              </div>
-            );
-          })
+          rows.map((e, i) => (
+            <div key={`${e.t}-${i}`} className="flex gap-2">
+              <span className="shrink-0 text-ink-3">
+                {new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}
+              </span>
+              <span className="shrink-0 font-semibold text-accent">INF</span>
+              <span className="break-all text-ink-2">
+                [{e.topic}] {JSON.stringify(e.raw)}
+              </span>
+            </div>
+          ))
         )}
       </div>
     </section>

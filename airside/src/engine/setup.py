@@ -28,6 +28,7 @@ setup(
         "console_scripts": [
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
+            "heartbeat = engine.heartbeat_node:main",
         ],
     },
 )
