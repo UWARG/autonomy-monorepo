@@ -1,0 +1,25 @@
+[Unit]
+Description=Optimize Arducam OV9782 V4L2 controls for outdoor capture
+After=local-fs.target systemd-udevd.service
+Wants=systemd-udevd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Absolute path to the repo script (install helper rewrites this if needed).
+Environment=DEVICE=/dev/video0
+Environment=WIDTH=640
+Environment=HEIGHT=480
+Environment=EXPOSURE=40
+Environment=BRIGHTNESS=-10
+Environment=GAIN=0
+Environment=WAIT_SECS=60
+ExecStart=/home/warg/autonomy-monorepo/camera/scripts/setup_arducam_v4l2.sh
+# Retry a few times if the USB camera enumerates late.
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=12
+StartLimitIntervalSec=180
+
+[Install]
+WantedBy=multi-user.target

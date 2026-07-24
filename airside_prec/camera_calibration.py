@@ -8,6 +8,8 @@ Usage:
     --squares-y    Number of inner corners along the y-axis (default: 6)
     --square-size  Physical size of each square in meters (default: 0.025 = 2.5cm)
     --camera       Camera index (default: 0)
+    --width        Capture width (default: 640, match ROS Arducam)
+    --height       Capture height (default: 480, match ROS Arducam)
     --min-samples  Minimum number of good frames before calibrating (default: 20)
     --output       Output YAML file path (default: camera_info.yaml)
 
@@ -38,6 +40,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--squares-y", type=int, default=6, help="Inner corners along y")
     parser.add_argument("--square-size", type=float, default=0.025, help="Square size in meters")
     parser.add_argument("--camera", type=int, default=0, help="Camera device index")
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=640,
+        help="Capture width (must match ROS / Arducam publish size)",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=480,
+        help="Capture height (must match ROS / Arducam publish size)",
+    )
     parser.add_argument("--min-samples", type=int, default=20, help="Min frames before calibrating")
     parser.add_argument("--output", type=str, default="camera_info.yaml", help="Output YAML file")
     parser.add_argument("--gui", action="store_true", help="Show interactive preview window")
@@ -84,6 +98,9 @@ def save_yaml(path: str, K: np.ndarray, dist: np.ndarray, image_size: tuple) -> 
     data = {
         "image_width": int(width),
         "image_height": int(height),
+        # ROS camera_node also accepts these keys.
+        "width": int(width),
+        "height": int(height),
         "camera_name": "camera",
         "camera_matrix": {
             "rows": 3,
@@ -110,6 +127,12 @@ def save_yaml(path: str, K: np.ndarray, dist: np.ndarray, image_size: tuple) -> 
     with open(path, "w") as f:
         yaml.dump(data, f, default_flow_style=False)
     print(f"[calibration] Saved to {path}")
+    print(
+        "[calibration] Copy to airside_prec/src/camera_info.yaml and "
+        "rebuild the engine package so ROS picks it up:"
+    )
+    print("  cp camera_info.yaml src/camera_info.yaml")
+    print("  # inside container: colcon build --packages-select engine --symlink-install")
 
 
 def print_results(rms: float, K: np.ndarray, dist: np.ndarray) -> None:
@@ -294,16 +317,43 @@ def run_gui(
     cv2.destroyAllWindows()
 
 
+def open_camera(index: int, width: int, height: int) -> cv2.VideoCapture:
+    """Open camera and lock the same resolution used by ROS (default 640x480)."""
+    cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        cap.release()
+        cap = cv2.VideoCapture(index)
+    if not cap.isOpened():
+        print(f"[error] Cannot open camera {index}")
+        sys.exit(1)
+
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+    # Warm up and verify the driver actually accepted the mode.
+    for _ in range(5):
+        cap.read()
+    actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    print(f"[calibration] Requested {width}x{height}, driver reports {actual_w}x{actual_h}")
+    if actual_w != width or actual_h != height:
+        print(
+            "[warning] Driver did not honor requested size — "
+            "calibration will use whatever frames actually arrive. "
+            "Check with: v4l2-ctl --get-fmt-video"
+        )
+    return cap
+
+
 def main() -> None:
     args = parse_args()
 
     pattern = (args.squares_x, args.squares_y)
     objp = build_object_points(args.squares_x, args.squares_y, args.square_size)
 
-    cap = cv2.VideoCapture(args.camera)
-    if not cap.isOpened():
-        print(f"[error] Cannot open camera {args.camera}")
-        sys.exit(1)
+    cap = open_camera(args.camera, args.width, args.height)
 
     try:
         if args.gui:

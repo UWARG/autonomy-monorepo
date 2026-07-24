@@ -1,4 +1,6 @@
 import logging
+import shutil
+import subprocess
 import time
 from typing import Any, Optional, cast
 
@@ -10,13 +12,14 @@ from .frame import CameraFrame
 
 logger = logging.getLogger(__name__)
 
-# Prefer auto exposure to avoid washed-out frames caused by invalid manual
-# exposure ranges on different camera drivers.
+# Outdoor defaults: match scripts/setup_arducam_v4l2.sh (manual V4L2 exposure).
+# Prefer running that script at boot; these OpenCV props reinforce the same mode.
 ARDU_DEVICE_INDEX = 0
-ARDU_USE_AUTO_EXPOSURE = True
-ARDU_MANUAL_EXPOSURE = -6
-ARDU_MANUAL_GAIN: Optional[int] = None
-ARDU_BRIGHTNESS: Optional[int] = None
+ARDU_USE_AUTO_EXPOSURE = False
+# V4L2 exposure_time_absolute units (1..5000); not the old OpenCV -6 scale.
+ARDU_MANUAL_EXPOSURE = 40
+ARDU_MANUAL_GAIN: Optional[int] = 0
+ARDU_BRIGHTNESS: Optional[int] = -10
 
 # Adaptive software correction when driver-level exposure controls are ignored.
 ARDU_ENABLE_SOFTWARE_EXPOSURE_CORRECTION = True
@@ -38,12 +41,43 @@ class Arducam(AbstractCamera):
 
     def initialize_camera(self) -> bool:
         try:
+            self._apply_v4l2_outdoor_controls()
             self.cap = self._open_camera()
             self._configure_controls()
             self._warmup()
             return True
         except RuntimeError:
             return False
+
+    def _apply_v4l2_outdoor_controls(self) -> None:
+        """Set brightness / manual exposure via v4l2-ctl (more reliable than OpenCV)."""
+        if shutil.which("v4l2-ctl") is None:
+            logger.warning("v4l2-ctl not found; skipping native outdoor control setup")
+            return
+
+        device = f"/dev/video{ARDU_DEVICE_INDEX}"
+        brightness = 0 if ARDU_BRIGHTNESS is None else ARDU_BRIGHTNESS
+        exposure = ARDU_MANUAL_EXPOSURE
+        gain = 0 if ARDU_MANUAL_GAIN is None else ARDU_MANUAL_GAIN
+
+        cmds = [
+            ["v4l2-ctl", "-d", device, "--set-ctrl=auto_exposure=1"],
+            ["v4l2-ctl", "-d", device, f"--set-ctrl=exposure_time_absolute={exposure}"],
+            ["v4l2-ctl", "-d", device, f"--set-ctrl=brightness={brightness}"],
+            ["v4l2-ctl", "-d", device, f"--set-ctrl=gain={gain}"],
+        ]
+        for cmd in cmds:
+            try:
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+            except (OSError, subprocess.CalledProcessError) as exc:
+                logger.warning("Failed %s: %s", " ".join(cmd), exc)
+                return
+        logger.info(
+            "V4L2 outdoor controls: auto_exposure=1 exposure_time_absolute=%s brightness=%s gain=%s",
+            exposure,
+            brightness,
+            gain,
+        )
 
     def stop(self) -> None:
         if self.cap is not None:
