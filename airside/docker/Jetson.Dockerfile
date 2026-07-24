@@ -163,15 +163,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
+# MAVROS needs the egm96-5 geoid. install_geographiclib_datasets.sh hits flaky
+# SourceForge mirrors and can hang/retry for 30+ minutes in Docker builds.
+RUN apt-get update && apt-get install -y --no-install-recommends bzip2 \
+  && mkdir -p /usr/share/GeographicLib \
+  && cd /tmp \
+  && curl -fL --retry 5 --retry-all-errors --retry-delay 3 \
+       --connect-timeout 20 --max-time 180 \
+       -o egm96-5.tar.bz2 \
+       "https://sourceforge.net/projects/geographiclib/files/geoids-distrib/egm96-5.tar.bz2/download" \
+  && tar -xjf egm96-5.tar.bz2 -C /usr/share/GeographicLib \
+  && test -f /usr/share/GeographicLib/geoids/egm96-5.pgm \
+  && rm -f egm96-5.tar.bz2 \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Ubuntu 22.04's pip is too old for modern hatchling (needs packaging.licenses).
 RUN pip3 install --no-cache-dir --upgrade pip packaging hatchling
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip3 install --no-cache-dir sortedcontainers \
-  && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils
+# OpenCV was built against apt NumPy 1.x; keep pip on NumPy 1.x too.
+RUN pip3 install --no-cache-dir "numpy<2" sortedcontainers \
+  && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils \
+  && pip3 install --no-cache-dir "numpy<2"
 
 WORKDIR /ros_ws
 
@@ -182,7 +196,24 @@ RUN mkdir -p src \
 
 COPY airside/src/ src/
 
+# vision_opencv needs a C++ toolchain to build cv_bridge. CUDA runtime image
+# has none. libboost-python-dev comes from universe (already on this base's
+# sources.list — do not add a duplicate universe entry).
+#
+# CUDA-built OpenCVConfig calls FindCUDA (needs nvcc). The runtime image has
+# no compiler toolkit; cv_bridge only links prebuilt OpenCV libs, so skip that
+# find rather than installing a multi‑GB cuda-nvcc package.
 RUN source /opt/ros/humble/setup.bash \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+       build-essential \
+       cmake \
+       libboost-python-dev \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* \
+  && sed -i \
+       -e 's/find_host_package([[:space:]]*CUDA/# find_host_package(CUDA/g' \
+       -e 's/find_package([[:space:]]*CUDA/# find_package(CUDA/g' \
+       /opt/opencv/lib/cmake/opencv4/OpenCVConfig.cmake \
   && rosdep install --from-paths src --ignore-src --rosdistro humble -y \
        --skip-keys "ament_python libopencv-dev python3-opencv cv_bridge python3-sortedcontainers" \
   && colcon build --symlink-install \
@@ -192,7 +223,8 @@ COPY airside/docker/airside_entrypoint.sh /airside_entrypoint.sh
 RUN chmod +x /airside_entrypoint.sh
 
 # Quick CUDA module check (device count needs --runtime nvidia at run time).
-RUN export PYTHONPATH="$(cat /etc/opencv-python-path)${PYTHONPATH:+:${PYTHONPATH}}" \
+RUN pip3 install --no-cache-dir "numpy<2" \
+  && export PYTHONPATH="$(cat /etc/opencv-python-path)${PYTHONPATH:+:${PYTHONPATH}}" \
   && python3 - <<'PY'
 import cv2
 print("OpenCV:", cv2.__version__)
