@@ -2,44 +2,44 @@ import { useEffect, useState } from 'react';
 import ROSLIB from 'roslib';
 import { ros } from '../ros.js';
 
-export interface LogEntry {
+type LogEntry = {
+  topic: string;
   raw: unknown;
   t: number;
-}
+};
 
 const LOG_MAX = 200;
-
-interface PoseStamped {
-  pose: {
-    position: { x: number; y: number; z: number };
-    orientation: { x: number; y: number; z: number; w: number };
-  };
-}
-
-type Severity = 'INF' | 'WRN' | 'ERR';
-
-const SEV_TONE: Record<Severity, string> = {
-  INF: 'text-accent',
-  WRN: 'text-warn',
-  ERR: 'text-bad',
-};
 
 export default function LogWidget() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
 
   useEffect(() => {
-    const poseTopic = new ROSLIB.Topic<PoseStamped>({
-      ros,
-      name: '/mavros/local_position/pose',
-      messageType: 'geometry_msgs/PoseStamped',
-    });
+    const topics: ROSLIB.Topic[] = [];
 
-    const onPose = (message: PoseStamped) => {
-      setEntries((prev) => [...prev, { raw: message, t: Date.now() }].slice(-LOG_MAX));
+    const onMessage = (name: string) => (message: unknown) => {
+      setEntries((prev) => [...prev, { topic: name, raw: message, t: Date.now() }].slice(-LOG_MAX));
     };
 
-    poseTopic.subscribe(onPose);
-    return () => poseTopic.unsubscribe(onPose);
+    const TOPIC_NAMES = ['/heartbeat'];
+    ros.getTopics(
+      ({ topics: allTopics, types }) => {
+        for (const name of TOPIC_NAMES) {
+          const i = allTopics.indexOf(name);
+          if (i === -1) {
+            console.warn(`rosapi: ${name} topic not found on the graph`);
+            continue;
+          }
+          const topic = new ROSLIB.Topic({ ros, name, messageType: types[i] });
+          topic.subscribe(onMessage(name));
+          topics.push(topic);
+        }
+      },
+      (error) => console.error('rosapi getTopics failed:', error),
+    );
+
+    return () => {
+      topics.forEach((t) => t.unsubscribe());
+    };
   }, []);
 
   const rows = [...entries].reverse();
@@ -55,18 +55,17 @@ export default function LogWidget() {
         {rows.length === 0 ? (
           <p className="text-[13px] text-ink-3">Awaiting log messages</p>
         ) : (
-          rows.map((e, i) => {
-            const severity: Severity = 'INF';
-            return (
-              <div key={`${e.t}-${i}`} className="flex gap-2">
-                <span className="shrink-0 text-ink-3">
-                  {new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}
-                </span>
-                <span className={`shrink-0 font-semibold ${SEV_TONE[severity]}`}>{severity}</span>
-                <span className="break-all text-ink-2">{JSON.stringify(e.raw)}</span>
-              </div>
-            );
-          })
+          rows.map((e, i) => (
+            <div key={`${e.t}-${i}`} className="flex gap-2">
+              <span className="shrink-0 text-ink-3">
+                {new Date(e.t).toLocaleTimeString('en-GB', { hour12: false })}
+              </span>
+              <span className="shrink-0 font-semibold text-accent">INF</span>
+              <span className="break-all text-ink-2">
+                [{e.topic}] {JSON.stringify(e.raw)}
+              </span>
+            </div>
+          ))
         )}
       </div>
     </section>

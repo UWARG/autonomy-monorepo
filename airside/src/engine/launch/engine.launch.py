@@ -48,6 +48,14 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[{"mavlink_url": _RC_BRIDGE_MAVLINK_URL}],
             ),
             Node(
+                package="engine",
+                executable="heartbeat",
+                name="heartbeat_node",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
                 package="rosbridge_server",
                 executable="rosbridge_websocket",
                 name="rosbridge_websocket",
@@ -55,6 +63,14 @@ def generate_launch_description() -> LaunchDescription:
                 respawn=True,
                 respawn_delay=2.0,
                 parameters=[{"port": 9090}],
+            ),
+            Node(
+                package="rosapi",
+                executable="rosapi_node",
+                name="rosapi",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
             ),
             Node(
                 package="wrapper",
