@@ -1,4 +1,4 @@
-"""Run a repeatable smoke test against a physical USB/UVC ArduCam."""
+"""Run a repeatable manual smoke test against a physical USB/UVC ArduCam."""
 
 from __future__ import annotations
 
