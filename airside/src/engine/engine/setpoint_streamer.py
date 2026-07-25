@@ -47,12 +47,20 @@ class SetpointStreamer:
         self._declare("rc_high_pwm", 1700)
         self._declare("airborne_altitude_m", 1.0)
         self._declare("props_off_hitl", False)
+        self._declare("detector_stride", 1)
+        self._declare("max_validated_range_m", 3.0)
 
         self._kill_channel = int(node.get_parameter("kill_channel").value)
         self._enable_channel = int(node.get_parameter("enable_channel").value)
         self._rc_high_pwm = int(node.get_parameter("rc_high_pwm").value)
-        self._airborne_altitude_m = float(node.get_parameter("airborne_altitude_m").value)
+        self._airborne_altitude_m = float(
+            node.get_parameter("airborne_altitude_m").value
+        )
         props_off = bool(node.get_parameter("props_off_hitl").value)
+        detector_stride = int(node.get_parameter("detector_stride").value)
+        self._max_validated_range_m = float(
+            node.get_parameter("max_validated_range_m").value
+        )
 
         self._authority = FollowAuthority(
             AuthorityConfig(
@@ -66,6 +74,7 @@ class SetpointStreamer:
             reflex=config.reflex,
             freshness_s=config.target_freshness_s,
             ema_alpha=config.ema_alpha,
+            detector_stride=detector_stride,
         )
 
         self._state: Optional[State] = None
@@ -78,6 +87,8 @@ class SetpointStreamer:
         self._last_mode_request_s = 0.0
         self._last_clear_reason: Optional[StopReason] = None
         self._last_authority_report = None
+        self._out_of_range_active = False
+        self._latest_track_id = -1
 
         self._setpoint_pub = node.create_publisher(PositionTarget, SETPOINT_TOPIC, 10)
         self._diagnostics_pub = node.create_publisher(
@@ -86,9 +97,7 @@ class SetpointStreamer:
         self._reset_pub = node.create_publisher(Empty, RESET_TOPIC, 10)
         self._acquire_pub = node.create_publisher(Empty, ACQUIRE_TOPIC, 10)
         node.create_subscription(TrackedTarget, TARGET_TOPIC, self._on_target, 10)
-        node.create_subscription(
-            TrackedTarget, CANDIDATE_TOPIC, self._on_candidate, 10
-        )
+        node.create_subscription(TrackedTarget, CANDIDATE_TOPIC, self._on_candidate, 10)
         node.create_subscription(State, "mavros/state", self._on_state, 10)
         node.create_subscription(RCIn, "mavros/rc/in", self._on_rc, 10)
         # Relative altitude is sufficient to enforce the enable precondition.
@@ -127,27 +136,57 @@ class SetpointStreamer:
         capture_s = self._stamp_s(msg.header.stamp)
         if capture_s <= 0.0:
             return
+        detector_capture_s = self._stamp_s(msg.detector_stamp)
+        detector_confirmed = bool(msg.detector_confirmed)
+        self._latest_track_id = int(msg.track_id)
+        position = msg.position
+        range_m = math.sqrt(
+            float(position.x) ** 2 + float(position.y) ** 2 + float(position.z) ** 2
+        )
+        out_of_range = detector_confirmed and (
+            not bool(msg.within_validated_range)
+            or range_m > self._max_validated_range_m
+        )
+        if out_of_range:
+            self._out_of_range_active = True
+        elif detector_confirmed:
+            self._out_of_range_active = False
         self._controller.update(
             RuntimeObservation(
-                x_m=float(msg.position.x),
-                y_m=float(msg.position.y),
-                z_m=float(msg.position.z),
+                x_m=float(position.x),
+                y_m=float(position.y),
+                z_m=float(position.z),
                 track_id=int(msg.track_id),
                 sequence_num=int(msg.sequence_num),
                 capture_time_s=capture_s,
                 receive_time_s=self._now_s(),
+                detector_capture_time_s=(
+                    detector_capture_s if detector_capture_s > 0.0 else capture_s
+                ),
+                detector_sequence_num=int(msg.detector_sequence_num),
+                detector_confirmed=detector_confirmed,
+                spatial_control_valid=not out_of_range,
             )
         )
 
     def _on_candidate(self, msg: TrackedTarget) -> None:
         capture_s = self._stamp_s(msg.header.stamp)
+        detector_capture_s = self._stamp_s(msg.detector_stamp)
         position = msg.position
+        range_m = math.sqrt(position.x**2 + position.y**2 + position.z**2)
         if (
             capture_s > 0.0
+            and bool(msg.detector_confirmed)
+            and bool(msg.within_validated_range)
+            and range_m <= self._max_validated_range_m
             and position.z > 0.0
-            and all(math.isfinite(value) for value in (position.x, position.y, position.z))
+            and all(
+                math.isfinite(value) for value in (position.x, position.y, position.z)
+            )
         ):
-            self._candidate_capture_s = capture_s
+            self._candidate_capture_s = (
+                detector_capture_s if detector_capture_s > 0.0 else capture_s
+            )
 
     def _on_state(self, msg: State) -> None:
         self._state = msg
@@ -158,7 +197,9 @@ class SetpointStreamer:
 
     def _channel_high(self, msg: RCIn, channel: int) -> bool:
         index = channel - 1
-        return 0 <= index < len(msg.channels) and msg.channels[index] >= self._rc_high_pwm
+        return (
+            0 <= index < len(msg.channels) and msg.channels[index] >= self._rc_high_pwm
+        )
 
     def _on_rc(self, msg: RCIn) -> None:
         self._rc_kill = self._channel_high(msg, self._kill_channel)
@@ -176,7 +217,8 @@ class SetpointStreamer:
         output = self._controller.evaluate(self._now_s())
         candidate_fresh = (
             self._candidate_capture_s is not None
-            and 0.0 <= self._now_s() - self._candidate_capture_s
+            and 0.0
+            <= self._now_s() - self._candidate_capture_s
             <= self._config.target_freshness_s
         )
         return output.fresh or candidate_fresh
@@ -193,6 +235,7 @@ class SetpointStreamer:
             armed=bool(state and state.armed),
             airborne=self._altitude_m >= self._airborne_altitude_m,
             target_valid=output.fresh if target_valid is None else target_valid,
+            target_out_of_range=self._out_of_range_active,
             proximity_emergency=proximity,
             rc_kill=self._rc_kill,
         )
@@ -203,7 +246,9 @@ class SetpointStreamer:
                 self._inputs(target_valid=self._target_available_for_enable())
             )
             response.message = (
-                "follow enabled" if response.success else "enable rejected: require fresh FC state, "
+                "follow enabled"
+                if response.success
+                else "enable rejected: require fresh FC state, "
                 "GUIDED, armed/airborne (unless props-off HITL), valid target, and kill low"
             )
             if response.success:
@@ -221,7 +266,9 @@ class SetpointStreamer:
         self._controller.clear()
         self._clear_target(StopReason.RESET_TARGET)
         response.success = True
-        response.message = "follow disabled; target lock cleared; new enable edge required"
+        response.message = (
+            "follow disabled; target lock cleared; new enable edge required"
+        )
         return response
 
     def _clear_target(self, reason: StopReason) -> None:
@@ -229,6 +276,8 @@ class SetpointStreamer:
             return
         self._controller.clear()
         self._candidate_capture_s = None
+        self._out_of_range_active = False
+        self._latest_track_id = -1
         self._reset_pub.publish(Empty())
         self._last_clear_reason = reason
 
@@ -291,6 +340,9 @@ class SetpointStreamer:
                 f"reason={result.stop_reason.value} action={result.action.value}"
             )
             self._last_authority_report = report
+            # Emit the reason before the corresponding zero/BRAKE setpoint so
+            # the HITL recorder can measure reason-specific stop latency.
+            self._publish_diagnostics()
         if result.clear_target_lock:
             self._clear_target(result.stop_reason)
 
@@ -330,13 +382,26 @@ class SetpointStreamer:
             "enabled": str(self._authority.enabled).lower(),
             "target_age_s": f"{output.target_age_s:.6f}",
             "effective_fps": f"{metrics.effective_fps:.3f}",
+            "detector_fps": f"{metrics.detector_fps:.3f}",
+            "tracker_fps": f"{metrics.tracker_fps:.3f}",
             "latency_p50_ms": f"{metrics.latency_p50_s * 1000.0:.3f}",
             "latency_p95_ms": f"{metrics.latency_p95_s * 1000.0:.3f}",
             "latency_p99_ms": f"{metrics.latency_p99_s * 1000.0:.3f}",
             "sequence_gaps": str(metrics.sequence_gaps),
-            "lock_id": str(latest.track_id if latest else -1),
+            "detector_sequence_gaps": str(metrics.detector_sequence_gaps),
+            "tracker_sequence_gaps": str(metrics.tracker_sequence_gaps),
+            "tracker_only_frames": str(metrics.tracker_only_frames),
+            "lock_id": str(self._latest_track_id if latest else -1),
+            "target_condition": (
+                StopReason.OUT_OF_VALIDATED_RANGE.value
+                if self._out_of_range_active
+                else "in_range"
+            ),
+            "max_validated_range_m": f"{self._max_validated_range_m:.3f}",
             "stop_reason": self._authority.stop_reason.value,
         }
-        status.values = [KeyValue(key=key, value=value) for key, value in values.items()]
+        status.values = [
+            KeyValue(key=key, value=value) for key, value in values.items()
+        ]
         diagnostic.status = [status]
         self._diagnostics_pub.publish(diagnostic)

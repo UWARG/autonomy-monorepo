@@ -29,3 +29,9 @@ services:
       world_target:=${AIRSIDE_WORLD_TARGET:-true}
       lunge:=${AIRSIDE_LUNGE:-false}
       crossing:=${AIRSIDE_CROSSING:-false}
+      detector_stride:=${AIRSIDE_DETECTOR_STRIDE:-1}
+      sim_latency_s:=${AIRSIDE_SIM_LATENCY_S:-0.0}
+      occlusion_after_s:=${AIRSIDE_OCCLUSION_AFTER_S:--1.0}
+      occlusion_duration_s:=${AIRSIDE_OCCLUSION_DURATION_S:-0.0}
+      drop_detector_every_n:=${AIRSIDE_DROP_DETECTOR_EVERY_N:-0}
+      timing_json:=${AIRSIDE_TIMING_JSON:-}

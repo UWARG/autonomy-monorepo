@@ -36,6 +36,7 @@ class StopReason(Enum):
     FLIGHT_STATE_EXIT = "disarmed_or_not_airborne"
     PROXIMITY = "proximity_emergency"
     TARGET_LOST = "target_lost"
+    OUT_OF_VALIDATED_RANGE = "target_out_of_validated_range"
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class AuthorityInputs:
     armed: bool
     airborne: bool
     target_valid: bool
+    target_out_of_range: bool = False
     proximity_emergency: bool = False
     rc_kill: bool = False
 
@@ -75,6 +77,7 @@ class FollowAuthority:
         self.state = AuthorityState.DISABLED
         self.stop_reason = StopReason.NOT_ENABLED
         self._loss_started_s: Optional[float] = None
+        self._loss_out_of_range = False
         self._rc_enable_high = False
         self._rc_enable_seen = False
 
@@ -90,7 +93,8 @@ class FollowAuthority:
         return (
             inputs.connected
             and inputs.fc_state_rx_s is not None
-            and 0.0 <= inputs.now_s - inputs.fc_state_rx_s
+            and 0.0
+            <= inputs.now_s - inputs.fc_state_rx_s
             <= self.config.fc_state_freshness_s
         )
 
@@ -118,6 +122,7 @@ class FollowAuthority:
         self.state = AuthorityState.ACQUIRING
         self.stop_reason = StopReason.NONE
         self._loss_started_s = inputs.now_s
+        self._loss_out_of_range = False
         return True
 
     def update_rc_enable(self, high: bool, inputs: AuthorityInputs) -> bool:
@@ -133,6 +138,7 @@ class FollowAuthority:
         self.state = AuthorityState.DISABLED
         self.stop_reason = reason
         self._loss_started_s = None
+        self._loss_out_of_range = False
 
     def reset_target(self) -> None:
         self.disable(StopReason.RESET_TARGET)
@@ -157,9 +163,8 @@ class FollowAuthority:
             was_enabled = self.state is not AuthorityState.DISABLED
             self.disable(StopReason.MODE_EXIT)
             return self._result(AuthorityAction.RELEASE, clear=was_enabled)
-        if (
-            not self.config.props_off_bypass_airborne
-            and (not inputs.armed or not inputs.airborne)
+        if not self.config.props_off_bypass_airborne and (
+            not inputs.armed or not inputs.airborne
         ):
             was_enabled = self.state is not AuthorityState.DISABLED
             self.disable(StopReason.FLIGHT_STATE_EXIT)
@@ -190,27 +195,39 @@ class FollowAuthority:
             if inputs.target_valid:
                 self.state = AuthorityState.ACTIVE
                 self._loss_started_s = None
+                self._loss_out_of_range = False
                 return self._result(AuthorityAction.STREAM)
+            self._loss_out_of_range |= inputs.target_out_of_range
             if (
                 self._loss_started_s is not None
                 and inputs.now_s - self._loss_started_s
                 >= self.config.lost_target_timeout_s
             ):
                 self.state = AuthorityState.TERMINAL_LOITER
-                self.stop_reason = StopReason.TARGET_LOST
+                self.stop_reason = (
+                    StopReason.OUT_OF_VALIDATED_RANGE
+                    if self._loss_out_of_range
+                    else StopReason.TARGET_LOST
+                )
                 return self._result(AuthorityAction.LOITER, clear=True)
             return self._result(AuthorityAction.ZERO)
 
         if inputs.target_valid:
             self.state = AuthorityState.ACTIVE
             self._loss_started_s = None
+            self._loss_out_of_range = False
             return self._result(AuthorityAction.STREAM)
 
         if self._loss_started_s is None:
             self._loss_started_s = inputs.now_s
+        self._loss_out_of_range |= inputs.target_out_of_range
         if inputs.now_s - self._loss_started_s >= self.config.lost_target_timeout_s:
             self.state = AuthorityState.TERMINAL_LOITER
-            self.stop_reason = StopReason.TARGET_LOST
+            self.stop_reason = (
+                StopReason.OUT_OF_VALIDATED_RANGE
+                if self._loss_out_of_range
+                else StopReason.TARGET_LOST
+            )
             return self._result(AuthorityAction.LOITER, clear=True)
         self.state = AuthorityState.BRIEF_LOSS
         return self._result(AuthorityAction.ZERO)

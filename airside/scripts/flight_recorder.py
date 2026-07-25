@@ -19,12 +19,20 @@ FIELDS = [
     "event",
     "host_time_s",
     "capture_time_s",
+    "tracker_capture_time_s",
+    "detector_capture_time_s",
     "device_host_receipt_s",
     "ros_publish_s",
     "ros_receive_s",
     "latest_capture_s",
+    "latest_detector_capture_s",
     "sequence_num",
     "sequence_gap",
+    "detector_sequence_num",
+    "detector_sequence_delta",
+    "detector_confirmed",
+    "inference_age_s",
+    "detector_to_ros_latency_s",
     "track_id",
     "mode",
     "armed",
@@ -63,17 +71,29 @@ class Recorder(rclpy.node.Node):
         self._state = None
         self._last_mode = None
         self._latest_capture_s = None
+        self._latest_detector_capture_s = None
         self._last_sequence = None
+        self._last_detector_sequence = None
         self._scenario = ""
+        self._authority_state = ""
+        self._stop_reason = ""
         self._pose = None
         self._velocity = None
 
         self.create_subscription(State, "mavros/state", self._on_state, 10)
-        self.create_subscription(TrackedTarget, "perception/target", self._on_target, 10)
-        self.create_subscription(PositionTarget, "mavros/setpoint_raw/local", self._on_sp, 10)
-        self.create_subscription(DiagnosticArray, "follow/diagnostics", self._on_diag, 10)
+        self.create_subscription(
+            TrackedTarget, "perception/target", self._on_target, 10
+        )
+        self.create_subscription(
+            PositionTarget, "mavros/setpoint_raw/local", self._on_sp, 10
+        )
+        self.create_subscription(
+            DiagnosticArray, "follow/diagnostics", self._on_diag, 10
+        )
         self.create_subscription(String, "follow/hitl_scenario", self._on_scenario, 10)
-        self.create_subscription(PoseStamped, "mavros/local_position/pose", self._on_pose, 10)
+        self.create_subscription(
+            PoseStamped, "mavros/local_position/pose", self._on_pose, 10
+        )
         self.create_subscription(
             TwistStamped, "mavros/local_position/velocity_local", self._on_velocity, 10
         )
@@ -94,15 +114,28 @@ class Recorder(rclpy.node.Node):
             latest_capture_s=(
                 f"{self._latest_capture_s:.9f}" if self._latest_capture_s else ""
             ),
+            latest_detector_capture_s=(
+                f"{self._latest_detector_capture_s:.9f}"
+                if self._latest_detector_capture_s
+                else ""
+            ),
             mode=self._state.mode if self._state else "",
             armed=int(bool(self._state and self._state.armed)),
+            authority_state=self._authority_state,
+            stop_reason=self._stop_reason,
             scenario=self._scenario,
             vehicle_x=(f"{self._pose.pose.position.x:.6f}" if self._pose else ""),
             vehicle_y=(f"{self._pose.pose.position.y:.6f}" if self._pose else ""),
             vehicle_z=(f"{self._pose.pose.position.z:.6f}" if self._pose else ""),
-            vehicle_vx=(f"{self._velocity.twist.linear.x:.6f}" if self._velocity else ""),
-            vehicle_vy=(f"{self._velocity.twist.linear.y:.6f}" if self._velocity else ""),
-            vehicle_vz=(f"{self._velocity.twist.linear.z:.6f}" if self._velocity else ""),
+            vehicle_vx=(
+                f"{self._velocity.twist.linear.x:.6f}" if self._velocity else ""
+            ),
+            vehicle_vy=(
+                f"{self._velocity.twist.linear.y:.6f}" if self._velocity else ""
+            ),
+            vehicle_vz=(
+                f"{self._velocity.twist.linear.z:.6f}" if self._velocity else ""
+            ),
         )
         row.update(values)
         self._writer.writerow(row)
@@ -135,15 +168,38 @@ class Recorder(rclpy.node.Node):
             else 0
         )
         self._last_sequence = sequence
-        self._latest_capture_s = stamp_s(message.header.stamp)
+        tracker_capture_s = stamp_s(message.header.stamp)
+        detector_capture_s = stamp_s(message.detector_stamp)
+        detector_confirmed = bool(message.detector_confirmed)
+        detector_sequence = int(message.detector_sequence_num)
+        detector_delta = ""
+        if detector_confirmed:
+            detector_delta = (
+                detector_sequence - self._last_detector_sequence
+                if self._last_detector_sequence is not None
+                else 0
+            )
+            self._last_detector_sequence = detector_sequence
+            self._latest_detector_capture_s = detector_capture_s
+        self._latest_capture_s = tracker_capture_s
+        ros_receive_s = self._now()
         self._write(
             "target",
-            capture_time_s=f"{self._latest_capture_s:.9f}",
+            capture_time_s=f"{tracker_capture_s:.9f}",
+            tracker_capture_time_s=f"{tracker_capture_s:.9f}",
+            detector_capture_time_s=f"{detector_capture_s:.9f}",
             device_host_receipt_s=f"{stamp_s(message.host_receipt_stamp):.9f}",
             ros_publish_s=f"{stamp_s(message.publish_stamp):.9f}",
-            ros_receive_s=f"{self._now():.9f}",
+            ros_receive_s=f"{ros_receive_s:.9f}",
             sequence_num=sequence,
             sequence_gap=gap,
+            detector_sequence_num=detector_sequence,
+            detector_sequence_delta=detector_delta,
+            detector_confirmed=int(detector_confirmed),
+            inference_age_s=f"{max(0.0, tracker_capture_s - detector_capture_s):.9f}",
+            detector_to_ros_latency_s=(
+                f"{max(0.0, ros_receive_s - detector_capture_s):.9f}"
+            ),
             track_id=int(message.track_id),
             x=f"{message.position.x:.6f}",
             y=f"{message.position.y:.6f}",
@@ -163,10 +219,12 @@ class Recorder(rclpy.node.Node):
         if not message.status:
             return
         values = {item.key: item.value for item in message.status[0].values}
+        self._authority_state = values.get("authority_state", "")
+        self._stop_reason = values.get("stop_reason", "")
         self._write(
             "diagnostic",
-            authority_state=values.get("authority_state", ""),
-            stop_reason=values.get("stop_reason", ""),
+            authority_state=self._authority_state,
+            stop_reason=self._stop_reason,
         )
 
     def close(self) -> None:

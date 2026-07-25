@@ -10,16 +10,31 @@ from rclpy.node import Node
 from std_srvs.srv import SetBool
 
 CASES = [
-    ("ahead -> velocity.x > 0 (forward)", (0.0, 0.0, 6.0), lambda m: m.velocity.x > 0.05),
-    ("too close -> velocity.x < 0 (back away)", (0.0, 0.0, 2.0), lambda m: m.velocity.x < -0.01),
-    ("right -> yaw_rate < 0 (CW turn, CCW-positive frame)", (1.0, 0.0, 3.0),
-     lambda m: m.yaw_rate < -0.01),
-    ("left -> yaw_rate > 0 (CCW turn)", (-1.0, 0.0, 3.0), lambda m: m.yaw_rate > 0.01),
-    ("below -> velocity.z < 0 (descend, FLU up-positive)", (0.0, 0.5, 3.0),
-     lambda m: m.velocity.z < -0.01),
+    (
+        "ahead -> velocity.x > 0 (forward)",
+        (0.0, 0.0, 3.0),
+        lambda m: m.velocity.x > 0.05,
+    ),
+    (
+        "too close -> velocity.x < 0 (back away)",
+        (0.0, 0.0, 2.0),
+        lambda m: m.velocity.x < -0.01,
+    ),
+    (
+        "right -> yaw_rate < 0 (CW turn, CCW-positive frame)",
+        (1.0, 0.0, 2.6),
+        lambda m: m.yaw_rate < -0.01,
+    ),
+    ("left -> yaw_rate > 0 (CCW turn)", (-1.0, 0.0, 2.6), lambda m: m.yaw_rate > 0.01),
+    (
+        "below -> velocity.z < 0 (descend, FLU up-positive)",
+        (0.0, 0.5, 2.6),
+        lambda m: m.velocity.z < -0.01,
+    ),
 ]
 
 CASE_GAP_S = 0.15
+
 
 class SignCheck(Node):
     def __init__(self) -> None:
@@ -31,7 +46,9 @@ class SignCheck(Node):
         self._enable = self.create_client(SetBool, "follow/set_enabled")
         self._sequence = 0
         self._msg: PositionTarget | None = None
-        self.create_subscription(PositionTarget, "mavros/setpoint_raw/local", self._on_sp, 10)
+        self.create_subscription(
+            PositionTarget, "mavros/setpoint_raw/local", self._on_sp, 10
+        )
 
     def _on_sp(self, msg: PositionTarget) -> None:
         self._msg = msg
@@ -46,6 +63,10 @@ class SignCheck(Node):
         msg.position.x, msg.position.y, msg.position.z = point
         msg.track_id = 1
         msg.sequence_num = self._sequence
+        msg.detector_stamp = msg.header.stamp
+        msg.detector_sequence_num = msg.sequence_num
+        msg.detector_confirmed = True
+        msg.within_validated_range = True
         self._candidate_pub.publish(msg)
         self._pub.publish(msg)
 

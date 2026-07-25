@@ -35,8 +35,14 @@ def main() -> None:
     with open(args.timing_json, encoding="utf-8") as handle:
         timing = json.load(handle)
     if (
-        float(timing.get("p05_fps", 0.0)) < 10.0
-        or float(timing.get("capture_to_receive_p99_s", float("inf"))) > 0.300
+        float(timing.get("detector_p05_fps", timing.get("p05_fps", 0.0))) < 10.0
+        or float(
+            timing.get(
+                "detector_capture_to_ros_p99_s",
+                timing.get("capture_to_receive_p99_s", float("inf")),
+            )
+        )
+        > 0.300
     ):
         raise SystemExit(
             "measured perception failed Gate 5 (p05 FPS <10 or p99 latency >300 ms); "

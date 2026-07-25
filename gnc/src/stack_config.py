@@ -17,8 +17,8 @@ class StackConfig:
     target_freshness_s: float = 0.3
     command_stale_s: float = 0.75
     fc_state_freshness_s: float = 0.5
-    tree_hz: float = 2.0 
-    stream_hz: float = 20.0  
+    tree_hz: float = 2.0
+    stream_hz: float = 20.0
     ema_alpha: float = 0.5
     recede_speed: float = 1.0
     cmd_slew_mps2: float = 1.0
@@ -29,9 +29,18 @@ class StackConfig:
 
 
 def _deployed() -> StackConfig:
-    follow = FollowConfig(v_max=1.5, v_vertical_max=1.0, kp_vertical=0.7, a_brake=0.5)
-    safety = SafetyConfig(hard_min_m=follow.hard_min_m) 
+    # Leave a small, bounded approach-command band between the 2.5 m
+    # standoff and the 3.0 m validated operating limit.
+    follow = FollowConfig(
+        v_max=1.5,
+        v_vertical_max=1.0,
+        kp_vertical=0.7,
+        a_brake=0.5,
+        margin_m=0.4,
+    )
+    safety = SafetyConfig(hard_min_m=follow.hard_min_m)
     reflex = ReflexConfig(hard_min_m=follow.hard_min_m)
     return StackConfig(follow=follow, safety=safety, reflex=reflex)
+
 
 DEPLOYED = _deployed()

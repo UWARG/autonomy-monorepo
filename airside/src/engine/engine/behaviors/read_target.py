@@ -14,7 +14,9 @@ KEY_RANGE_M = "follow/range_m"  # 3D range in metres, or None
 KEY_COMMAND = "follow/command"  # (v_forward, v_right, v_down, yaw_rate) FRD, or None
 KEY_COMMAND_STAMP = "follow/command_stamp"  # node-clock seconds the command was written
 KEY_ESTOP_EMERGENCY = "follow/estop_emergency"  # bool: a latched emergency
-KEY_ESTOP_RECEDE = "follow/estop_recede"  # bool: proximity danger (True) vs target-lost (False)
+KEY_ESTOP_RECEDE = (
+    "follow/estop_recede"  # bool: proximity danger (True) vs target-lost (False)
+)
 KEY_ESTOP_HOLD = "follow/estop_hold"  # bool: a non-emergency hold (e.g. brief dropout)
 
 
@@ -25,8 +27,12 @@ class ReadTargetBehavior(py_trees.behaviour.Behaviour):
     def __init__(self, name: str = "ReadTarget") -> None:
         super().__init__(name=name)
         self.blackboard = self.attach_blackboard_client(name=self.name)
-        self.blackboard.register_key(key=KEY_TARGET_M, access=py_trees.common.Access.WRITE)
-        self.blackboard.register_key(key=KEY_RANGE_M, access=py_trees.common.Access.WRITE)
+        self.blackboard.register_key(
+            key=KEY_TARGET_M, access=py_trees.common.Access.WRITE
+        )
+        self.blackboard.register_key(
+            key=KEY_RANGE_M, access=py_trees.common.Access.WRITE
+        )
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
@@ -37,11 +43,12 @@ class ReadTargetBehavior(py_trees.behaviour.Behaviour):
         self._node.get_logger().info(f"ReadTarget: subscribed to '{self.TOPIC}'")
 
     def _callback(self, msg: TrackedTarget) -> None:
-        self._latest = msg
+        if msg.detector_confirmed:
+            self._latest = msg
 
     @staticmethod
     def _capture_s(msg: TrackedTarget) -> float:
-        return float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        return float(msg.detector_stamp.sec) + float(msg.detector_stamp.nanosec) * 1e-9
 
     def _now_s(self) -> float:
         return self._node.get_clock().now().nanoseconds * 1e-9
@@ -54,9 +61,19 @@ class ReadTargetBehavior(py_trees.behaviour.Behaviour):
             if self._latest is not None
             else math.inf
         )
-        if self._latest is not None and 0.0 <= age <= self.FRESHNESS_S:
+        if (
+            self._latest is not None
+            and self._latest.detector_confirmed
+            and self._latest.within_validated_range
+            and 0.0 <= age <= self.FRESHNESS_S
+        ):
             p = self._latest.position
-            if math.isfinite(p.z) and p.z > 0.0 and math.isfinite(p.x) and math.isfinite(p.y):
+            if (
+                math.isfinite(p.z)
+                and p.z > 0.0
+                and math.isfinite(p.x)
+                and math.isfinite(p.y)
+            ):
                 target = (p.x, p.y, p.z)
                 rng = math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z)
         self.blackboard.set(KEY_TARGET_M, target)

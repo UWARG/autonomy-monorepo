@@ -13,6 +13,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Optional
 
+MAX_VALIDATED_RANGE_MM = 3000.0
+
 
 @dataclass(frozen=True)
 class TargetObservation:
@@ -26,6 +28,10 @@ class TargetObservation:
     capture_time_s: float = field(default_factory=time.time)
     received_time_s: Optional[float] = None
     tracked: bool = True
+    detector_capture_time_s: Optional[float] = None
+    detector_sequence_num: Optional[int] = None
+    detector_confirmed: bool = True
+    within_validated_range: bool = True
 
     @property
     def timestamp(self) -> float:
@@ -41,6 +47,9 @@ class TrackletPacket:
     capture_time_s: float
     sequence_num: int
     received_time_s: float
+    detector_capture_time_s: Optional[float] = None
+    detector_sequence_num: Optional[int] = None
+    detector_confirmed: bool = True
 
 
 class DepthAITrackletProvider:
@@ -54,12 +63,15 @@ class DepthAITrackletProvider:
     def __init__(
         self,
         output_queue: Any,
+        detector_queue: Any = None,
         clock: Callable[[], float] = time.time,
         host_sync_now_fn: Optional[Callable[[], Any]] = None,
     ) -> None:
         self._queue = output_queue
+        self._detector_queue = detector_queue
         self._clock = clock
         self._host_sync_now_fn = host_sync_now_fn
+        self._detector_metadata: dict[int, float] = {}
 
     @staticmethod
     def _seconds(value: Any) -> float:
@@ -67,22 +79,73 @@ class DepthAITrackletProvider:
             return float(value.total_seconds())
         return float(value)
 
-    def poll(self) -> Optional[TrackletPacket]:
-        packet = self._queue.tryGet()
-        if packet is None:
-            return None
-        received_time_s = self._clock()
+    def _capture_time_s(self, packet: Any, received_time_s: float) -> float:
         capture_time_s = self._seconds(packet.getTimestamp())
         if self._host_sync_now_fn is not None:
             # Translate DepthAI's host-steady epoch into the system/ROS epoch
             # while retaining the packet's actual capture age.
             host_sync_now_s = self._seconds(self._host_sync_now_fn())
             capture_time_s = received_time_s - (host_sync_now_s - capture_time_s)
+        return capture_time_s
+
+    def _drain_detector_metadata(self, received_time_s: float) -> None:
+        if self._detector_queue is None:
+            return
+        while True:
+            packet = self._detector_queue.tryGet()
+            if packet is None:
+                break
+            sequence = int(packet.getSequenceNum())
+            capture_time_s = self._capture_time_s(packet, received_time_s)
+            self._detector_metadata[sequence] = capture_time_s
+        # Keep enough history to tolerate queue reordering without growing forever.
+        if len(self._detector_metadata) > 64:
+            keep_from = sorted(self._detector_metadata)[-32]
+            self._detector_metadata = {
+                sequence: stamp
+                for sequence, stamp in self._detector_metadata.items()
+                if sequence >= keep_from
+            }
+
+    def poll(self) -> Optional[TrackletPacket]:
+        received_time_s = self._clock()
+        self._drain_detector_metadata(received_time_s)
+        packet = self._queue.tryGet()
+        if packet is None:
+            return None
+        received_time_s = self._clock()
+        self._drain_detector_metadata(received_time_s)
+        capture_time_s = self._capture_time_s(packet, received_time_s)
+        sequence_num = int(packet.getSequenceNum())
+        if self._detector_queue is None:
+            detector_confirmed = True
+            detector_sequence_num = sequence_num
+            detector_capture_time_s = capture_time_s
+        else:
+            detector_confirmed = sequence_num in self._detector_metadata
+            prior_sequences = [
+                sequence
+                for sequence in self._detector_metadata
+                if sequence <= sequence_num
+            ]
+            detector_sequence_num = (
+                sequence_num
+                if detector_confirmed
+                else max(prior_sequences, default=None)
+            )
+            detector_capture_time_s = (
+                self._detector_metadata.get(detector_sequence_num)
+                if detector_sequence_num is not None
+                else None
+            )
         return TrackletPacket(
             tracklets=tuple(packet.tracklets),
             capture_time_s=capture_time_s,
-            sequence_num=int(packet.getSequenceNum()),
+            sequence_num=sequence_num,
             received_time_s=received_time_s,
+            detector_capture_time_s=detector_capture_time_s,
+            detector_sequence_num=detector_sequence_num,
+            detector_confirmed=detector_confirmed,
         )
 
 
@@ -187,7 +250,18 @@ def _track_id(tracklet: Any) -> int:
     return int(tracklet.id)
 
 
-def _valid_tracklets(tracklets: Iterable[Any], tracked_status: str) -> list[Any]:
+def _range_mm(tracklet: Any) -> float:
+    spatial = tracklet.spatialCoordinates
+    return math.sqrt(
+        float(spatial.x) ** 2 + float(spatial.y) ** 2 + float(spatial.z) ** 2
+    )
+
+
+def _valid_tracklets(
+    tracklets: Iterable[Any],
+    tracked_status: str,
+    max_range_mm: Optional[float] = None,
+) -> list[Any]:
     expected = tracked_status.upper()
     return [
         tracklet
@@ -195,16 +269,24 @@ def _valid_tracklets(tracklets: Iterable[Any], tracked_status: str) -> list[Any]
         if _status_name(tracklet) == expected
         and math.isfinite(float(tracklet.spatialCoordinates.z))
         and float(tracklet.spatialCoordinates.z) > 0.0
+        and math.isfinite(_range_mm(tracklet))
+        and (max_range_mm is None or _range_mm(tracklet) <= max_range_mm)
     ]
 
 
-def select_closest_tracked(tracklets: Iterable[Any], tracked_status: str) -> Any | None:
+def select_closest_tracked(
+    tracklets: Iterable[Any],
+    tracked_status: str,
+    max_range_mm: Optional[float] = MAX_VALIDATED_RANGE_MM,
+) -> Any | None:
     """Choose the nearest valid tracklet during explicit acquisition only."""
-    candidates = _valid_tracklets(tracklets, tracked_status)
-    return min(candidates, key=lambda item: item.spatialCoordinates.z, default=None)
+    candidates = _valid_tracklets(tracklets, tracked_status, max_range_mm)
+    return min(candidates, key=_range_mm, default=None)
 
 
-def observation_from_tracklet(tracklet: Any, packet: TrackletPacket) -> TargetObservation:
+def observation_from_tracklet(
+    tracklet: Any, packet: TrackletPacket
+) -> TargetObservation:
     """Calibrate one valid spatial tracklet while preserving capture metadata."""
     spatial = tracklet.spatialCoordinates
     cal_z = calibrate_z(float(spatial.z))
@@ -219,6 +301,18 @@ def observation_from_tracklet(tracklet: Any, packet: TrackletPacket) -> TargetOb
         sequence_num=packet.sequence_num,
         capture_time_s=packet.capture_time_s,
         received_time_s=packet.received_time_s,
+        detector_capture_time_s=(
+            packet.detector_capture_time_s or packet.capture_time_s
+        ),
+        detector_sequence_num=(
+            packet.detector_sequence_num
+            if packet.detector_sequence_num is not None
+            else packet.sequence_num
+        ),
+        detector_confirmed=packet.detector_confirmed,
+        within_validated_range=(
+            math.sqrt(cal_x**2 + cal_y**2 + cal_z**2) <= MAX_VALIDATED_RANGE_MM
+        ),
     )
 
 
@@ -235,10 +329,12 @@ class RealTargetSource(AbstractTargetSource):
         self,
         poll_fn: Optional[Callable[[], Any]] = None,
         tracked_status: str = "TRACKED",
+        max_validated_range_mm: float = MAX_VALIDATED_RANGE_MM,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._poll_fn = poll_fn
         self._tracked_status = tracked_status
+        self._max_validated_range_mm = max_validated_range_mm
         self._clock = clock
         self._enabled = False
         self._locked_track_id: Optional[int] = None
@@ -273,7 +369,11 @@ class RealTargetSource(AbstractTargetSource):
         packet = packet or self._poll()
         if packet is None:
             return False
-        chosen = select_closest_tracked(packet.tracklets, self._tracked_status)
+        chosen = select_closest_tracked(
+            packet.tracklets,
+            self._tracked_status,
+            self._max_validated_range_mm,
+        )
         if chosen is None:
             return False
         self._locked_track_id = _track_id(chosen)

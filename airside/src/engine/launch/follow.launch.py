@@ -26,9 +26,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("oakd_target", default_value="false"),
             DeclareLaunchArgument("blob_path", default_value=""),
             DeclareLaunchArgument("person_label", default_value="15"),
+            DeclareLaunchArgument("camera_fps", default_value="20"),
+            DeclareLaunchArgument("detector_stride", default_value="1"),
+            DeclareLaunchArgument("max_validated_range_m", default_value="3.0"),
             DeclareLaunchArgument("world_target", default_value="false"),
             DeclareLaunchArgument("lunge", default_value="false"),
             DeclareLaunchArgument("crossing", default_value="false"),
+            DeclareLaunchArgument("sim_latency_s", default_value="0.0"),
+            DeclareLaunchArgument("occlusion_after_s", default_value="-1.0"),
+            DeclareLaunchArgument("occlusion_duration_s", default_value="0.0"),
+            DeclareLaunchArgument("drop_detector_every_n", default_value="0"),
+            DeclareLaunchArgument("timing_json", default_value=""),
             DeclareLaunchArgument("props_off_hitl", default_value="false"),
             DeclareLaunchArgument("foxglove", default_value="true"),
             DeclareLaunchArgument("enable_channel", default_value="8"),
@@ -72,6 +80,24 @@ def generate_launch_description() -> LaunchDescription:
                         "crossing": ParameterValue(
                             LaunchConfiguration("crossing"), value_type=bool
                         ),
+                        "detector_stride": ParameterValue(
+                            LaunchConfiguration("detector_stride"), value_type=int
+                        ),
+                        "sim_latency_s": ParameterValue(
+                            LaunchConfiguration("sim_latency_s"), value_type=float
+                        ),
+                        "occlusion_after_s": ParameterValue(
+                            LaunchConfiguration("occlusion_after_s"), value_type=float
+                        ),
+                        "occlusion_duration_s": ParameterValue(
+                            LaunchConfiguration("occlusion_duration_s"),
+                            value_type=float,
+                        ),
+                        "drop_detector_every_n": ParameterValue(
+                            LaunchConfiguration("drop_detector_every_n"),
+                            value_type=int,
+                        ),
+                        "timing_json": LaunchConfiguration("timing_json"),
                     }
                 ],
             ),
@@ -85,6 +111,12 @@ def generate_launch_description() -> LaunchDescription:
                         "blob_path": LaunchConfiguration("blob_path"),
                         "person_label": ParameterValue(
                             LaunchConfiguration("person_label"), value_type=int
+                        ),
+                        "camera_fps": ParameterValue(
+                            LaunchConfiguration("camera_fps"), value_type=int
+                        ),
+                        "detector_stride": ParameterValue(
+                            LaunchConfiguration("detector_stride"), value_type=int
                         ),
                     }
                 ],
@@ -100,6 +132,13 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "enable_channel": ParameterValue(
                             LaunchConfiguration("enable_channel"), value_type=int
+                        ),
+                        "detector_stride": ParameterValue(
+                            LaunchConfiguration("detector_stride"), value_type=int
+                        ),
+                        "max_validated_range_m": ParameterValue(
+                            LaunchConfiguration("max_validated_range_m"),
+                            value_type=float,
                         ),
                     }
                 ],

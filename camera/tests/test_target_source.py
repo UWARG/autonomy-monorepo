@@ -40,7 +40,9 @@ def test_abstract_source_cannot_be_instantiated():
 
 def test_sim_target_initialises_and_centres_at_t0():
     clock = FakeClock()
-    src = SimTargetSource(clock=clock, z_centre_mm=3000.0, z_amplitude_mm=800.0, x_amplitude_mm=900.0)
+    src = SimTargetSource(
+        clock=clock, z_centre_mm=3000.0, z_amplitude_mm=800.0, x_amplitude_mm=900.0
+    )
     assert src.initialize() is True
 
     obs = src.get_target()  # t == 0 relative to t0
@@ -53,7 +55,9 @@ def test_sim_target_initialises_and_centres_at_t0():
 
 def test_sim_target_moves_with_time():
     clock = FakeClock()
-    src = SimTargetSource(clock=clock, z_centre_mm=3000.0, z_amplitude_mm=800.0, period_s=12.0)
+    src = SimTargetSource(
+        clock=clock, z_centre_mm=3000.0, z_amplitude_mm=800.0, period_s=12.0
+    )
     src.initialize()
     clock.t += 3.0  # quarter period -> w*t = pi/2 -> sin = 1
     obs = src.get_target()
@@ -66,6 +70,7 @@ def test_start_delegates_to_initialize():
 
 
 # --- OAK-D calibration + RealTargetSource (Gap 3d) ---------------------------
+
 
 def test_calibrate_z_at_and_beyond_anchors():
     assert calibrate_z(527.0) == 527.0 - 27.5
@@ -100,9 +105,33 @@ def test_select_closest_tracked_none_when_no_tracked():
     assert select_closest_tracked([_tracklet(0, 0, 1, status="NEW")], "TRACKED") is None
 
 
+def test_acquisition_rejects_person_beyond_validated_range():
+    source = RealTargetSource(poll_fn=lambda: [_tracklet(0, 0, 3001, track_id=4)])
+    assert not source.enable()
+    assert source.locked_track_id is None
+
+
+def test_active_owner_reports_out_of_range_and_can_briefly_reacquire():
+    packets = iter(
+        [
+            _packet([_tracklet(0, 0, 2900, track_id=4)]),
+            _packet([_tracklet(0, 0, 3100, track_id=4)], 11),
+            _packet([_tracklet(0, 0, 2800, track_id=4)], 12),
+        ]
+    )
+    source = RealTargetSource(poll_fn=lambda: next(packets))
+    assert source.enable()
+    assert source.get_target().within_validated_range
+    assert not source.get_target().within_validated_range
+    assert source.locked_track_id == 4
+    assert source.get_target().within_validated_range
+
+
 def test_real_target_source_emits_calibrated_observation():
     tracklets = [_tracklet(300, 0, 1000, status="TRACKED")]
-    src = RealTargetSource(poll_fn=lambda: tracklets, tracked_status="TRACKED", clock=lambda: 7.0)
+    src = RealTargetSource(
+        poll_fn=lambda: tracklets, tracked_status="TRACKED", clock=lambda: 7.0
+    )
     assert src.initialize() is True
     assert src.enable() is True
     obs = src.get_target()
@@ -128,8 +157,13 @@ def _packet(tracklets, sequence=10, capture=5.0, received=5.1):
 def test_sticky_lock_ignores_closer_bystander_crossing():
     packets = iter(
         [
-            _packet([_tracklet(0, 0, 2000, track_id=4), _tracklet(0, 0, 3000, track_id=9)]),
-            _packet([_tracklet(0, 0, 2500, track_id=4), _tracklet(0, 0, 500, track_id=9)], 11),
+            _packet(
+                [_tracklet(0, 0, 2000, track_id=4), _tracklet(0, 0, 3000, track_id=9)]
+            ),
+            _packet(
+                [_tracklet(0, 0, 2500, track_id=4), _tracklet(0, 0, 500, track_id=9)],
+                11,
+            ),
         ]
     )
     source = RealTargetSource(poll_fn=lambda: next(packets))
@@ -196,3 +230,38 @@ def test_depthai_provider_uses_packet_timestamp_and_sequence():
     assert packet.capture_time_s == 11.25
     assert packet.received_time_s == 11.3
     assert packet.sequence_num == 99
+    assert packet.detector_confirmed
+    assert packet.detector_sequence_num == 99
+
+
+def test_depthai_provider_marks_only_matching_detector_sequence_confirmed():
+    class Queue:
+        def __init__(self, values):
+            self.values = iter(values)
+
+        def tryGet(self):
+            return next(self.values, None)
+
+    def packet(sequence, timestamp):
+        return SimpleNamespace(
+            tracklets=[_tracklet(0, 0, 1000)],
+            getTimestamp=lambda: SimpleNamespace(total_seconds=lambda: timestamp),
+            getSequenceNum=lambda: sequence,
+        )
+
+    # Metadata may arrive ahead of the tracker queue; frame 11 must still
+    # refer to the last detector at or before it, never future frame 12.
+    detector_queue = Queue([packet(10, 1.0), packet(12, 1.1), None, None])
+    tracker_queue = Queue([packet(10, 1.0), packet(11, 1.05)])
+    provider = DepthAITrackletProvider(
+        tracker_queue,
+        detector_queue=detector_queue,
+        clock=lambda: 2.0,
+    )
+    confirmed = provider.poll()
+    propagated = provider.poll()
+    assert confirmed.detector_confirmed
+    assert confirmed.detector_sequence_num == 10
+    assert not propagated.detector_confirmed
+    assert propagated.detector_sequence_num == 10
+    assert propagated.detector_capture_time_s == 1.0

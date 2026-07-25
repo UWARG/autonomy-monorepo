@@ -20,6 +20,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("world_target", default_value="true"),
             DeclareLaunchArgument("lunge", default_value="false"),
             DeclareLaunchArgument("crossing", default_value="false"),
+            DeclareLaunchArgument("detector_stride", default_value="1"),
+            DeclareLaunchArgument("sim_latency_s", default_value="0.0"),
+            DeclareLaunchArgument("occlusion_after_s", default_value="-1.0"),
+            DeclareLaunchArgument("occlusion_duration_s", default_value="0.0"),
+            DeclareLaunchArgument("drop_detector_every_n", default_value="0"),
+            DeclareLaunchArgument("timing_json", default_value=""),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(source),
                 launch_arguments={
@@ -28,6 +34,14 @@ def generate_launch_description() -> LaunchDescription:
                     "world_target": LaunchConfiguration("world_target"),
                     "lunge": LaunchConfiguration("lunge"),
                     "crossing": LaunchConfiguration("crossing"),
+                    "detector_stride": LaunchConfiguration("detector_stride"),
+                    "sim_latency_s": LaunchConfiguration("sim_latency_s"),
+                    "occlusion_after_s": LaunchConfiguration("occlusion_after_s"),
+                    "occlusion_duration_s": LaunchConfiguration("occlusion_duration_s"),
+                    "drop_detector_every_n": LaunchConfiguration(
+                        "drop_detector_every_n"
+                    ),
+                    "timing_json": LaunchConfiguration("timing_json"),
                     "props_off_hitl": "false",
                 }.items(),
             ),

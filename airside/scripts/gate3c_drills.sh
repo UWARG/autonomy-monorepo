@@ -5,17 +5,19 @@ cd "$(dirname "$0")/.."
 COMPOSE=(docker compose -f compose.follow.sitl.yaml)
 DRILLS=("$@")
 [[ ${#DRILLS[@]} -eq 0 ]] && \
-  DRILLS=(rc_kill mode_land mode_loiter stale_state lost_target lunge crossing)
+  DRILLS=(rc_kill mode_land mode_loiter stale_state lost_target lunge crossing \
+    occlusion_short occlusion_terminal latency_replay inference_stride2)
 
 ros() {
   "${COMPOSE[@]}" exec -T airside bash -lc \
     "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && $1"
 }
 
-up_and_enable() { # lunge, crossing, container artifact directory
-  local lunge="$1" crossing="$2" artifact="$3"
+up_and_enable() { # lunge, crossing, container artifact directory, detector stride
+  local lunge="$1" crossing="$2" artifact="$3" detector_stride="$4"
   "${COMPOSE[@]}" down --remove-orphans --timeout 20 >/dev/null 2>&1 || true
   AIRSIDE_LUNGE="${lunge}" AIRSIDE_CROSSING="${crossing}" \
+    AIRSIDE_DETECTOR_STRIDE="${detector_stride}" \
     "${COMPOSE[@]}" up -d || return 2
   "${COMPOSE[@]}" exec -d airside bash -lc \
     "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && \
@@ -75,10 +77,14 @@ for drill in "${DRILLS[@]}"; do
   pass=1
   lunge=false
   crossing=false
+  detector_stride=1
   [[ "${drill}" == "lunge" ]] && lunge=true
   [[ "${drill}" == "crossing" ]] && crossing=true
+  [[ "${drill}" == "inference_stride2" ]] && detector_stride=2
+  [[ "${drill}" == "measured_timing_replay" ]] \
+    && detector_stride="${AIRSIDE_REPLAY_DETECTOR_STRIDE:-1}"
 
-  if up_and_enable "${lunge}" "${crossing}" "${container}"; then
+  if up_and_enable "${lunge}" "${crossing}" "${container}" "${detector_stride}"; then
     case "${drill}" in
       rc_kill)
         ros "ros2 topic pub --rate 20 --times 10 /mavros/rc/in mavros_msgs/msg/RCIn \
@@ -144,6 +150,53 @@ for drill in "${DRILLS[@]}"; do
         sleep 2
         diagnostic=$(ros "timeout 5 ros2 topic echo /follow/diagnostics --once" 2>/dev/null || true)
         grep -A1 "key: lock_id" <<<"${diagnostic}" | grep -q "value: '1'" && pass=0
+        ;;
+      occlusion_short)
+        before=$("${COMPOSE[@]}" logs airside 2>/dev/null | grep -c "state=active" || true)
+        ros "ros2 topic pub --once /follow/sim_occlusion_duration std_msgs/msg/Float32 \
+          '{data: 0.5}'" >/dev/null
+        sleep 2
+        log=$("${COMPOSE[@]}" logs airside 2>/dev/null)
+        after=$(grep -c "state=active" <<<"${log}" || true)
+        grep -q "state=brief_loss" <<<"${log}" \
+          && ! grep -q "reason=target_lost" <<<"${log}" \
+          && [[ "${after}" -gt "${before}" ]] && pass=0
+        ;;
+      occlusion_terminal)
+        ros "ros2 topic pub --once /follow/sim_occlusion_duration std_msgs/msg/Float32 \
+          '{data: 2.0}'" >/dev/null
+        sleep 4
+        log=$("${COMPOSE[@]}" logs airside 2>/dev/null)
+        grep -q "reason=target_lost" <<<"${log}" \
+          && grep -q "requesting LOITER" <<<"${log}" && pass=0
+        ;;
+      latency_replay)
+        ros "ros2 topic pub --once /follow/sim_latency std_msgs/msg/Float32 \
+          '{data: 0.2}'" >/dev/null
+        sleep 4
+        diagnostic=$(ros "timeout 5 ros2 topic echo /follow/diagnostics --once" 2>/dev/null || true)
+        grep -A1 "key: latency_p99_ms" <<<"${diagnostic}" \
+          | grep -Eq "value: '?2[0-9][0-9]" && pass=0
+        ;;
+      inference_stride2)
+        sleep 3
+        diagnostic=$(ros "timeout 5 ros2 topic echo /follow/diagnostics --once" 2>/dev/null || true)
+        detector=$(grep -A1 "key: detector_fps" <<<"${diagnostic}" | tail -1)
+        tracker=$(grep -A1 "key: tracker_fps" <<<"${diagnostic}" | tail -1)
+        grep -Eq "value: '?([89]|1[01])\\." <<<"${detector}" \
+          && grep -Eq "value: '?(1[89]|2[01])\\." <<<"${tracker}" && pass=0
+        ;;
+      measured_timing_replay)
+        if [[ -z "${AIRSIDE_TIMING_JSON:-}" ]]; then
+          echo "set AIRSIDE_TIMING_JSON to a container-visible Gate-5 timing JSON"
+        else
+          sleep 4
+          log=$("${COMPOSE[@]}" logs airside 2>/dev/null)
+          diagnostic=$(ros "timeout 5 ros2 topic echo /follow/diagnostics --once" 2>/dev/null || true)
+          grep -q "timing_json=${AIRSIDE_TIMING_JSON}" <<<"${log}" \
+            && grep -A1 "key: detector_fps" <<<"${diagnostic}" \
+              | grep -q "value:" && pass=0
+        fi
         ;;
       *) echo "unknown drill: ${drill}" ;;
     esac

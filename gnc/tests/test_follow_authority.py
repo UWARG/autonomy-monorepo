@@ -38,7 +38,9 @@ def test_props_off_hitl_bypasses_only_armed_airborne():
     authority = FollowAuthority(AuthorityConfig(props_off_bypass_airborne=True))
     assert authority.request_enable(inputs(armed=False, airborne=False))
     authority.disable()
-    assert not authority.request_enable(inputs(mode="LOITER", armed=False, airborne=False))
+    assert not authority.request_enable(
+        inputs(mode="LOITER", armed=False, airborne=False)
+    )
 
 
 def test_rc_enable_needs_observed_low_then_rising_edge():
@@ -114,6 +116,42 @@ def test_confirmed_loss_requests_loiter_and_clears_lock():
     result = authority.step(inputs(now=11.1, target_valid=False))
     assert result.action is AuthorityAction.LOITER
     assert result.clear_target_lock
+    assert result.stop_reason is StopReason.TARGET_LOST
+
+
+def test_persistent_out_of_validated_range_has_distinct_terminal_reason():
+    authority = FollowAuthority(AuthorityConfig(lost_target_timeout_s=1.0))
+    assert authority.request_enable(inputs())
+    assert authority.step(inputs()).state is AuthorityState.ACTIVE
+    hold = authority.step(
+        inputs(
+            now=10.1,
+            target_valid=False,
+            target_out_of_range=True,
+        )
+    )
+    assert hold.state is AuthorityState.BRIEF_LOSS
+    result = authority.step(
+        inputs(
+            now=11.1,
+            target_valid=False,
+            target_out_of_range=True,
+        )
+    )
+    assert result.action is AuthorityAction.LOITER
+    assert result.clear_target_lock
+    assert result.stop_reason is StopReason.OUT_OF_VALIDATED_RANGE
+
+
+def test_in_range_reacquisition_clears_out_of_range_loss_reason():
+    authority = FollowAuthority(AuthorityConfig(lost_target_timeout_s=1.0))
+    assert authority.request_enable(inputs())
+    authority.step(inputs())
+    authority.step(inputs(now=10.1, target_valid=False, target_out_of_range=True))
+    recovered = authority.step(inputs(now=10.5, target_valid=True))
+    assert recovered.state is AuthorityState.ACTIVE
+    authority.step(inputs(now=10.6, target_valid=False))
+    result = authority.step(inputs(now=11.7, target_valid=False))
     assert result.stop_reason is StopReason.TARGET_LOST
 
 

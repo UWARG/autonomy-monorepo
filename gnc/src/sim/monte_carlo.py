@@ -56,8 +56,11 @@ def make_episode(seed: int) -> Episode:
         noise_mm=rng.uniform(0.0, 60.0),
         dropout_prob=rng.uniform(0.0, 0.10),
         latency_s=rng.uniform(0.0, 0.15),
-        wind=(wind_speed * math.cos(wind_dir), wind_speed * math.sin(wind_dir),
-              -rng.uniform(0.0, 0.04)),
+        wind=(
+            wind_speed * math.cos(wind_dir),
+            wind_speed * math.sin(wind_dir),
+            -rng.uniform(0.0, 0.04),
+        ),
         gust_sigma=rng.uniform(0.0, 0.4),
     )
 
@@ -86,7 +89,10 @@ def make_person_path(ep: Episode):
 
     def path(t_now: float):
         # disappearance window
-        if ep.gap_at_s is not None and ep.gap_at_s <= t_now < ep.gap_at_s + ep.gap_len_s:
+        if (
+            ep.gap_at_s is not None
+            and ep.gap_at_s <= t_now < ep.gap_at_s + ep.gap_len_s
+        ):
             return None
         # lunge overrides the walk: charge toward the origin for up to 4 s
         if ep.lunge_at_s is not None and t_now >= ep.lunge_at_s:
@@ -124,13 +130,26 @@ def run_episode(
     sim_cfg = SimConfig(
         duration_s=ep.duration_s,
         noise_mm=ep.noise_mm,
-        camera_hz=float(timing.get("p05_fps", 20.0)),
+        camera_hz=float(timing.get("detector_p05_fps", timing.get("p05_fps", 20.0))),
         dropout_prob=max(ep.dropout_prob, float(timing.get("dropout_rate", 0.0))),
         dropout_burst_lengths=tuple(
             int(value) for value in timing.get("dropout_gap_sizes", [])
         ),
-        latency_s=max(ep.latency_s, float(timing.get("capture_to_receive_p99_s", 0.0))),
-        camera_jitter_s=float(timing.get("capture_period_jitter_p99_s", 0.0)),
+        latency_s=max(
+            ep.latency_s,
+            float(
+                timing.get(
+                    "detector_capture_to_ros_p99_s",
+                    timing.get("capture_to_receive_p99_s", 0.0),
+                )
+            ),
+        ),
+        camera_jitter_s=float(
+            timing.get(
+                "detector_capture_period_jitter_p99_s",
+                timing.get("capture_period_jitter_p99_s", 0.0),
+            )
+        ),
         latency_jitter_s=float(timing.get("latency_jitter_p99_s", 0.0)),
         ema_alpha=stack.ema_alpha,
         wind=ep.wind,
@@ -156,7 +175,9 @@ def evaluate_episode(ep: Episode, result: SimResult, stack: StackConfig) -> dict
             if e or result.action[i] == "set_brake"
         ]
         first_protect = protected[0] if protected else None
-        streamer_ticks = max(1, int(round((1.0 / 20.0) / (result.t[1] - result.t[0])))) + 1
+        streamer_ticks = (
+            max(1, int(round((1.0 / 20.0) / (result.t[1] - result.t[0])))) + 1
+        )
         if first_protect is None or first_protect > first_breach + streamer_ticks:
             unsafe = True
             unsafe_reason = "breach without emergency/reflex protection at the ring"
@@ -282,8 +303,11 @@ def _histograms(rows: List[dict], outdir: str) -> None:
     ax1.axvline(DEPLOYED.follow.hard_min_m, color="red", label="hard-min")
     ax1.set_xlabel("min range (m)")
     ax1.legend()
-    ax2.hist([r["relatch_count"] for r in rows],
-             bins=range(0, max(r["relatch_count"] for r in rows) + 2), color="mediumpurple")
+    ax2.hist(
+        [r["relatch_count"] for r in rows],
+        bins=range(0, max(r["relatch_count"] for r in rows) + 2),
+        color="mediumpurple",
+    )
     ax2.set_xlabel("hold latches / episode")
     ax3.hist([r["max_fwd_cmd"] for r in rows], bins=40, color="seagreen")
     ax3.axvline(DEPLOYED.follow.v_max, color="red", label="v_max")
@@ -320,7 +344,9 @@ def main(argv=None):
             animate(result, title=f"replay_{args.replay}", outdir=args.outdir)
         sys.exit(0 if not metrics["unsafe"] else 1)
 
-    print(f"Monte-Carlo soak: {args.episodes} episodes, base seed {args.seed}, deployed config")
+    print(
+        f"Monte-Carlo soak: {args.episodes} episodes, base seed {args.seed}, deployed config"
+    )
     ok, summary, rows = soak(args.episodes, args.seed, outdir=args.outdir)
     for key, value in summary.items():
         print(f"  {key}: {value}")

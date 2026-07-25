@@ -38,6 +38,7 @@ def test_hold_hysteresis_ordered():
 def test_standoff_geometry_ordered():
     f = DEPLOYED.follow
     assert f.standoff_m > f.hard_min_m + f.margin_m
+    assert f.standoff_m + f.margin_m < 3.0
 
 
 def test_stream_faster_than_tree():
@@ -55,6 +56,7 @@ def test_deployed_tune_is_the_flying_tune():
     assert DEPLOYED.follow.v_vertical_max == 1.0
     assert DEPLOYED.follow.kp_vertical == 0.7
     assert DEPLOYED.follow.a_brake == 0.5  # conservative until Gate 6 measures it
+    assert DEPLOYED.follow.margin_m == 0.4
 
 
 def test_defaults_are_consistent_too():
