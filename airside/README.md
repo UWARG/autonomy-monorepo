@@ -79,6 +79,10 @@ ROS logs (rclpy logger output and captured node stdout) are written to
 
 ## Developer Guide
 
+For the separate, disabled-by-default human target-follow stack, including its
+interfaces, authority/override procedures, diagrams, and hardware gates, read
+[the canonical follow-stack guide](docs/follow_stack_onboarding.md).
+
 ### Behavior tree
 
 The engine is built with [py_trees_ros](https://py-trees-ros.readthedocs.io/en/latest/).  The tree is composed in `src/engine/engine/manager.py` and ticked every `TICK_PERIOD_MS` milliseconds.
