@@ -10,9 +10,12 @@ RemainAfterExit=yes
 Environment=DEVICE=/dev/video0
 Environment=WIDTH=640
 Environment=HEIGHT=480
-Environment=EXPOSURE=40
-Environment=BRIGHTNESS=-10
+Environment=EXPOSURE=1
+Environment=BRIGHTNESS=-20
 Environment=GAIN=0
+Environment=GAMMA=100
+Environment=CONTRAST=32
+Environment=PREFER_AUTO=1
 Environment=WAIT_SECS=60
 ExecStart=/home/warg/autonomy-monorepo/camera/scripts/setup_arducam_v4l2.sh
 # Retry a few times if the USB camera enumerates late.

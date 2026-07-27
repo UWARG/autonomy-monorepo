@@ -10,14 +10,13 @@ from mavros_msgs.msg import LandingTarget
 from mavros_msgs.srv import MessageInterval
 from mavros_msgs.msg import Mavlink
 import struct
-from rclpy.duration import Duration
 from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from rclpy.qos import HistoryPolicy
 
-CAM_FORWARD_OFFSET=0.09
-CAM_RIGHT_OFFSET=0.08
-CAM_DOWN_OFFSET=0.18
+CAM_FORWARD_OFFSET=0.06
+CAM_RIGHT_OFFSET=0.05
+CAM_DOWN_OFFSET=0.10
 
 TAG_ID = "36h11_1"
 class ManagerNode(Node):
@@ -27,10 +26,10 @@ class ManagerNode(Node):
         self.precision_landing_pub = self.create_publisher(LandingTarget, "/mavros_container/raw",10)
         self.apriltag_subscriber = self.create_subscription(TFMessage,"/tf",self.apriltag_callback,10)
         self.raw_mavlink_subscriber = self.create_subscription(Mavlink, "/uas1/mavlink_source", self.rc_callback, self.mavlink_qos)
+        self._mode_change_pending=False
         self.create_timer(0.1, self.precision_landing_timer_callback)
         self.landing=False
         self.last_apriltag=None
-        self.last_valid_apriltag_time=None
 
 
     def precision_landing_timer_callback(self):
@@ -39,20 +38,13 @@ class ManagerNode(Node):
         if self.last_apriltag is None:
             self.get_logger().info("No apriltag detected")
             return
-        if self.last_valid_apriltag_time is None:
-            self.get_logger().info("No valid apriltag detected")
-            return
-        if self.get_clock().now() - self.last_valid_apriltag_time > Duration(seconds=0.3):
-            self.get_logger().info("Apriltag too old")
-            self.last_apriltag=None
-            return
         apriltag=LandingTarget()
-        apriltag.header.stamp=self.last_valid_apriltag_time.to_msg()
+        apriltag.header.stamp=self.get_clock().now().to_msg()
         apriltag.frame=12
         apriltag.type=2 # vision_fiducial = 2
         #apriltag coordinate system to FRD
         apriltag.pose.position.x=-self.last_apriltag.transform.translation.y+CAM_FORWARD_OFFSET
-        #landing target plugin negates y and z so we need to negate them back since ros body convention expects FLU 
+        #for some reason y and z are negated when recieved on mission planner
         apriltag.pose.position.y=-(self.last_apriltag.transform.translation.x+CAM_RIGHT_OFFSET)
         apriltag.pose.position.z=-(self.last_apriltag.transform.translation.z+CAM_DOWN_OFFSET)
         apriltag.distance=math.sqrt(
@@ -105,13 +97,12 @@ class ManagerNode(Node):
             self.get_logger().info("No transforms detected")
             self.last_apriltag = None
             return
-        apriltag = msg.transforms[0]
+        apriltag=msg.transforms[0]
         if apriltag is None:
             self.get_logger().info("Apriltag not found")
             self.last_apriltag = None
             return
         self.last_apriltag = apriltag
-        self.last_valid_apriltag_time=self.get_clock().now()
             
 
 def main(args=None):

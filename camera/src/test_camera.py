@@ -16,8 +16,8 @@ _CAMERA_DIR = Path(__file__).resolve().parent.parent
 if str(_CAMERA_DIR) not in sys.path:
     sys.path.insert(0, str(_CAMERA_DIR))
 
-import cv2
 from src.arducam import Arducam
+import cv2
 
 
 def main() -> None:

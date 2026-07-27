@@ -12,25 +12,30 @@ from .frame import CameraFrame
 
 logger = logging.getLogger(__name__)
 
-# Outdoor defaults: match scripts/setup_arducam_v4l2.sh (manual V4L2 exposure).
-# Prefer running that script at boot; these OpenCV props reinforce the same mode.
 ARDU_DEVICE_INDEX = 0
-ARDU_USE_AUTO_EXPOSURE = False
-# V4L2 exposure_time_absolute units (1..5000); not the old OpenCV -6 scale.
-ARDU_MANUAL_EXPOSURE = 40
-ARDU_MANUAL_GAIN: Optional[int] = 0
-ARDU_BRIGHTNESS: Optional[int] = -10
 
-# Adaptive software correction when driver-level exposure controls are ignored.
+# Prefer firmware AE outdoors — on OV9782, exposure_time_absolute=1 still
+# clips in sun; AE often drives the sensor harder than the UVC absolute knob.
+ARDU_PREFER_AUTO_EXPOSURE = True
+# With AE, don't also pin brightness/gamma at the floor (causes purple cast /
+# underexposure). Keep gain at 0 so AE can't crank ISO.
+ARDU_MANUAL_EXPOSURE = 1
+ARDU_MANUAL_GAIN = 0
+ARDU_BRIGHTNESS = -20
+ARDU_GAMMA = 100
+ARDU_CONTRAST = 32
+
+# Software tonemap when the sensor still clips (common in bright sun).
 ARDU_ENABLE_SOFTWARE_EXPOSURE_CORRECTION = True
-ARDU_TARGET_P95_LUMA = 210.0
-ARDU_TARGET_MEDIAN_LUMA = 105.0
-ARDU_SOFT_GAIN_MIN = 0.45
-ARDU_SOFT_GAIN_MAX = 1.35
+ARDU_TARGET_P95_LUMA = 190.0
+ARDU_TARGET_MEDIAN_LUMA = 95.0
+ARDU_SOFT_GAIN_MIN = 0.05
+ARDU_SOFT_GAIN_MAX = 1.15
+ARDU_HIGHLIGHT_CLIP_RATIO = 0.08
 
 
 class Arducam(AbstractCamera):
-    """Arducam camera with outdoor-tuned exposure controls."""
+    """Arducam OV9782 with outdoor-safe exposure (V4L2 + software tonemap)."""
 
     def __init__(self, width: int = 640, height: int = 480) -> None:
         super().__init__()
@@ -38,46 +43,25 @@ class Arducam(AbstractCamera):
         self.height = height
         self.cap: Optional[cv2.VideoCapture] = None
         self._software_gain = 1.0
+        self._device = f"/dev/video{ARDU_DEVICE_INDEX}"
 
     def initialize_camera(self) -> bool:
         try:
-            self._apply_v4l2_outdoor_controls()
+            # Pre-open format/controls (may be overwritten when VideoCapture starts).
+            self._v4l2_set_format()
+            self._apply_v4l2_outdoor_controls(prefer_auto=ARDU_PREFER_AUTO_EXPOSURE)
             self.cap = self._open_camera()
-            self._configure_controls()
-            self._warmup()
+            # Grab a few frames so the UVC stream is actually running…
+            self._drain_frames(5)
+            # …then lock controls again (this is the step that usually sticks).
+            self._apply_v4l2_outdoor_controls(prefer_auto=ARDU_PREFER_AUTO_EXPOSURE)
+            self._configure_opencv_controls()
+            self._drain_frames(20)
+            self._apply_v4l2_outdoor_controls(prefer_auto=ARDU_PREFER_AUTO_EXPOSURE)
+            self._log_v4l2_state()
             return True
         except RuntimeError:
             return False
-
-    def _apply_v4l2_outdoor_controls(self) -> None:
-        """Set brightness / manual exposure via v4l2-ctl (more reliable than OpenCV)."""
-        if shutil.which("v4l2-ctl") is None:
-            logger.warning("v4l2-ctl not found; skipping native outdoor control setup")
-            return
-
-        device = f"/dev/video{ARDU_DEVICE_INDEX}"
-        brightness = 0 if ARDU_BRIGHTNESS is None else ARDU_BRIGHTNESS
-        exposure = ARDU_MANUAL_EXPOSURE
-        gain = 0 if ARDU_MANUAL_GAIN is None else ARDU_MANUAL_GAIN
-
-        cmds = [
-            ["v4l2-ctl", "-d", device, "--set-ctrl=auto_exposure=1"],
-            ["v4l2-ctl", "-d", device, f"--set-ctrl=exposure_time_absolute={exposure}"],
-            ["v4l2-ctl", "-d", device, f"--set-ctrl=brightness={brightness}"],
-            ["v4l2-ctl", "-d", device, f"--set-ctrl=gain={gain}"],
-        ]
-        for cmd in cmds:
-            try:
-                subprocess.run(cmd, check=True, capture_output=True, text=True)
-            except (OSError, subprocess.CalledProcessError) as exc:
-                logger.warning("Failed %s: %s", " ".join(cmd), exc)
-                return
-        logger.info(
-            "V4L2 outdoor controls: auto_exposure=1 exposure_time_absolute=%s brightness=%s gain=%s",
-            exposure,
-            brightness,
-            gain,
-        )
 
     def stop(self) -> None:
         if self.cap is not None:
@@ -96,6 +80,81 @@ class Arducam(AbstractCamera):
         frame = self._apply_software_exposure_correction(frame)
         return CameraFrame(rgb=frame, depth=None, rgb_down=None)
 
+    def _run_v4l2(self, args: list[str]) -> bool:
+        if shutil.which("v4l2-ctl") is None:
+            return False
+        try:
+            subprocess.run(
+                ["v4l2-ctl", "-d", self._device, *args],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except (OSError, subprocess.CalledProcessError) as exc:
+            logger.warning("v4l2-ctl %s failed: %s", " ".join(args), exc)
+            return False
+
+    def _v4l2_set_format(self) -> None:
+        self._run_v4l2(
+            [
+                f"--set-fmt-video=width={self.width},height={self.height},pixelformat=MJPG",
+            ]
+        )
+
+    def _apply_v4l2_outdoor_controls(self, *, prefer_auto: bool) -> None:
+        """Apply outdoor controls. Must run while streaming for OV9782/UVC."""
+        if shutil.which("v4l2-ctl") is None:
+            logger.warning("v4l2-ctl not found; skipping native outdoor control setup")
+            return
+
+        # Shared "dark" knobs either way.
+        self._run_v4l2([f"--set-ctrl=brightness={ARDU_BRIGHTNESS}"])
+        self._run_v4l2([f"--set-ctrl=gain={ARDU_MANUAL_GAIN}"])
+        self._run_v4l2([f"--set-ctrl=gamma={ARDU_GAMMA}"])
+        self._run_v4l2([f"--set-ctrl=contrast={ARDU_CONTRAST}"])
+        self._run_v4l2(["--set-ctrl=backlight_compensation=0"])
+        self._run_v4l2(["--set-ctrl=exposure_dynamic_framerate=0"])
+
+        if prefer_auto:
+            # 3 = Aperture Priority (firmware AE). Often the only way this
+            # camera stays usable outdoors; absolute=1 still blows out.
+            self._run_v4l2(["--set-ctrl=auto_exposure=3"])
+            mode = "auto(3)"
+        else:
+            self._run_v4l2(["--set-ctrl=auto_exposure=1"])
+            self._run_v4l2(
+                [f"--set-ctrl=exposure_time_absolute={ARDU_MANUAL_EXPOSURE}"]
+            )
+            mode = f"manual exposure={ARDU_MANUAL_EXPOSURE}"
+
+        logger.info(
+            "V4L2 outdoor controls applied (%s brightness=%s gain=%s gamma=%s)",
+            mode,
+            ARDU_BRIGHTNESS,
+            ARDU_MANUAL_GAIN,
+            ARDU_GAMMA,
+        )
+
+    def _log_v4l2_state(self) -> None:
+        if shutil.which("v4l2-ctl") is None:
+            return
+        try:
+            out = subprocess.run(
+                [
+                    "v4l2-ctl",
+                    "-d",
+                    self._device,
+                    "--get-ctrl=auto_exposure,exposure_time_absolute,brightness,gain,gamma",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info("V4L2 state:\n%s", out.stdout.strip())
+        except (OSError, subprocess.CalledProcessError):
+            pass
+
     def _open_camera(self) -> cv2.VideoCapture:
         for backend in (cv2.CAP_V4L2, cv2.CAP_ANY):
             cap = cv2.VideoCapture(ARDU_DEVICE_INDEX, backend)
@@ -110,6 +169,8 @@ class Arducam(AbstractCamera):
                 fourcc_raw = fourcc_fn(*"MJPG")
                 if isinstance(fourcc_raw, (int, float)):
                     cap.set(cv2.CAP_PROP_FOURCC, float(fourcc_raw))
+            # Higher FPS can force shorter integration on some UVC bridges.
+            cap.set(cv2.CAP_PROP_FPS, 60)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             backend_name = "unknown"
@@ -118,9 +179,11 @@ class Arducam(AbstractCamera):
             except Exception:
                 pass
             logger.info(
-                "Arducam opened device=%s backend=%s",
+                "Arducam opened device=%s backend=%s size=%sx%s",
                 ARDU_DEVICE_INDEX,
                 backend_name,
+                int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             )
             return cap
 
@@ -139,30 +202,31 @@ class Arducam(AbstractCamera):
             actual,
         )
 
-    def _configure_controls(self) -> None:
-        auto_values = (0.75, 3.0) if ARDU_USE_AUTO_EXPOSURE else (1.0, 0.25, 0.0)
-        for auto_exposure_value in auto_values:
-            self._set_control(
-                cv2.CAP_PROP_AUTO_EXPOSURE,
-                auto_exposure_value,
-                "auto_exposure",
-            )
-
-        if not ARDU_USE_AUTO_EXPOSURE:
-            self._set_control(cv2.CAP_PROP_EXPOSURE, ARDU_MANUAL_EXPOSURE, "exposure")
-
-        if ARDU_MANUAL_GAIN is not None:
-            self._set_control(cv2.CAP_PROP_GAIN, ARDU_MANUAL_GAIN, "gain")
-
-        if ARDU_BRIGHTNESS is not None:
-            self._set_control(cv2.CAP_PROP_BRIGHTNESS, ARDU_BRIGHTNESS, "brightness")
-
-    def _warmup(self) -> None:
+    def _configure_opencv_controls(self) -> None:
+        """Light OpenCV reinforcement — prefer V4L2 as source of truth."""
         if self.cap is None:
             return
-        for _ in range(25):
+
+        if ARDU_PREFER_AUTO_EXPOSURE:
+            # V4L2 aperture-priority ≈ OpenCV auto 0.75 / 3.0 depending on backend.
+            for value in (0.75, 3.0):
+                self._set_control(cv2.CAP_PROP_AUTO_EXPOSURE, value, "auto_exposure")
+        else:
+            for value in (1.0, 0.25):
+                self._set_control(cv2.CAP_PROP_AUTO_EXPOSURE, value, "auto_exposure")
+            self._set_control(cv2.CAP_PROP_EXPOSURE, float(ARDU_MANUAL_EXPOSURE), "exposure")
+
+        self._set_control(cv2.CAP_PROP_GAIN, float(ARDU_MANUAL_GAIN), "gain")
+        self._set_control(cv2.CAP_PROP_BRIGHTNESS, float(ARDU_BRIGHTNESS), "brightness")
+        self._set_control(cv2.CAP_PROP_GAMMA, float(ARDU_GAMMA), "gamma")
+        self._set_control(cv2.CAP_PROP_CONTRAST, float(ARDU_CONTRAST), "contrast")
+
+    def _drain_frames(self, count: int) -> None:
+        if self.cap is None:
+            return
+        for _ in range(count):
             self.cap.read()
-            time.sleep(0.02)
+            time.sleep(0.01)
 
     def _apply_software_exposure_correction(self, frame: np.ndarray) -> np.ndarray:
         if not ARDU_ENABLE_SOFTWARE_EXPOSURE_CORRECTION:
@@ -171,20 +235,43 @@ class Arducam(AbstractCamera):
         small = cv2.resize(frame, (160, 90), interpolation=cv2.INTER_AREA)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
+        p99 = float(np.percentile(gray, 99))
         p95 = float(np.percentile(gray, 95))
         p50 = float(np.percentile(gray, 50))
         highlight_ratio = float(np.mean(gray >= 250))
 
         target_gain = 1.0
-        if p95 > ARDU_TARGET_P95_LUMA or highlight_ratio > 0.05:
+        if highlight_ratio >= ARDU_HIGHLIGHT_CLIP_RATIO:
+            # Frame is largely clipped — crush hard so tags/ground regain contrast.
+            # Use non-clipped pixels when available; otherwise force min gain.
+            unclipped = gray[gray < 250]
+            if unclipped.size > 50:
+                ref = float(np.percentile(unclipped, 95))
+                target_gain = ARDU_TARGET_P95_LUMA / max(ref, 1.0)
+            else:
+                target_gain = ARDU_SOFT_GAIN_MIN
+            # Extra crush proportional to how much of the frame is blown out.
+            target_gain *= float(np.clip(1.0 - 0.7 * highlight_ratio, 0.15, 1.0))
+        elif p95 > ARDU_TARGET_P95_LUMA or p99 > 245:
             target_gain = ARDU_TARGET_P95_LUMA / max(p95, 1.0)
         elif p50 < ARDU_TARGET_MEDIAN_LUMA:
             target_gain = ARDU_TARGET_MEDIAN_LUMA / max(p50, 1.0)
 
         target_gain = float(np.clip(target_gain, ARDU_SOFT_GAIN_MIN, ARDU_SOFT_GAIN_MAX))
+        # Faster adaptation outdoors so the first published frames aren't white.
+        self._software_gain = (0.70 * self._software_gain) + (0.30 * target_gain)
 
-        self._software_gain = (0.88 * self._software_gain) + (0.12 * target_gain)
-        return cv2.convertScaleAbs(frame, alpha=self._software_gain, beta=0.0)
+        corrected = cv2.convertScaleAbs(frame, alpha=self._software_gain, beta=0.0)
+
+        # Mild local contrast so AprilTags pop after global darkening.
+        if self._software_gain < 0.85:
+            lab = cv2.cvtColor(corrected, cv2.COLOR_BGR2LAB)
+            luminance, a_ch, b_ch = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            luminance = clahe.apply(luminance)
+            corrected = cv2.cvtColor(cv2.merge([luminance, a_ch, b_ch]), cv2.COLOR_LAB2BGR)
+
+        return corrected
 
     def _normalize_geometry(self, frame: np.ndarray) -> np.ndarray:
         h, w = frame.shape[:2]
