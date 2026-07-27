@@ -9,6 +9,7 @@ or from camera/src:
 from __future__ import annotations
 
 import sys
+import cv2
 from pathlib import Path
 
 # Load as package `src.*` so arducam's relative imports work when run as a script.
@@ -17,7 +18,6 @@ if str(_CAMERA_DIR) not in sys.path:
     sys.path.insert(0, str(_CAMERA_DIR))
 
 from src.arducam import Arducam
-import cv2
 
 
 def main() -> None:
