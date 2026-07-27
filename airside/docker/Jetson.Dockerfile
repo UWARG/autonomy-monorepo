@@ -182,10 +182,11 @@ RUN pip3 install --no-cache-dir --upgrade pip packaging hatchling
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-# OpenCV was built against apt NumPy 1.x; keep pip on NumPy 1.x too.
-RUN pip3 install --no-cache-dir "numpy<2" sortedcontainers \
+# OpenCV was built against apt NumPy 1.x; Jammy python3-scipy wants NumPy <1.25.
+# Avoid dual ABI (apt scipy + pip numpy 1.26) which can SIGSEGV in native calls.
+RUN pip3 install --no-cache-dir "numpy>=1.17.3,<1.25" sortedcontainers \
   && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils \
-  && pip3 install --no-cache-dir "numpy<2"
+  && pip3 install --no-cache-dir "numpy>=1.17.3,<1.25"
 
 WORKDIR /ros_ws
 
@@ -223,7 +224,7 @@ COPY airside/docker/airside_entrypoint.sh /airside_entrypoint.sh
 RUN chmod +x /airside_entrypoint.sh
 
 # Quick CUDA module check (device count needs --runtime nvidia at run time).
-RUN pip3 install --no-cache-dir "numpy<2" \
+RUN pip3 install --no-cache-dir "numpy>=1.17.3,<1.25" \
   && export PYTHONPATH="$(cat /etc/opencv-python-path)${PYTHONPATH:+:${PYTHONPATH}}" \
   && python3 - <<'PY'
 import cv2

@@ -27,7 +27,6 @@ setup(
             [
                 "camera_info.yaml",
                 "pluginlists.yaml",
-                "mavros.yaml",
             ],
         ),
     ],
