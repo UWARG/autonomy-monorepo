@@ -1,24 +1,29 @@
-import rclpy
-from rclpy.node import Node
-from rclpy.executors import MultiThreadedExecutor
-from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
-from cv_bridge import CvBridge
-from sensor_msgs.msg import Image
-from sensor_msgs.msg import NavSatFix
+import faulthandler
+import math
 import os
-from ament_index_python.packages import get_package_share_directory
-import yaml
-from sensor_msgs.msg import Imu
+import sys
+
+# Import CUDA OpenCV *before* cv_bridge. If cv_bridge loads first it can bind the
+# wrong OpenCV, and the first initUndistortRectifyMap then SIGSEGVs on Jetson.
 import cv2
 import numpy as np
+import yaml
+from ament_index_python.packages import get_package_share_directory
+from cv_bridge import CvBridge
 from sortedcontainers import SortedDict
-from rclpy.qos import qos_profile_sensor_data
-from scipy.spatial.transform import Rotation as R
+
+import rclpy
 from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
-from custom_interfaces.action import Takeoff
-from custom_interfaces.action import Landing
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from scipy.spatial.transform import Rotation as R
+from sensor_msgs.msg import Image, Imu, NavSatFix
 from std_msgs.msg import Float64
+
+from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
 import math
 from accelerated_features.modules import xfeat
@@ -27,18 +32,19 @@ import torch
 
 ACCEPTABLE_OFFSET=0.05
 
+
 class Processor(Node):
     def __init__(self) -> None:
         super().__init__("processor")
         self._cb_group=ReentrantCallbackGroup()
         self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
         self.image_subscriber = self.create_subscription(Image, "camera/image", self.image_callback, 1, callback_group=self._cb_group)
-        self.imu_subscriber = self.create_subscription(Imu, "imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
+        self.imu_subscriber = self.create_subscription(Imu, "/mavros/imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
         self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, callback_group=self._cb_group)
         self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, callback_group=self._cb_group)
 
-        self._fix_sub = self.create_subscription(NavSatFix,"global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
-        self._rel_alt_sub = self.create_subscription(Float64,"global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
+        self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
+        self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
 
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
 
@@ -52,7 +58,17 @@ class Processor(Node):
         self.last_altitude=0
         self.last_image_altitude=7.5
         self._bridge=CvBridge()
+        self.get_logger().info("init: camera_intrinsics")
         self.camera_intrinsics()
+        self._use_cuda = False
+        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+        self.get_logger().info("init: CUDA BFMatcher")
+        if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
+            self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
+            self._use_cuda = True
+            self.get_logger().info("Using CUDA BFMatcher")
+        else:
+            self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
         self.get_logger().info("Processor initialized")
         self.roll=None
         self.pitch=None
@@ -321,10 +337,13 @@ class Processor(Node):
             self.d=camera_info["distortion_coefficients"]["data"]
             self.r=camera_info["rectification_matrix"]["data"]
             self.p=camera_info["projection_matrix"]["data"]
-        reshaped_k=np.array(self.k).reshape(3,3)
-        reshaped_d=np.array(self.d)
-        self.new_camera_matrix,self.roi=cv2.getOptimalNewCameraMatrix(reshaped_k, reshaped_d, (self.width, self.height), 0)
-        self.mapx,self.mapy=cv2.initUndistortRectifyMap(reshaped_k, reshaped_d, None, self.new_camera_matrix, (self.width, self.height), cv2.CV_32FC1)
+        reshaped_k=np.asarray(self.k, dtype=np.float64).reshape(3, 3)
+        reshaped_d=np.asarray(self.d, dtype=np.float64).reshape(-1)
+        size=(int(self.width), int(self.height))
+        self.new_camera_matrix,self.roi=cv2.getOptimalNewCameraMatrix(reshaped_k, reshaped_d, size, 0)
+        self.mapx,self.mapy=cv2.initUndistortRectifyMap(
+            reshaped_k, reshaped_d, None, self.new_camera_matrix, size, cv2.CV_32FC1
+        )
         x,y,w,h=self.roi
         self.fx=self.new_camera_matrix[0,0]
         self.fy=self.new_camera_matrix[1,1]
@@ -332,9 +351,10 @@ class Processor(Node):
         self.cy=self.new_camera_matrix[1,2]-y
 
 def main(args=None):
+    faulthandler.enable(file=sys.stderr, all_threads=True)
     rclpy.init(args=args)
     processor=Processor()
-    executor=MultiThreadedExecutor()
+    executor=SingleThreadedExecutor()
     executor.add_node(processor)
     try:
         executor.spin()
