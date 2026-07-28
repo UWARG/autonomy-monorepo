@@ -21,6 +21,9 @@ from custom_interfaces.action import Landing
 from std_msgs.msg import Float64
 from custom_interfaces.msg import Error
 import math
+from accelerated_features.modules import xfeat
+import torch
+
 
 ACCEPTABLE_OFFSET=0.05
 
@@ -30,7 +33,7 @@ class Processor(Node):
         self._cb_group=ReentrantCallbackGroup()
         self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
         self.image_subscriber = self.create_subscription(Image, "camera/image", self.image_callback, 1, callback_group=self._cb_group)
-        self.imu_subscriber = self.create_subscription(Imu, "imu/data", self.imu_callback, 10, callback_group=self._cb_group)
+        self.imu_subscriber = self.create_subscription(Imu, "imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
         self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, callback_group=self._cb_group)
         self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, callback_group=self._cb_group)
 
@@ -47,15 +50,7 @@ class Processor(Node):
         self.longitude=0.0
         self.rel_alt=None
         self.last_altitude=0
-        self._use_cuda=False
-        try:
-             self._use_cuda = hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0
-        except Exception:
-             self._use_cuda = False
-        self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING) if self._use_cuda else cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        self.altitude_threshold=0.1
         self.last_image_altitude=7.5
-        self.orb=cv2.ORB_create(nfeatures=1000)
         self._bridge=CvBridge()
         self.camera_intrinsics()
         self.get_logger().info("Processor initialized")
@@ -67,11 +62,12 @@ class Processor(Node):
         self.landing_failed=False
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
-        self.landing_3d_points=[]
-        self.takeoff_3d_points=[]
         self.last_landing_altitude=0.25
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
+        self.xfeat=xfeat.XFeat()
+        with torch.inference_mode(): # for cuda kernel autotuning warmup
+            self.xfeat.detectAndCompute(torch.zeros(1, 1, 480, 640, device=self.xfeat.dev), top_k=10)
 
     def publish_invalid_error(self, align_before_descent: bool=False):
         self.error_publisher.publish(Error(
@@ -135,9 +131,9 @@ class Processor(Node):
 
     def takeoff_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Takeoff requested")
-        self.takeoff_goal_handle=goal_handle
         self.last_altitude=0
         self.imu_dict.clear()
+        self.takeoff_goal_handle=goal_handle
         result=Takeoff.Result()
         rate=self.create_rate(10)
 
@@ -187,10 +183,15 @@ class Processor(Node):
             rel_alt=self.rel_alt
             roll=self.roll
             pitch=self.pitch
+            self.image=None
             if rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
-                kp,des=self.generate_orb_descriptors(gray)
-                if kp is None or des is None:
+                tensor=torch.from_numpy(gray).float().unsqueeze(0).unsqueeze(0).to(self.xfeat.dev)
+                with torch.no_grad():
+                    outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
+                kp=outputs["keypoints"]
+                des=outputs["descriptors"]
+                if len(kp)<=0 or len(des)<=0:
                     return
                 self.imu_dict[rel_alt]=[kp,des,roll,pitch]
                 self.last_altitude=rel_alt
@@ -200,11 +201,12 @@ class Processor(Node):
             rel_alt=self.rel_alt
             land_roll=self.roll
             land_pitch=self.pitch
+            self.image=None
             align_before_descent=rel_alt<=self.align_altitude
             if not self.imu_dict:
                 self.fail_landing("Empty map")
                 return
-            if rel_alt<=0.0+ACCEPTABLE_OFFSET:
+            if rel_alt<=0.0+ACCEPTABLE_OFFSET: #go straight down
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,valid_error=False,
                     below_last_landing_altitude=False,align_before_descent=False,
@@ -227,45 +229,35 @@ class Processor(Node):
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
             gray=self.undistort_image(image)
-            kp,des=self.generate_orb_descriptors(gray)
-            if kp is None or des is None:
+            tensor=torch.from_numpy(gray).float().unsqueeze(0).unsqueeze(0).to(self.xfeat.dev)
+            with torch.no_grad():
+                outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
+            landing_kp=outputs["keypoints"]
+            landing_des=outputs["descriptors"]
+            if len(landing_kp)<=0 or len(landing_des)<=0 or len(kp_takeoff)<=0 or len(des_takeoff)<=0:
                 self.publish_invalid_error(align_before_descent)
                 return
-            if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
+            landing_idx,takeoff_idx=self.xfeat.match(landing_des, des_takeoff,min_cossim=0.7)
+            if len(landing_idx)<50 or len(takeoff_idx)<50:
                 self.publish_invalid_error(align_before_descent)
                 return
-            if self._use_cuda:
-                gpu_landing_des=cv2.cuda.GpuMat()
-                gpu_takeoff_des=cv2.cuda.GpuMat()
-                gpu_landing_des.upload(des)
-                gpu_takeoff_des.upload(des_takeoff)
-                matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
-            else:
-                matches=self.BFMatcher.match(des, des_takeoff)
-            matches=sorted(matches, key=lambda x: x.distance)
-            if len(matches)<50:
-                self.publish_invalid_error(align_before_descent)
-                return
-            good_matches=matches[:50]
-            self.takeoff_3d_points=[]
-            self.landing_3d_points=[]
-            for match in good_matches:
-                x_land_px,y_land_px=kp[match.queryIdx]
-                x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
-                if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
-                    continue
-                self.get_logger().info(f"Landing match: {x_land_px}, {y_land_px}, {x_takeoff_px}, {y_takeoff_px}")
+            m0,m1=landing_des[landing_idx],des_takeoff[takeoff_idx] #only copy the descriptors for the matches
+            cosim=(m0 * m1).sum(dim=1) #cosine similarity instead of hamming distance
+            order=torch.argsort(cosim,descending=True)
+            selection=order[:50]
+            land_pts=landing_kp[landing_idx[selection]].cpu().numpy()
+            takeoff_pts=kp_takeoff[takeoff_idx[selection]].cpu().numpy()
+            takeoff_3d_points=[]
+            landing_3d_points=[]
+            for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(land_pts,takeoff_pts):
                 x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,rel_alt)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
-                self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
-                self.landing_3d_points.append([x_land_3d,y_land_3d])
-            if len(self.takeoff_3d_points)<50:
-                self.publish_invalid_error(align_before_descent)
-                return
+                takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
+                landing_3d_points.append([x_land_3d,y_land_3d])
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
-                np.asarray(self.takeoff_3d_points,dtype=np.float32),
-                np.asarray(self.landing_3d_points,dtype=np.float32),
+                np.asarray(takeoff_3d_points,dtype=np.float32),
+                np.asarray(landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
                 ransacReprojThreshold=0.02,
                 maxIters=1000,
@@ -296,12 +288,6 @@ class Processor(Node):
             error.landing_complete=False
             self.error_publisher.publish(error)
 
-    def generate_orb_descriptors(self, image: Image):
-        kp,des=self.orb.detectAndCompute(image, None)
-        if not kp:
-            return None, None
-        kp_pts=np.array([kp.pt for kp in kp])
-        return kp_pts,des
         
     def undistort_image(self, image: Image):
         image=self._bridge.imgmsg_to_cv2(image, "rgb8")
