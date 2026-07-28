@@ -1,10 +1,42 @@
+from typing import Literal, overload
+
 import numpy as np
 import sklearn.mixture
 from sklearn.preprocessing import StandardScaler
 
-#use like: cluster_estimation(load_from_file(path))
-def load_points_from_file(path, with_tags=False): 
-    """load a file return a list of points. Also returns a list of tags if with_tags=True"""
+
+@overload
+def load_points_from_file(path: str, with_tags: Literal[False] = False) -> list[list[float]]: ...
+@overload
+def load_points_from_file(path: str, with_tags: Literal[True]) -> tuple[list[list[float]], list[list[str]]]: ...
+
+#use like: cluster_estimation(load_points_from_file(path))
+def load_points_from_file(path: str, with_tags: bool = False):
+    """Load N-dimensional points (and optional tags) from a text file.
+    Main entry point for reading point data. Each non-empty,
+    non-comment line describes one point:
+
+    x, y, z                    # coordinates only (comma- or space-separated)
+    x y z | tag=value other    # coordinates, then '|', then tags
+
+    - Coordinates and tags may each be separated by commas and/or whitespace.
+    - Every point must have the same number of coordinates.
+
+    path: Path to the input file (str or os.PathLike).
+    with_tags: If True, also return the per-point tag lists.
+
+    Returns:
+    -> If with_tags is False: 
+        a list of points, each a list[float] of length of the point dimension
+    -> If with_tags is True: 
+        a tuple (points, tags) where tags[i] is the list of tag strings for 
+        points[i] (empty list if that line had no '|' section). Points and tags are always the same length.
+    """
+    if not isinstance(path, str):
+        raise TypeError(f"path must be a str, got {type(path).__name__}")
+    if not isinstance(with_tags, bool):
+        raise TypeError(f"with_tags must be a bool, got {type(with_tags).__name__}")
+
     tags = []
     points = []
     with open(path, "r") as f:

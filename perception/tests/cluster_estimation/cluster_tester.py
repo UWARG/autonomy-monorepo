@@ -9,6 +9,10 @@ Small tester for cluster_estimation.
         -w / --write   save cluster locations (out/)
 """
 
+import argparse
+import os
+import sys
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", "..", "src")))
 
@@ -17,10 +21,6 @@ from cluster_estimation import (
     load_points_from_file, write_cluster_locations,
     write_grouped_cluster_locations,
 )
-
-import argparse
-import os
-import sys
 
 # --- generate ---------------------------------------------------------------
 
