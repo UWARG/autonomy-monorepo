@@ -43,7 +43,7 @@ docker compose up
 
 terminal 3 — mission controller:
 ```bash
-warg run sitl-plus rerun_airside
+warg run SITL-Plus rerun_airside
 ```
 
 ## Local SITL (no Docker)

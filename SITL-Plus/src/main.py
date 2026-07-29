@@ -61,7 +61,7 @@ time_now = 0.0  # pylint: disable=invalid-name
 last_velocity = None  # pylint: disable=invalid-name
 vehicle = None
 
-rr.init("sitl-plus")
+rr.init("SITL-Plus")
 rr.connect_grpc("rerun+http://host.docker.internal:9876/proxy")
 cameras = []
 range_finders = []
