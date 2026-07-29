@@ -1,46 +1,42 @@
 from __future__ import annotations
 
-from importlib.metadata import version as package_version
 from pathlib import Path
-import re
 from typing import Optional
 
+import click
 from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
 from rich.table import Table
+from typer.core import TyperGroup
 
 from ci import affected_projects, run_ci_pipeline
 from errors import WargError
-from errors import GitError
 from git_adapter import GitAdapter
 from github_adapter import GitHubAdapter
 from models import Project
-from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
+from registry import Registry, find_repo_root, load_project_manifest
 from runner import CommandRunner
 
-app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+class WargGroup(TyperGroup):
+    def resolve_command(
+        self, context: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        try:
+            return super().resolve_command(context, args)
+        except click.UsageError as error:
+            exit_code = _run_current_project_command(args)
+            if exit_code is None:
+                raise error
+            raise click.exceptions.Exit(exit_code) from None
+
+
+app = typer.Typer(cls=WargGroup, no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
 console = Console()
-GITHUB_SSH_DOCS_URL = (
-    "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
-)
-
-
-@app.callback()
-def root(
-    version: Optional[bool] = typer.Option(
-        None,
-        "--version",
-        "-v",
-        callback=lambda value: _show_version(value),
-        is_eager=True,
-        help="Show the WARG CLI version and exit.",
-    ),
-) -> None:
-    pass
 
 
 @app.command()
@@ -61,28 +57,21 @@ def clone(
     include_archived: bool = typer.Option(
         False, "--include-archived", help="Include archived repositories in the picker."
     ),
-    full: bool = typer.Option(
-        False,
-        "--full",
-        help="Perform a normal clone instead of a partial sparse checkout.",
-    ),
 ) -> None:
-    """Clone a WARG monorepo sparsely by default, or fully with --full."""
+    """Clone a WARG monorepo without checking out any projects."""
     try:
         repository = repository or _pick_repository(organization, include_archived)
         if not repository:
             raise typer.Exit(1)
         repository = _resolve_repository(repository, organization, include_archived)
-        _clone_repository(repository, destination, full)
+        with console.status("Cloning repository with sparse checkout..."):
+            GitAdapter.clone_sparse(repository, destination)
     except WargError as error:
         console.print(f"[red]Error:[/red] {error}")
         raise typer.Exit(1) from error
 
-    if full:
-        console.print("Cloned full repository.")
-    else:
-        console.print("Cloned repository with sparse checkout enabled.")
-        console.print("Only root files are checked out. Run 'warg up <project>' next.")
+    console.print("Cloned repository with sparse checkout enabled.")
+    console.print("Only root files are checked out. Run 'warg up <project>' next.")
 
 
 @app.command("list")
@@ -125,18 +114,9 @@ def info(project: str) -> None:
 
 
 @app.command()
-def doctor() -> None:
-    """Print Git config, SSH environment, and remote access diagnostics."""
-    console.print("[bold]Git repository access[/bold]")
-    root = find_repo_root_or_none()
-    git = GitAdapter(root)
-    for line in git.repository_access_diagnostics():
-        console.print(f"  - {line}")
-
-
-@app.command()
 def up(
     project: Optional[str] = typer.Argument(None),
+    force: bool = typer.Option(False, "--force", help="Rerun setup commands."),
 ) -> None:
     """Materialize a project and its dependencies with Git sparse-checkout."""
     root = _load_repo_root()
@@ -160,55 +140,12 @@ def up(
 
     runner = CommandRunner()
     for dependency in setup_order:
-        if "setup" in dependency.commands:
+        should_setup = force or dependency.relative_path in materialized
+        if "setup" in dependency.commands and should_setup:
             console.print(f"Running setup for [bold]{dependency.name}[/bold]")
             exit_code = runner.run(dependency, "setup", [])
             if exit_code != 0:
                 raise typer.Exit(exit_code)
-
-
-@app.command("down")
-def down(
-    project: Optional[str] = typer.Argument(None),
-    include_dependencies: bool = typer.Option(
-        False,
-        "--include-dependencies",
-        "--deps",
-        help="Also unload dependencies that are checked out.",
-    ),
-) -> None:
-    """Remove a project from Git sparse-checkout."""
-    root = _load_repo_root()
-    registry = Registry(root)
-    project = project or _pick_project(registry)
-    if not project:
-        raise typer.Exit(1)
-
-    try:
-        paths, dependents = _unload_paths(registry, project, include_dependencies)
-        git = GitAdapter(root)
-        with console.status(f"Unloading [bold]{project}[/bold]..."):
-            removed = git.unmaterialize_paths(paths)
-    except WargError as error:
-        console.print(f"[red]Error:[/red] {error}")
-        raise typer.Exit(1) from error
-
-    if not removed:
-        console.print(f"[bold]{project}[/bold] is not checked out.")
-        return
-
-    removed_dependents = sorted(
-        dependent for dependent in dependents if dependent in removed
-    )
-    if removed_dependents:
-        console.print(
-            "[yellow]Warning:[/yellow] Also unloaded projects that depend on "
-            f"[bold]{project}[/bold]: {', '.join(removed_dependents)}"
-        )
-
-    console.print("Removed sparse checkout paths:")
-    for path in sorted(removed):
-        console.print(f"  - {path}")
 
 
 @app.command(
@@ -272,13 +209,6 @@ def _load_repo_root() -> Path:
         raise typer.Exit(1) from error
 
 
-def _show_version(version: bool | None) -> None:
-    if not version:
-        return
-    console.print(package_version("warg-cli"))
-    raise typer.Exit()
-
-
 def _resolve_repository(
     repository: str, organization: str, include_archived: bool
 ) -> str:
@@ -291,6 +221,7 @@ def _resolve_repository(
             return candidate.ssh_url
 
     available = ", ".join(candidate.name for candidate in repositories) or "none"
+    from errors import GitError
 
     raise GitError(
         f"Unknown {organization} repository '{repository}'. Available repositories: {available}."
@@ -303,49 +234,6 @@ def _looks_like_repository_url(repository: str) -> bool:
         or repository.startswith("git@")
         or repository.startswith("ssh://")
     )
-
-
-def _warn_if_https_repository(repository: str) -> None:
-    if not repository.startswith("https://github.com/"):
-        return
-
-    console.print(
-        "[yellow]Warning:[/yellow] This repository is configured with an HTTPS "
-        "remote, so you will be unable to push to it through the expected WARG "
-        "SSH workflow. Set up GitHub SSH access and clone with the SSH URL "
-        f"instead: {GITHUB_SSH_DOCS_URL}"
-    )
-
-
-def _clone_repository(repository: str, destination: str | None, full: bool) -> None:
-    _warn_if_https_repository(repository)
-    try:
-        if full:
-            with console.status("Cloning repository..."):
-                GitAdapter.clone(repository, destination)
-        else:
-            with console.status("Cloning repository with sparse checkout..."):
-                GitAdapter.clone_sparse(repository, destination)
-    except GitError:
-        fallback = _github_ssh_url_to_https(repository)
-        if fallback is None:
-            raise
-        console.print(
-            "[yellow]Warning:[/yellow] SSH clone failed. Retrying with HTTPS."
-        )
-        _warn_if_https_repository(fallback)
-        if full:
-            GitAdapter.clone(fallback, destination)
-        else:
-            GitAdapter.clone_sparse(fallback, destination)
-
-
-def _github_ssh_url_to_https(repository: str) -> str | None:
-    match = re.fullmatch(r"git@github\.com:([^/]+)/(.+?)(?:\.git)?", repository)
-    if not match:
-        return None
-    owner, name = match.groups()
-    return f"https://github.com/{owner}/{name}.git"
 
 
 def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
@@ -372,6 +260,33 @@ def _run_ci(pipeline: str, *, base: str, merge_base: bool) -> None:
         raise typer.Exit(1) from error
     if exit_code != 0:
         raise typer.Exit(exit_code)
+
+
+def _run_current_project_command(args: list[str]) -> int | None:
+    if not args:
+        return None
+
+    command, *passthrough = args
+    if passthrough and passthrough[0] == "--":
+        passthrough = passthrough[1:]
+    project = _load_current_project()
+    if project is None or command not in project.commands:
+        return None
+
+    try:
+        return CommandRunner().run(project, command, passthrough)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        return 1
+
+
+def _load_current_project() -> Project | None:
+    current = Path.cwd().resolve()
+    for path in (current, *current.parents):
+        manifest = path / "warg.toml"
+        if manifest.exists():
+            return load_project_manifest(manifest)
+    return None
 
 
 def _materialize_dependency_graph(
@@ -423,24 +338,6 @@ def _discover_dependency_order(
     return order, requested_paths
 
 
-def _unload_paths(
-    registry: Registry, project_name: str, include_dependencies: bool
-) -> tuple[list[str], set[str]]:
-    paths = {_entry_path(registry, project_name)}
-    dependent_names = expand_dependents(registry, {project_name}) - {project_name}
-    dependents = {
-        registry.projects[name].relative_path
-        for name in dependent_names
-        if name in registry.projects
-    }
-    paths.update(dependents)
-    if include_dependencies and project_name in registry.projects:
-        paths.update(
-            project.relative_path for project in registry.dependency_order(project_name)
-        )
-    return sorted(paths), dependents
-
-
 def _path_for_project(root: Path, project_name: str) -> str:
     registry = Registry(root)
     return _entry_path(registry, project_name)
@@ -467,7 +364,9 @@ def _pick_project(registry: Registry) -> str | None:
     ).execute()
 
 
-def _pick_repository(organization: str, include_archived: bool) -> str | None:
+def _pick_repository(
+    organization: str, include_archived: bool
+) -> str | None:
     repositories = GitHubAdapter.list_org_repositories(organization, include_archived)
     if not repositories:
         console.print(f"No repositories found in {organization}.")

@@ -27,9 +27,7 @@ class CommandRunner:
 def _shell_quote(value: str) -> str:
     if not value:
         return "''"
-    safe = set(
-        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-=.,:/@%"
-    )
+    safe = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+-=.,:/@%")
     if all(char in safe for char in value):
         return value
     return "'" + value.replace("'", "'\"'\"'") + "'"

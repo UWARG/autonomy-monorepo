@@ -31,8 +31,6 @@ docker compose build
 
 ## Run
 
-If you are running docker in WSL but rerun viewer on host, make sure your docker desktop is running in the background.
-
 terminal 1 — start the Rerun viewer:
 ```bash
 uv run rerun

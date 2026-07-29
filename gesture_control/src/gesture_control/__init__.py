@@ -1,1 +1,0 @@
-"""Gesture control module."""

@@ -11,7 +11,7 @@ echo "[entrypoint] Logs: ${LOG_DIR}/sim_vehicle.log (MAVProxy/SITL), ${LOG_DIR}/
 
 echo "[entrypoint] Starting PyBullet physics (main.py)..."
 cd "$SITL_PLUS_DIR"
-uv run python3 main.py >>"${LOG_DIR}/pybullet.log" 2>&1 &
+uv run python3 main.py --nogui >>"${LOG_DIR}/pybullet.log" 2>&1 &
 MAIN_PID=$!
 
 

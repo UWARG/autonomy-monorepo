@@ -29,6 +29,9 @@ from range_finder import Range_Finder
 
 logging.basicConfig(level=logging.INFO)
 
+parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
+args = parser.parse_args()
+
 RATE_HZ = 800
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
@@ -63,6 +66,8 @@ vehicle = None
 
 rr.init("sitl-plus")
 rr.connect_grpc("rerun+http://host.docker.internal:9876/proxy")
+cameras = []
+range_finders = []
 
 
 def vector_to_AP(vec):  # pylint: disable=invalid-name

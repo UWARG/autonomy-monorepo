@@ -4,8 +4,7 @@ description = "Intelligent Monitoring System — WebSocket server and React dash
 depends_on = ["utils", "mav_comms", "camera"]
 
 [commands]
-setup = "uv sync && pnpm --dir frontend install"
-run = "pnpm --dir frontend dev --host 127.0.0.1 --port 5173"
+setup = "uv sync"
 lint = "uv run --extra dev ruff check ."
 
 [ci]

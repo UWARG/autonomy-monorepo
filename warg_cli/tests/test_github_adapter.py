@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-import urllib.error
 
 from github_adapter import GitHubAdapter
 
@@ -82,70 +81,3 @@ def test_can_include_archived_repositories(monkeypatch) -> None:
     repositories = GitHubAdapter.list_org_repositories("UWARG", include_archived=True)
 
     assert [repository.name for repository in repositories] == ["old"]
-
-
-def test_falls_back_to_github_api_when_gh_is_missing(monkeypatch) -> None:
-    def fake_run(*args, **kwargs):
-        raise FileNotFoundError
-
-    class FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def read(self) -> bytes:
-            return b"""
-[
-  {
-    "name": "alpha",
-    "ssh_url": "git@github.com:UWARG/alpha.git",
-    "html_url": "https://github.com/UWARG/alpha",
-    "archived": false,
-    "updated_at": "2025-01-01T00:00:00Z"
-  }
-]
-"""
-
-    def fake_urlopen(request, timeout):
-        assert request.full_url == (
-            "https://api.github.com/orgs/UWARG/repos?per_page=100&page=1"
-        )
-        assert timeout == 10
-        return FakeResponse()
-
-    monkeypatch.setattr("github_adapter.subprocess.run", fake_run)
-    monkeypatch.setattr("github_adapter.urllib.request.urlopen", fake_urlopen)
-
-    repositories = GitHubAdapter.list_org_repositories("UWARG")
-
-    assert [repository.name for repository in repositories] == ["alpha"]
-    assert repositories[0].ssh_url == "git@github.com:UWARG/alpha.git"
-
-
-def test_reports_both_errors_when_gh_and_api_fail(monkeypatch) -> None:
-    def fake_run(*args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args[0],
-            returncode=1,
-            stdout="",
-            stderr="not authenticated",
-        )
-
-    def fake_urlopen(request, timeout):
-        raise urllib.error.URLError("offline")
-
-    monkeypatch.setattr("github_adapter.subprocess.run", fake_run)
-    monkeypatch.setattr("github_adapter.urllib.request.urlopen", fake_urlopen)
-
-    try:
-        GitHubAdapter.list_org_repositories("UWARG")
-    except Exception as error:
-        message = str(error)
-    else:
-        raise AssertionError("Expected repository listing to fail.")
-
-    assert "gh CLI" in message
-    assert "not authenticated" in message
-    assert "offline" in message

@@ -9,7 +9,6 @@ build = "uv build"
 test = "uv run --extra dev pytest"
 run = "uv run warg"
 lint = "uv run --extra dev ruff check ."
-format = "uv run --extra dev ruff format ."
 
 [ci]
 pr = ["lint", "test"]

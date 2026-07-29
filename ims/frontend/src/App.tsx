@@ -1,54 +1,122 @@
-// Grid (lg):
-//   row 1:  Camera (5)   Target (4)    Attitude (3)
-//   row 2:  Connection (4)        Script (8)
-//   row 3:  Log (12)
+import { useState } from 'react'
+import reactLogo from './assets/react.svg'
+import viteLogo from './assets/vite.svg'
+import heroImg from './assets/hero.png'
+import './App.css'
 
-import AttitudeWidget from './widgets/AttitudeWidget';
-import CameraWidget from './widgets/CameraWidget';
-import ConnectionWidget from './widgets/ConnectionWidget';
-import ScriptWidget from './widgets/ScriptWidget';
-import TargetWidget from './widgets/TargetWidget';
-import LogWidget from './widgets/LogWidget';
-import HeaderStatus from './widgets/Header';
+function App() {
+  const [count, setCount] = useState(0)
 
-export default function App() {
   return (
-    <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
-    <header className="shrink-0 border-b border-edge bg-card">
-          <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3">
-            <span className="font-mono text-lg font-bold tracking-tight">IMS</span>
-            <span className="widget-label">Ground Station</span>
-            <div className="ml-auto">
-              <HeaderStatus />
-            </div>
-          </div>
-        </header>
+    <>
+      <section id="center">
+        <div className="hero">
+          <img src={heroImg} className="base" width="170" height="179" alt="" />
+          <img src={reactLogo} className="framework" alt="React logo" />
+          <img src={viteLogo} className="vite" alt="Vite logo" />
+        </div>
+        <div>
+          <h1>Get started</h1>
+          <p>
+            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+          </p>
+        </div>
+        <button
+          type="button"
+          className="counter"
+          onClick={() => setCount((count) => count + 1)}
+        >
+          Count is {count}
+        </button>
+      </section>
 
+      <div className="ticks"></div>
 
-      <main
-        className="mx-auto grid w-full max-w-[1400px] grid-cols-12 gap-4 px-5 py-4
-                   lg:min-h-0 lg:flex-1 lg:overflow-y-auto
-                   lg:[grid-template-rows:minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
-      >
-        <div className="col-span-12 h-[340px] min-h-0 lg:col-span-5 lg:h-auto">
-          <CameraWidget />
+      <section id="next-steps">
+        <div id="docs">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#documentation-icon"></use>
+          </svg>
+          <h2>Documentation</h2>
+          <p>Your questions, answered</p>
+          <ul>
+            <li>
+              <a href="https://vite.dev/" target="_blank">
+                <img className="logo" src={viteLogo} alt="" />
+                Explore Vite
+              </a>
+            </li>
+            <li>
+              <a href="https://react.dev/" target="_blank">
+                <img className="button-icon" src={reactLogo} alt="" />
+                Learn more
+              </a>
+            </li>
+          </ul>
         </div>
-        <div className="col-span-12 h-[340px] min-h-0 md:col-span-7 lg:col-span-4 lg:h-auto">
-          <TargetWidget />
+        <div id="social">
+          <svg className="icon" role="presentation" aria-hidden="true">
+            <use href="/icons.svg#social-icon"></use>
+          </svg>
+          <h2>Connect with us</h2>
+          <p>Join the Vite community</p>
+          <ul>
+            <li>
+              <a href="https://github.com/vitejs/vite" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#github-icon"></use>
+                </svg>
+                GitHub
+              </a>
+            </li>
+            <li>
+              <a href="https://chat.vite.dev/" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#discord-icon"></use>
+                </svg>
+                Discord
+              </a>
+            </li>
+            <li>
+              <a href="https://x.com/vite_js" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#x-icon"></use>
+                </svg>
+                X.com
+              </a>
+            </li>
+            <li>
+              <a href="https://bsky.app/profile/vite.dev" target="_blank">
+                <svg
+                  className="button-icon"
+                  role="presentation"
+                  aria-hidden="true"
+                >
+                  <use href="/icons.svg#bluesky-icon"></use>
+                </svg>
+                Bluesky
+              </a>
+            </li>
+          </ul>
         </div>
-        <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
-          <AttitudeWidget />
-        </div>
-        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-4 lg:h-auto">
-          <ConnectionWidget />
-        </div>
-        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-8 lg:h-auto">
-          <ScriptWidget />
-        </div>
-        <div className="col-span-12 h-[220px] min-h-0 lg:h-auto">
-          <LogWidget />
-        </div>
-      </main>
-    </div>
-  );
+      </section>
+
+      <div className="ticks"></div>
+      <section id="spacer"></section>
+    </>
+  )
 }
+
+export default App

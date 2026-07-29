@@ -17,7 +17,8 @@ class Iris:
     """Iris quadcopter"""
 
     def __init__(self):
-        state.robot_id = p.loadURDF("hoop.urdf", [0, 0, 0.2])
+        iris_path = os.path.join(state.dir_path, "iris/iris.urdf")
+        state.robot_id = p.loadURDF(iris_path, [0, 0, 0.2])
 
         self.motor_indices = [1, 2, 3, 4]
         self.motor_dir = [1, 1, -1, -1]
