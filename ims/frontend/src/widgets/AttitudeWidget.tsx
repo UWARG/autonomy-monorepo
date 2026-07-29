@@ -139,12 +139,8 @@ export default function AttitudeWidget() {
       messageType: 'geometry_msgs/PoseStamped',
     });
 
-    const onPose = (message: PoseStamped) => {
-      const { x, y, z, w } = message.pose.orientation;
-      const { roll, pitch, yaw } = quaternionToEuler({ w, x, y, z });
+    const onPose = () => {
       
-      /* Unsure of what to put in roll, pitch, yaw speeds */
-      setAttitude({ roll, pitch, yaw, rollspeed: 1, pitchspeed: 1, yawspeed: 1});
     }
 
     poseTopic.subscribe(onPose);
