@@ -10,12 +10,16 @@ The simulation is split across processes:
 
 | Process | Where it runs | What it does |
 |---|---|---|
-| PyBullet sim (`main.py`) | Docker container | Physics engine, camera & range-finder simulation, Rerun logging |
+| PyBullet sim (`main.py`) | Docker container | Physics engine, camera & range-finder simulation, Rerun gRPC server |
 | ArduPilot SITL (`sim_vehicle.py`) | Docker container | Flight controller, MAVLink on TCP port 5761 |
-| Rerun Viewer (`uv run rerun`) | Host | Displays logged sensor data and drone pose |
+| Rerun Viewer (host) | Host | Connects to the container's Rerun server and displays sensor data / drone pose |
 | `rerun_airside.py` | Host | Drives the mission via MAVLink |
 
-Sensor data is simulated in the container and logged to Rerun over gRPC via `host.docker.internal`. UDP ports are still used internally:
+The container hosts the Rerun stream itself (`rr.serve_grpc`) on port **9877** and the
+viewer connects *into* it through the published port. Don't rely on the container dialing
+out to `host.docker.internal`: with docker running natively inside WSL, `host-gateway`
+resolves to the WSL VM rather than Windows, so a viewer on Windows never receives data.
+UDP ports are still used internally:
 
 - Camera frames: ports **6000** (downward) and **6002** (forward)
 - Range finder: port **6004**
@@ -31,19 +35,21 @@ docker compose build
 
 ## Run
 
-terminal 1 — start the Rerun viewer:
-```bash
-uv run rerun
-```
-
-terminal 2 — start the container (headless PyBullet + ArduPilot SITL):
+terminal 1 — start the container (headless PyBullet + ArduPilot SITL):
 ```bash
 docker compose up
 ```
 
+terminal 2 — attach the Rerun viewer to the container's stream (start it after the
+container; data logged before the viewer connects is buffered, so nothing is lost):
+```bash
+warg run SITL-Plus rerun
+# equivalent to: uv run rerun rerun+http://127.0.0.1:9877/proxy
+```
+
 terminal 3 — mission controller:
 ```bash
-warg run sitl-plus rerun_airside
+warg run SITL-Plus rerun_airside
 ```
 
 ## Local SITL (no Docker)

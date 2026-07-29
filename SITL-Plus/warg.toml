@@ -1,4 +1,4 @@
-name = "sitl-plus"
+name = "SITL-Plus"
 description = "WARG's SITL archtecture"
 
 depends_on = []
@@ -8,6 +8,7 @@ setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
 run = "uv run python -m main"
+rerun = "uv run rerun rerun+http://127.0.0.1:9877/proxy"
 rerun_airside="uv run python tests/integration_tests/rerun_airside.py"
 lint = "uv run --extra dev ruff check ."
 

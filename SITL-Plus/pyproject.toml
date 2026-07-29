@@ -25,7 +25,7 @@ Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 dev = ["pytest>=8.0.0", "ruff>=0.8.0"]
 
 [project.scripts]
-sitl_plus = "main:main"
+SITL_Plus = "main:main"
 
 [build-system]
 requires = ["hatchling"]
