@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 
 from .connection import MavConnection
 
-
 class MavCommand(ABC):
     def __init__(self, connection: MavConnection) -> None:
         self.connection = connection
