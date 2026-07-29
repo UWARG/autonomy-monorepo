@@ -1,11 +1,12 @@
 from rclpy.node import Node
-from mavros_msgs.msg import Mavlink, RCIn
-import struct
+from mavros_msgs.msg import RCIn, Mavlink
 import rclpy
+from rclpy.qos import qos_profile_sensor_data
+
 class RCNode(Node):
     def __init__(self):
         super().__init__("rc_node")
-        self.rc_subscriber = self.create_subscription(Mavlink, "/uas1/mavlink_source", self.rc_callback, 10)
+        self.rc_subscriber = self.create_subscription(Mavlink, "/uas1/mavlink_source", self.rc_callback, qos_profile_sensor_data)
         self.rc_publisher = self.create_publisher(RCIn, "/rc", 10)
 
     def rc_callback(self, msg: Mavlink):

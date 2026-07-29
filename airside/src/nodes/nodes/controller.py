@@ -44,7 +44,7 @@ class Controller(Node):
     def __init__(self):
         super().__init__('controller')
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
-        self.velocity_publisher=self.create_publisher(PositionTarget, "/setpoint_raw/local", 10)
+        self.velocity_publisher=self.create_publisher(PositionTarget, "/mavros/setpoint_raw/local", 10)
         self.create_timer(1/HZ, self.publish_velocity)
         self.get_logger().info('Controller node initialized')
         self.pi_x=PI(0.01,0.1,10,10)
