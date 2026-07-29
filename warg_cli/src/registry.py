@@ -14,11 +14,18 @@ from models import Project, ProjectEntry
 
 
 def find_repo_root(start: Path | None = None) -> Path:
+    root = find_repo_root_or_none(start)
+    if root is None:
+        raise ManifestError("Could not find a Git repository root.")
+    return root
+
+
+def find_repo_root_or_none(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     for path in (current, *current.parents):
         if (path / ".git").exists():
             return path
-    raise ManifestError("Could not find a Git repository root.")
+    return None
 
 
 class Registry:
@@ -130,8 +137,24 @@ class Registry:
         return order
 
     def sparse_paths_for(self, name: str) -> list[str]:
-        project_paths = [project.relative_path for project in self.dependency_order(name)]
+        project_paths = [
+            project.relative_path for project in self.dependency_order(name)
+        ]
         return sorted(project_paths)
+
+
+def expand_dependents(registry: Registry, project_names: set[str]) -> set[str]:
+    affected = set(project_names)
+    changed = True
+    while changed:
+        changed = False
+        for project in registry.projects.values():
+            if project.name in affected:
+                continue
+            if any(dependency in affected for dependency in project.depends_on):
+                affected.add(project.name)
+                changed = True
+    return affected
 
 
 def load_project_manifest(manifest: Path) -> Project:
