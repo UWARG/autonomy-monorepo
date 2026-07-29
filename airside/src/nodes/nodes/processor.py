@@ -186,8 +186,8 @@ class Processor(Node):
             self.image=None
             if rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
-                tensor=torch.from_numpy(gray).float().unsqueeze(0).unsqueeze(0).to(self.xfeat.dev)
-                with torch.no_grad():
+                tensor=torch.from_numpy(gray).to(device=self.xfeat.dev, dtype=torch.float32).unsqueeze(0).unsqueeze(0)/255.0
+                with torch.inference_mode():
                     outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
                 kp=outputs["keypoints"]
                 des=outputs["descriptors"]
@@ -229,24 +229,24 @@ class Processor(Node):
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
             gray=self.undistort_image(image)
-            tensor=torch.from_numpy(gray).float().unsqueeze(0).unsqueeze(0).to(self.xfeat.dev)
-            with torch.no_grad():
+            tensor=torch.from_numpy(gray).to(device=self.xfeat.dev, dtype=torch.float32).unsqueeze(0).unsqueeze(0)/255.0
+            with torch.inference_mode():
                 outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
-            landing_kp=outputs["keypoints"]
-            landing_des=outputs["descriptors"]
-            if len(landing_kp)<=0 or len(landing_des)<=0 or len(kp_takeoff)<=0 or len(des_takeoff)<=0:
-                self.publish_invalid_error(align_before_descent)
-                return
-            landing_idx,takeoff_idx=self.xfeat.match(landing_des, des_takeoff,min_cossim=0.7)
-            if len(landing_idx)<50 or len(takeoff_idx)<50:
-                self.publish_invalid_error(align_before_descent)
-                return
-            m0,m1=landing_des[landing_idx],des_takeoff[takeoff_idx] #only copy the descriptors for the matches
-            cosim=(m0 * m1).sum(dim=1) #cosine similarity instead of hamming distance
-            order=torch.argsort(cosim,descending=True)
-            selection=order[:50]
-            land_pts=landing_kp[landing_idx[selection]].cpu().numpy()
-            takeoff_pts=kp_takeoff[takeoff_idx[selection]].cpu().numpy()
+                landing_kp=outputs["keypoints"]
+                landing_des=outputs["descriptors"]
+                if len(landing_kp)<=0 or len(landing_des)<=0 or len(kp_takeoff)<=0 or len(des_takeoff)<=0:
+                    self.publish_invalid_error(align_before_descent)
+                    return
+                landing_idx,takeoff_idx=self.xfeat.match(landing_des, des_takeoff,min_cossim=0.7)
+                if len(landing_idx)<50 or len(takeoff_idx)<50:
+                    self.publish_invalid_error(align_before_descent)
+                    return
+                m0,m1=landing_des[landing_idx],des_takeoff[takeoff_idx] #only copy the descriptors for the matches
+                cosim=(m0 * m1).sum(dim=1) #cosine similarity instead of hamming distance
+                order=torch.argsort(cosim,descending=True)
+                selection=order[:50]
+                land_pts=landing_kp[landing_idx[selection]].cpu().numpy()
+                takeoff_pts=kp_takeoff[takeoff_idx[selection]].cpu().numpy()
             takeoff_3d_points=[]
             landing_3d_points=[]
             for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(land_pts,takeoff_pts):
