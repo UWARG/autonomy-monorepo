@@ -34,9 +34,6 @@ TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
 MISSED_FRAMES_ALLOWED = 5
 TELEM_PORT = 4000
-# Port the in-container Rerun gRPC server listens on (published by docker-compose).
-# Deliberately not 9876 so it cannot clash with a server hosted by the host-side viewer.
-RERUN_GRPC_PORT = 9877
 HOST = os.getenv("SENSOR_HOST")
 if HOST is None:
     raise ValueError("SENSOR_HOST is not set")
@@ -65,17 +62,7 @@ last_velocity = None  # pylint: disable=invalid-name
 vehicle = None
 
 rr.init("sitl-plus")
-# Serve instead of connecting out: the viewer runs on the host and connects in through
-# the published port, so this works with Docker Desktop, native docker and docker in WSL
-# (where host.docker.internal/host-gateway resolves to the WSL VM, not Windows).
-RERUN_URI = rr.serve_grpc(grpc_port=RERUN_GRPC_PORT, server_memory_limit="256MB")
-logging.info("Rerun gRPC server ready at %s", RERUN_URI)
-logging.info(
-    "Connect the host viewer with: uv run rerun rerun+http://127.0.0.1:%d/proxy",
-    RERUN_GRPC_PORT,
-)
-cameras = []
-range_finders = []
+rr.connect_grpc("rerun+http://host.docker.internal:9876/proxy")
 
 
 def vector_to_AP(vec):  # pylint: disable=invalid-name

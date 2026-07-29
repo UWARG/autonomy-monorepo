@@ -7,7 +7,6 @@ services:
     ports:
       - 5761:5761
       - 14550:14550
-      - 9877:9877 # Rerun gRPC server (main.py) - host viewer connects to this
     environment:
       - DEBIAN_FRONTEND=noninteractive
       - SENSOR_HOST=host.docker.internal #points to the host machine so run airside on host machine eg powershell terminal instead of wsl 
