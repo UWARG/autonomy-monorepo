@@ -14,5 +14,3 @@ services:
       - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    stdin_open: true
-    tty: true

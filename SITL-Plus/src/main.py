@@ -32,6 +32,7 @@ logging.basicConfig(level=logging.INFO)
 RATE_HZ = 800
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
+STREAM_RATE=50
 MISSED_FRAMES_ALLOWED = 5
 TELEM_PORT = 4000
 HOST = os.getenv("SENSOR_HOST")
@@ -293,12 +294,11 @@ def main():
             -quaternion[2],
             quaternion[3],
         ]
-        rr.log(
-            "drone",
-            rr.Transform3D(
-                translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)
-            ),
-        )
+        if frame_count % STREAM_RATE == 0:
+            rr.log("drone", rr.Transform3D(
+                translation=new_position,
+                rotation=rr.Quaternion(xyzw=new_quaternion),
+            ))
         position = struct.pack(
             "ffffff", pos[0], pos[1], pos[2], euler[0], euler[1], euler[2]
         )

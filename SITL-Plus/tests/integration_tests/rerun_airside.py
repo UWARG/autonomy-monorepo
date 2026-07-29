@@ -161,7 +161,7 @@ def main():
         target_system=conn.target_system,
         target_component=conn.target_component,
         param_id=b"SIM_RATE_HZ",
-        param_value=800,
+        param_value=400,
         param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32,
     )
     while continue_flag:

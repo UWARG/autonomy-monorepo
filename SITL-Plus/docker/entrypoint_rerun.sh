@@ -11,7 +11,7 @@ echo "[entrypoint] Logs: ${LOG_DIR}/sim_vehicle.log (MAVProxy/SITL), ${LOG_DIR}/
 
 echo "[entrypoint] Starting PyBullet physics (main.py)..."
 cd "$SITL_PLUS_DIR"
-uv run python3 main.py > "${LOG_DIR}/pybullet.log" 2>&1 &
+uv run python3 main.py > "${LOG_DIR}/pybullet.log" 2>&1 < /dev/null &
 MAIN_PID=$!
 
 
@@ -28,16 +28,21 @@ DIR=270
 
 source /home/devuser/venv-ardupilot/bin/activate
 # --out must come before --mavproxy-args (otherwise sim_vehicle can glue --out into mavproxy args)
+# --non-interactive keeps MAVProxy off stdin. Backgrounded here with no TTY attached, its
+# input loop hits EOFError immediately, sets status.exit, unloads every module, and
+# sim_vehicle.py then kills ArduPilot -- leaving PyBullet running with no SITL input.
 python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 -f quad --model JSON:127.0.0.1 -w \
 --out tcpin:0.0.0.0:5761 \
---mavproxy-args "--moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
+--mavproxy-args "--non-interactive --moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
 --custom-location=${LAT},${LON},${ALT},${DIR} \
-2>&1 > "${LOG_DIR}/sim_vehicle.log" &
+> "${LOG_DIR}/sim_vehicle.log" 2>&1 < /dev/null &
 SITL_PID=$!
 
 
-wait -n $MAIN_PID
+# Wait on both PIDs: if SITL dies alone, PyBullet keeps stepping with no input and the
+# Rerun viewer silently freezes on the last logged pose instead of the container exiting.
+wait -n "$MAIN_PID" "$SITL_PID"
 EXIT_CODE=$?
 
 echo "[entrypoint] Stopping processes..."
