@@ -1,6 +1,5 @@
-from __future__ import annotations
-from abstract_camera import AbstractCamera
-from frame import CameraFrame
+from .abstract_camera import AbstractCamera
+from .frame import CameraFrame
 
 
 class OakD(AbstractCamera):
