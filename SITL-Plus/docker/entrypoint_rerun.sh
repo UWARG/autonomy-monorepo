@@ -11,7 +11,7 @@ echo "[entrypoint] Logs: ${LOG_DIR}/sim_vehicle.log (MAVProxy/SITL), ${LOG_DIR}/
 
 echo "[entrypoint] Starting PyBullet physics (main.py)..."
 cd "$SITL_PLUS_DIR"
-uv run python3 main.py --nogui >>"${LOG_DIR}/pybullet.log" 2>&1 &
+uv run python3 main.py > "${LOG_DIR}/pybullet.log" 2>&1 &
 MAIN_PID=$!
 
 
@@ -33,7 +33,7 @@ python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 --out tcpin:0.0.0.0:5761 \
 --mavproxy-args "--moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
 --custom-location=${LAT},${LON},${ALT},${DIR} \
-2>&1 | tee -a "${LOG_DIR}/sim_vehicle.log" &
+2>&1 > "${LOG_DIR}/sim_vehicle.log" &
 SITL_PID=$!
 
 
