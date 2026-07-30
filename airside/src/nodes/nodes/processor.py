@@ -25,12 +25,13 @@ from std_msgs.msg import Float64
 
 from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
-import math
 from accelerated_features.modules import xfeat
 import torch
 
 
 ACCEPTABLE_OFFSET=0.05
+FEATURE_METHOD_ORB = "orb"
+FEATURE_METHOD_XFEAT = "xfeat"
 
 
 class Processor(Node):
@@ -60,16 +61,19 @@ class Processor(Node):
         self._bridge=CvBridge()
         self.get_logger().info("init: camera_intrinsics")
         self.camera_intrinsics()
-        self._use_cuda = False
-        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        self.get_logger().info("init: CUDA BFMatcher")
-        if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
-            self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
-            self._use_cuda = True
-            self.get_logger().info("Using CUDA BFMatcher")
-        else:
-            self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
-        self.get_logger().info("Processor initialized")
+        self.declare_parameter("feature_method", FEATURE_METHOD_ORB)
+        self._feature_method = (
+            self.get_parameter("feature_method")
+            .get_parameter_value()
+            .string_value.lower()
+        )
+        if self._feature_method not in (FEATURE_METHOD_ORB, FEATURE_METHOD_XFEAT):
+            self.get_logger().warn(
+                f"Unknown feature_method '{self._feature_method}', defaulting to orb"
+            )
+            self._feature_method = FEATURE_METHOD_ORB
+        self._init_feature_extractor()
+        self.get_logger().info(f"Processor initialized (feature_method={self._feature_method})")
         self.roll=None
         self.pitch=None
         self.takeoff_goal_handle=None
@@ -81,9 +85,97 @@ class Processor(Node):
         self.last_landing_altitude=0.25
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
-        self.xfeat=xfeat.XFeat()
-        with torch.inference_mode(): # for cuda kernel autotuning warmup
-            self.xfeat.detectAndCompute(torch.zeros(1, 1, 480, 640, device=self.xfeat.dev), top_k=10)
+
+    def _init_feature_extractor(self) -> None:
+        if self._feature_method == FEATURE_METHOD_ORB:
+            self._use_cuda = False
+            self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+            self.get_logger().info("init: CUDA BFMatcher")
+            if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
+                self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
+                self._use_cuda = True
+                self.get_logger().info("Using CUDA BFMatcher")
+            else:
+                self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
+            self.orb = cv2.ORB_create(nfeatures=1000)
+            return
+
+        self.xfeat = xfeat.XFeat()
+        with torch.inference_mode():  # for cuda kernel autotuning warmup
+            self.xfeat.detectAndCompute(
+                torch.zeros(1, 1, 480, 640, device=self.xfeat.dev), top_k=10
+            )
+
+    def detect_and_compute(self, gray: np.ndarray):
+        if self._feature_method == FEATURE_METHOD_ORB:
+            return self._detect_and_compute_orb(gray)
+        return self._detect_and_compute_xfeat(gray)
+
+    def _detect_and_compute_orb(self, gray: np.ndarray):
+        kp, des = self.orb.detectAndCompute(gray, None)
+        if not kp or des is None:
+            return None, None
+        kp_pts = np.array([keypoint.pt for keypoint in kp])
+        return kp_pts, des
+
+    def _detect_and_compute_xfeat(self, gray: np.ndarray):
+        tensor = (
+            torch.from_numpy(gray)
+            .to(device=self.xfeat.dev, dtype=torch.float32)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            / 255.0
+        )
+        with torch.inference_mode():
+            outputs = self.xfeat.detectAndCompute(tensor, top_k=1000)[0]
+        kp = outputs["keypoints"]
+        des = outputs["descriptors"]
+        if len(kp) <= 0 or len(des) <= 0:
+            return None, None
+        return kp, des
+
+    def match_feature_points(
+        self,
+        landing_kp,
+        landing_des,
+        takeoff_kp,
+        takeoff_des,
+    ):
+        if self._feature_method == FEATURE_METHOD_ORB:
+            return self._match_orb(landing_kp, landing_des, takeoff_kp, takeoff_des)
+        return self._match_xfeat(landing_kp, landing_des, takeoff_kp, takeoff_des)
+
+    def _match_orb(self, landing_kp, landing_des, takeoff_kp, takeoff_des):
+        if self._use_cuda:
+            gpu_landing_des = cv2.cuda.GpuMat()
+            gpu_takeoff_des = cv2.cuda.GpuMat()
+            gpu_landing_des.upload(landing_des)
+            gpu_takeoff_des.upload(takeoff_des)
+            matches = self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+        else:
+            matches = self.BFMatcher.match(landing_des, takeoff_des)
+        matches = sorted(matches, key=lambda match: match.distance)
+        if len(matches) < 50:
+            return None, None
+        good_matches = matches[:50]
+        land_pts = np.array([landing_kp[match.queryIdx] for match in good_matches])
+        takeoff_pts = np.array([takeoff_kp[match.trainIdx] for match in good_matches])
+        return land_pts, takeoff_pts
+
+    def _match_xfeat(self, landing_kp, landing_des, takeoff_kp, takeoff_des):
+        landing_idx, takeoff_idx = self.xfeat.match(
+            landing_des, takeoff_des, min_cossim=0.7
+        )
+        if len(landing_idx) < 50 or len(takeoff_idx) < 50:
+            return None, None
+        matched_landing_des = landing_des[landing_idx]
+        matched_takeoff_des = takeoff_des[takeoff_idx]
+        cosim = (matched_landing_des * matched_takeoff_des).sum(dim=1)
+        order = torch.argsort(cosim, descending=True)
+        selection = order[:50]
+        land_pts = landing_kp[landing_idx[selection]].cpu().numpy()
+        takeoff_pts = takeoff_kp[takeoff_idx[selection]].cpu().numpy()
+        return land_pts, takeoff_pts
 
     def publish_invalid_error(self, align_before_descent: bool=False):
         self.error_publisher.publish(Error(
@@ -202,12 +294,8 @@ class Processor(Node):
             self.image=None
             if rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
-                tensor=torch.from_numpy(gray).to(device=self.xfeat.dev, dtype=torch.float32).unsqueeze(0).unsqueeze(0)/255.0
-                with torch.inference_mode():
-                    outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
-                kp=outputs["keypoints"]
-                des=outputs["descriptors"]
-                if len(kp)<=0 or len(des)<=0:
+                kp, des = self.detect_and_compute(gray)
+                if kp is None or des is None:
                     return
                 self.imu_dict[rel_alt]=[kp,des,roll,pitch]
                 self.last_altitude=rel_alt
@@ -245,24 +333,19 @@ class Processor(Node):
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
             gray=self.undistort_image(image)
-            tensor=torch.from_numpy(gray).to(device=self.xfeat.dev, dtype=torch.float32).unsqueeze(0).unsqueeze(0)/255.0
-            with torch.inference_mode():
-                outputs=self.xfeat.detectAndCompute(tensor,top_k=1000)[0]
-                landing_kp=outputs["keypoints"]
-                landing_des=outputs["descriptors"]
-                if len(landing_kp)<=0 or len(landing_des)<=0 or len(kp_takeoff)<=0 or len(des_takeoff)<=0:
-                    self.publish_invalid_error(align_before_descent)
-                    return
-                landing_idx,takeoff_idx=self.xfeat.match(landing_des, des_takeoff,min_cossim=0.7)
-                if len(landing_idx)<50 or len(takeoff_idx)<50:
-                    self.publish_invalid_error(align_before_descent)
-                    return
-                m0,m1=landing_des[landing_idx],des_takeoff[takeoff_idx] #only copy the descriptors for the matches
-                cosim=(m0 * m1).sum(dim=1) #cosine similarity instead of hamming distance
-                order=torch.argsort(cosim,descending=True)
-                selection=order[:50]
-                land_pts=landing_kp[landing_idx[selection]].cpu().numpy()
-                takeoff_pts=kp_takeoff[takeoff_idx[selection]].cpu().numpy()
+            landing_kp, landing_des = self.detect_and_compute(gray)
+            if landing_kp is None or landing_des is None:
+                self.publish_invalid_error(align_before_descent)
+                return
+            if len(kp_takeoff) <= 0 or len(des_takeoff) <= 0:
+                self.publish_invalid_error(align_before_descent)
+                return
+            land_pts, takeoff_pts = self.match_feature_points(
+                landing_kp, landing_des, kp_takeoff, des_takeoff
+            )
+            if land_pts is None or takeoff_pts is None:
+                self.publish_invalid_error(align_before_descent)
+                return
             takeoff_3d_points=[]
             landing_3d_points=[]
             for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(land_pts,takeoff_pts):
