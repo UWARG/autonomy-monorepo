@@ -33,23 +33,15 @@ ALT=584.0805053710938
 DIR=270
 
 source /home/devuser/venv-ardupilot/bin/activate
-# --out must come before --mavproxy-args (otherwise sim_vehicle can glue --out into mavproxy args)
-#
-# Do NOT pass --non-interactive and do NOT redirect SITL stdin to /dev/null.
-# With docker-compose stdin_open+tty and an attached `docker compose up`, MAVProxy
-# inherits a live TTY, blocks on input instead of EOFError, and keeps ArduPilot alive.
-#
-# Unset DISPLAY so run_in_terminal_window.sh logs to a file instead of launching
-# xterm (which can stall lockstep if nothing reads the pty).
 env -u DISPLAY python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 -f quad --model JSON:127.0.0.1 -w \
 --param SIM_RATE_HZ=800 \
 --param FRAME_CLASS=1 \
 --param FRAME_TYPE=1 \
 --out tcpin:0.0.0.0:5761 \
---mavproxy-args "--moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
+--mavproxy-args "--non-interactive --moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
 --custom-location=${LAT},${LON},${ALT},${DIR} \
-2>&1 | tee -a "${LOG_DIR}/sim_vehicle.log" &
+> "${LOG_DIR}/sim_vehicle.log" 2>&1 < /dev/null &
 SITL_PID=$!
 
 

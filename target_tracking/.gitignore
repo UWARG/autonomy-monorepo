@@ -1,0 +1,26 @@
+# IDEs
+.idea/
+.vscode/
+*.DS_Store
+
+# Python
+__pycache__/
+venv/
+venv_win/
+
+# Logging
+logs/
+
+# Pytorch and Ultralytics
+*.pt
+*.pth
+
+# Model blobs (large binaries, download via scripts/download_model.py)
+models/
+
+# Cache
+.cache/
+.depthai_cached_models/
+
+# Context/prompt files
+*.txt

@@ -29,12 +29,10 @@ from range_finder import Range_Finder
 
 logging.basicConfig(level=logging.INFO)
 
-parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
-args = parser.parse_args()
-
 RATE_HZ = int(os.getenv("SIM_RATE_HZ", "800"))
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
+STREAM_RATE=50
 MISSED_FRAMES_ALLOWED = 5
 TELEM_PORT = 4000
 HOST = os.getenv("SENSOR_HOST")
@@ -64,7 +62,7 @@ time_now = 0.0  # pylint: disable=invalid-name
 last_velocity = None  # pylint: disable=invalid-name
 vehicle = None
 
-rr.init("sitl-plus")
+rr.init("SITL-Plus")
 rr.connect_grpc("rerun+http://host.docker.internal:9876/proxy")
 cameras = []
 range_finders = []
@@ -290,12 +288,11 @@ def main():
             -quaternion[2],
             quaternion[3],
         ]
-        rr.log(
-            "drone",
-            rr.Transform3D(
-                translation=new_position, rotation=rr.Quaternion(xyzw=new_quaternion)
-            ),
-        )
+        if frame_count % STREAM_RATE == 0:
+            rr.log("drone", rr.Transform3D(
+                translation=new_position,
+                rotation=rr.Quaternion(xyzw=new_quaternion),
+            ))
         position = struct.pack(
             "ffffff", pos[0], pos[1], pos[2], euler[0], euler[1], euler[2]
         )
