@@ -35,8 +35,9 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
+COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install /monorepo/camera /monorepo/utils /monorepo/perception
 
 COPY airside/src/ src/
 

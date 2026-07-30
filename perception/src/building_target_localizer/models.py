@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 import numpy as np
+from utils.src.types import Plane
+
 
 class LocalizationStatus(IntEnum):
     """Per-target localization outcome."""
@@ -51,9 +53,21 @@ class Relation(IntEnum):
 class PlaneInput:
     """Plane equation and uncertainty in mission FRD coordinates."""
     id: str
-    normal: np.ndarray
-    offset: float
+    plane: Plane
     covariance: np.ndarray
+
+    @property
+    def normal(self) -> np.ndarray:
+        """Return the shared plane normal as a NumPy vector."""
+        return np.array(
+            [self.plane.normal.x, self.plane.normal.y, self.plane.normal.z],
+            dtype=float,
+        )
+
+    @property
+    def offset(self) -> float:
+        """Return the shared plane offset."""
+        return float(self.plane.offset)
 
 
 @dataclass(frozen=True)

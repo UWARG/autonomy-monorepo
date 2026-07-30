@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+from utils.src.types import Plane, Vector3D
 
 from building_target_localizer.models import (
     BuildingWingInput,
@@ -22,8 +23,14 @@ def plane(
     """Create a plane with zero covariance unless one is supplied."""
     return PlaneInput(
         id=plane_id,
-        normal=np.array(normal, dtype=float),
-        offset=offset,
+        plane=Plane(
+            normal=Vector3D(
+                x=float(normal[0]),
+                y=float(normal[1]),
+                z=float(normal[2]),
+            ),
+            offset=offset,
+        ),
         covariance=(
             np.zeros((4, 4), dtype=float)
             if covariance is None

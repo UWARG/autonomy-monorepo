@@ -1,21 +1,18 @@
-"""ROS 2 Adapter"""
+"""ROS 2 adapter for building-relative target descriptions."""
+
 from __future__ import annotations
 
 import numpy as np
 import rclpy
 from airside_interfaces.msg import BuildingWing as BuildingWingMsg
-from airside_interfaces.msg import LocalizationResult as LocalizationResultMsg
-from airside_interfaces.msg import LocalizedTarget as LocalizedTargetMsg
 from airside_interfaces.msg import Plane as PlaneMsg
 from airside_interfaces.msg import ProcessedMap as ProcessedMapMsg
-from airside_interfaces.msg import ReferenceMeasurement as ReferenceMeasurementMsg
 from airside_interfaces.msg import SpatialTarget as SpatialTargetMsg
-from geometry_msgs.msg import Point
-from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-
-from .localizer import BuildingTargetLocalizer
-from .models import (
+from building_target_localizer.localizer import (
+    BuildingTargetLocalizer,
+    format_descriptions,
+)
+from building_target_localizer.models import (
     BuildingWingInput,
     LocalizerConfig,
     PlaneInput,
@@ -23,16 +20,26 @@ from .models import (
     SpatialTargetInput,
     WingBoundaryInput,
 )
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
+from utils.src.types import Plane, Vector3D
+
 
 def _plane_from_msg(message: PlaneMsg) -> PlaneInput:
     return PlaneInput(
         id=message.id,
-        normal=np.array(
-            [message.normal.x, message.normal.y, message.normal.z], dtype=float
+        plane=Plane(
+            normal=Vector3D(
+                x=float(message.normal.x),
+                y=float(message.normal.y),
+                z=float(message.normal.z),
+            ),
+            offset=float(message.offset),
         ),
-        offset=float(message.offset),
         covariance=np.asarray(message.covariance, dtype=float).reshape(4, 4),
     )
+
 
 def _wing_from_msg(message: BuildingWingMsg) -> BuildingWingInput:
     boundaries = tuple(
@@ -50,6 +57,7 @@ def _wing_from_msg(message: BuildingWingMsg) -> BuildingWingInput:
         boundaries=(boundaries[0], boundaries[1]),
     )
 
+
 def _target_from_msg(message: SpatialTargetMsg) -> SpatialTargetInput:
     return SpatialTargetInput(
         id=message.id,
@@ -59,6 +67,7 @@ def _target_from_msg(message: SpatialTargetMsg) -> SpatialTargetInput:
         ),
         covariance=np.asarray(message.covariance, dtype=float).reshape(3, 3),
     )
+
 
 def processed_map_from_msg(message: ProcessedMapMsg) -> ProcessedMapInput:
     """Convert a ROS processed-map snapshot into the domain model."""
@@ -72,44 +81,13 @@ def processed_map_from_msg(message: ProcessedMapMsg) -> ProcessedMapInput:
         targets=tuple(_target_from_msg(target) for target in message.targets),
     )
 
-def _point_message(values: np.ndarray) -> Point:
-    message = Point()
-    message.x = float(values[0])
-    message.y = float(values[1])
-    message.z = float(values[2])
+
+def localization_result_to_msg(result) -> String:
+    """Convert successful target locations into one plain-text ROS message."""
+    message = String()
+    message.data = format_descriptions(result)
     return message
 
-def localization_result_to_msg(result, header) -> LocalizationResultMsg:
-    """Convert a domain localization batch into its ROS output message."""
-    message = LocalizationResultMsg()
-    message.header = header
-    message.map_valid = result.map_valid
-    message.map_error = result.map_error
-    for target in result.targets:
-        target_message = LocalizedTargetMsg()
-        target_message.target_id = target.target_id
-        target_message.colour = target.colour
-        target_message.status = int(target.status)
-        target_message.reason = target.reason
-        target_message.source_position = _point_message(target.source_position)
-        target_message.snapped_position = _point_message(target.snapped_position)
-        target_message.surface_id = target.surface_id
-        target_message.surface_type = int(target.surface_type)
-        target_message.anchor_id = target.anchor_id
-        target_message.anchor_type = int(target.anchor_type)
-        target_message.uncertainty_95_m = float(target.uncertainty_95_m)
-        target_message.description = target.description
-        for measurement in target.measurements:
-            measurement_message = ReferenceMeasurementMsg()
-            measurement_message.reference_id = measurement.reference_id
-            measurement_message.relation = int(measurement.relation)
-            measurement_message.distance_m = float(measurement.distance_m)
-            measurement_message.uncertainty_95_m = float(
-                measurement.uncertainty_95_m
-            )
-            target_message.measurements.append(measurement_message)
-        message.targets.append(target_message)
-    return message
 
 class BuildingTargetLocalizerNode(Node):
     """Consume processed maps and publish building-relative target descriptions."""
@@ -190,9 +168,7 @@ class BuildingTargetLocalizerNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self._publisher = self.create_publisher(
-            LocalizationResultMsg, self.OUTPUT_TOPIC, qos
-        )
+        self._publisher = self.create_publisher(String, self.OUTPUT_TOPIC, qos)
         self._subscription = self.create_subscription(
             ProcessedMapMsg, self.INPUT_TOPIC, self._on_processed_map, qos
         )
@@ -205,14 +181,19 @@ class BuildingTargetLocalizerNode(Node):
         try:
             snapshot = processed_map_from_msg(message)
             result = self._localizer.localize(snapshot)
-            output = localization_result_to_msg(result, message.header)
+            output = localization_result_to_msg(result)
         except (TypeError, ValueError) as error:
             self.get_logger().error(f"Processed-map conversion failed: {error}")
-            output = LocalizationResultMsg()
-            output.header = message.header
-            output.map_valid = False
-            output.map_error = str(error)
+            return
+        if not result.map_valid:
+            self.get_logger().error(f"Processed map is invalid: {result.map_error}")
+        for target in result.targets:
+            if not target.description:
+                self.get_logger().warning(
+                    f"Target '{target.target_id}' was not described: {target.reason}"
+                )
         self._publisher.publish(output)
+
 
 def main(args: list[str] | None = None) -> None:
     """Run the building target localizer node until ROS shuts down."""

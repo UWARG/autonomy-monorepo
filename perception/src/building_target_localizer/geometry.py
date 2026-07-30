@@ -9,6 +9,7 @@ import numpy as np
 from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.geometry.polygon import orient
 from shapely.ops import unary_union
+from utils.src.types import Plane, Vector3D
 
 from .models import (
     BuildingModel,
@@ -87,8 +88,14 @@ def normalize_plane(plane: PlaneInput, epsilon: float) -> PlaneInput:
     normalized_covariance = jacobian @ covariance @ jacobian.T
     return replace(
         plane,
-        normal=unit_normal,
-        offset=normalized_offset,
+        plane=Plane(
+            normal=Vector3D(
+                x=float(unit_normal[0]),
+                y=float(unit_normal[1]),
+                z=float(unit_normal[2]),
+            ),
+            offset=normalized_offset,
+        ),
         covariance=(normalized_covariance + normalized_covariance.T) / 2.0,
     )
 

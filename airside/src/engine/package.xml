@@ -9,7 +9,7 @@
 
   <buildtool_depend>ament_python</buildtool_depend>
 
-  <exec_depend>building_target_localizer</exec_depend>
+  <exec_depend>wrapper</exec_depend>
   <depend>rclpy</depend>
   <depend>ament_index_python</depend>
   <depend>mavros</depend>

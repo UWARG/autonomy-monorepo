@@ -6,7 +6,7 @@ readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["numpy>=1.24.0", "shapely>=1.7.0", "utils"]
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/perception"
@@ -21,7 +21,10 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", ".."]
+
+[tool.uv.sources]
+utils = { path = "../utils" }
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]

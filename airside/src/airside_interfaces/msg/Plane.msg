@@ -1,5 +1,6 @@
 # Plane equation n dot x + offset = 0 in the ProcessedMap frame.
 # The normal is assumed to be unit length and point out of the building.
+# The wrapper converts this transport message to utils.src.types.Plane.
 string id
 geometry_msgs/Vector3 normal
 float64 offset

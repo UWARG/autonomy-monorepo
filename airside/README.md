@@ -12,7 +12,6 @@ airside/
 │   └── airside_entrypoint.sh
 ├── src/
 │   ├── airside_interfaces/
-│   ├── building_target_localizer/
 │   ├── engine/
 │   └── wrapper/
 └── warg.toml
@@ -162,14 +161,14 @@ Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is
 
 ### Building-space target localizer
 
-The `building_target_localizer` node converts processed building planes and
-target points into structured, firefighter-readable locations. It is launched
-with the rest of the Airside stack.
+The `building_target_localizer` wrapper converts processed building planes and
+target points into firefighter-readable location descriptions. The non-ROS
+geometry and localization code lives in the top-level `perception` project.
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|
 | `/processed_map` | `airside_interfaces/ProcessedMap` | subscribe | Complete building geometry and target snapshot |
-| `/targets_located` | `airside_interfaces/LocalizationResult` | publish | Per-target status, semantic measurements, uncertainty, and description |
+| `/targets_located` | `std_msgs/String` | publish | Newline-separated final target descriptions |
 
 Both topics use reliable, transient-local, depth-one QoS. Input geometry must
 use `header.frame_id = "mission_frd"`, where +x is north/forward, +y is
@@ -182,11 +181,11 @@ connected wings, removes internal faces, and derives outer and inside corners.
 All wings share the supplied ground plane and building height. Disconnected
 wings and footprints containing holes are rejected at snapshot level.
 
-Targets that cannot be snapped safely or have ambiguous geometry remain in the
-output with a failure status and no authoritative description. Other targets
-in the same snapshot continue to be reported. Plane covariance is row-major for
+Targets that cannot be snapped safely or have ambiguous geometry are omitted
+from the description string and logged by the wrapper. Other targets in the
+same snapshot continue to be reported. Plane covariance is row-major for
 `[normal.x, normal.y, normal.z, offset]`; target covariance is row-major for
-`[x, y, z]`. The output reports the 95th-percentile propagated error.
+`[x, y, z]`. Each description includes the propagated 95th-percentile error.
 
 The default node parameters are:
 

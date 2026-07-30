@@ -5,7 +5,10 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from building_target_localizer.localizer import BuildingTargetLocalizer
+from building_target_localizer.localizer import (
+    BuildingTargetLocalizer,
+    format_descriptions,
+)
 from building_target_localizer.models import (
     LocalizationStatus,
     LocalizerConfig,
@@ -130,6 +133,7 @@ def test_partial_results_keep_valid_targets():
     assert result.map_valid
     assert result.targets[0].status is LocalizationStatus.OK
     assert result.targets[1].status is LocalizationStatus.INVALID_TARGET
+    assert format_descriptions(result) == result.targets[0].description
 
 
 def test_invalid_map_marks_every_target_map_invalid():

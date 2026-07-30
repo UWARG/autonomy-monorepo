@@ -6,10 +6,11 @@ from airside_interfaces.msg import WingBoundary
 
 from building_target_localizer.localizer import BuildingTargetLocalizer
 from building_target_localizer.models import LocalizerConfig
-from building_target_localizer.node import (
+from wrapper.building_target_localizer_node import (
     localization_result_to_msg,
     processed_map_from_msg,
 )
+from utils.src.types import Plane as SharedPlane
 
 
 def _plane(
@@ -23,7 +24,7 @@ def _plane(
     return message
 
 
-def test_processed_map_round_trip_to_localization_result():
+def test_processed_map_round_trip_to_description():
     message = ProcessedMap()
     message.header.frame_id = "mission_frd"
     message.ground_plane_id = "ground"
@@ -57,13 +58,12 @@ def test_processed_map_round_trip_to_localization_result():
 
     snapshot = processed_map_from_msg(message)
     assert snapshot.frame_id == "mission_frd"
+    assert isinstance(snapshot.planes[0].plane, SharedPlane)
     assert np.array_equal(snapshot.targets[0].position, [10.0, 2.0, -2.0])
 
     result = BuildingTargetLocalizer(
         LocalizerConfig(uncertainty_samples=0)
     ).localize(snapshot)
-    output = localization_result_to_msg(result, message.header)
-    assert output.map_valid
-    assert output.header.frame_id == "mission_frd"
-    assert output.targets[0].target_id == "A"
-    assert output.targets[0].description
+    output = localization_result_to_msg(result)
+    assert output.data.startswith("Target A is on")
+    assert "The colour is blue." in output.data

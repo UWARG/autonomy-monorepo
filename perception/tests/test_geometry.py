@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from utils.src.types import Plane as SharedPlane
 
 from building_target_localizer.geometry import (
     BuildingGeometryError,
@@ -31,7 +32,9 @@ def test_compass_name_uses_mission_frd_axes():
 
 
 def test_rectangular_wing_reconstructs_unseen_faces_and_roof():
-    model = build_model(rectangular_snapshot(), config())
+    snapshot = rectangular_snapshot()
+    assert isinstance(snapshot.planes[0].plane, SharedPlane)
+    model = build_model(snapshot, config())
     assert model.footprint.area == pytest.approx(60.0)
     assert len(model.walls) == 4
     assert len(model.corners) == 4
@@ -218,14 +221,20 @@ def test_disconnected_wings_are_rejected():
 
 def test_nonvertical_and_nonorthogonal_walls_are_rejected():
     base = rectangular_snapshot()
-    tilted = replace(
-        base.planes[1], normal=np.array([-0.9, 0.0, 0.4], dtype=float)
+    tilted = plane(
+        base.planes[1].id,
+        (-0.9, 0.0, 0.4),
+        base.planes[1].offset,
+        base.planes[1].covariance,
     )
     with pytest.raises(BuildingGeometryError, match="not vertical"):
         build_model(replace(base, planes=(base.planes[0], tilted, base.planes[2])), config())
 
-    diagonal = replace(
-        base.planes[2], normal=np.array([-0.5, -0.5, 0.0], dtype=float)
+    diagonal = plane(
+        base.planes[2].id,
+        (-0.5, -0.5, 0.0),
+        base.planes[2].offset,
+        base.planes[2].covariance,
     )
     with pytest.raises(BuildingGeometryError, match="near-orthogonal"):
         build_model(

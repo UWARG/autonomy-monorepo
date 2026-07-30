@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 from shapely.geometry import Point
+from utils.src.types import Plane, Vector3D
 
 from .geometry import (
     BuildingGeometryError,
@@ -484,7 +485,18 @@ def _sample_plane(plane: PlaneInput, generator: np.random.Generator) -> PlaneInp
     if float(np.dot(normal, plane.normal)) < 0.0:
         normal = -normal
         offset = -offset
-    return replace(plane, normal=normal, offset=offset, covariance=covariance)
+    return replace(
+        plane,
+        plane=Plane(
+            normal=Vector3D(
+                x=float(normal[0]),
+                y=float(normal[1]),
+                z=float(normal[2]),
+            ),
+            offset=offset,
+        ),
+        covariance=covariance,
+    )
 
 
 def _sample_wing(
@@ -530,6 +542,13 @@ def _sample_target(
     else:
         position = np.asarray(target.position, dtype=float).copy()
     return replace(target, position=position, covariance=covariance)
+
+
+def format_descriptions(result: LocalizationBatchResult) -> str:
+    """Return newline-separated authoritative target descriptions."""
+    return "\n".join(
+        target.description for target in result.targets if target.description
+    )
 
 
 class BuildingTargetLocalizer:
