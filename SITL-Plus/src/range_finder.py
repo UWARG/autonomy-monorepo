@@ -13,9 +13,13 @@ import constants
 import state
 
 prev_state = state.update
-HOST = os.getenv("SENSOR_HOST")
-if not HOST:
-    raise ValueError("SENSOR_HOST environment variable is not set")
+
+
+def _sensor_host():
+    host = os.getenv("SENSOR_HOST")
+    if not host:
+        raise ValueError("SENSOR_HOST environment variable is not set")
+    return host
 
 
 class Range_Finder:  # pylint: disable=invalid-name
@@ -58,5 +62,7 @@ class Range_Finder:  # pylint: disable=invalid-name
         while True:
             time.sleep(1 / constants.RANGE_FINDER_FPS)
             self.update()
-            state.airside_socket.sendto(struct.pack("f", self.range), (HOST, self.port))
+            state.airside_socket.sendto(
+                struct.pack("f", self.range), (_sensor_host(), self.port)
+            )
             rr.log(str(self.port) + "_range", rr.Scalars(self.range))

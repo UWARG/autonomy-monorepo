@@ -14,11 +14,15 @@ import constants
 import state
 
 prev_state = state.update
-HOST = os.getenv("SENSOR_HOST")
-if not HOST:
-    raise ValueError("SENSOR_HOST environment variable is not set")
 
 _DOWNWARD_DIRECTIONS = ([0, 0, -1], [0, 0, 1])
+
+
+def _sensor_host():
+    host = os.getenv("SENSOR_HOST")
+    if not host:
+        raise ValueError("SENSOR_HOST environment variable is not set")
+    return host
 
 
 class Camera:
@@ -135,5 +139,5 @@ class Camera:
                 "QQff", len(rgb_bytes), len(depth_bytes), self.far, self.near
             )
             state.airside_socket.sendto(
-                udp_header + rgb_bytes + depth_bytes, (HOST, self.port)
+                udp_header + rgb_bytes + depth_bytes, (_sensor_host(), self.port)
             )

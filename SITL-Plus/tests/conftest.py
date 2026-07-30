@@ -11,6 +11,8 @@ import state
 from camera import Camera
 from range_finder import Range_Finder
 
+_TEST_MODELS = Path(__file__).resolve().parent / "assets"
+
 
 @pytest.fixture(scope="session", name="_bullet_connect")
 def fixture_bullet_connect():
@@ -19,10 +21,7 @@ def fixture_bullet_connect():
     p.setGravity(0, 0, -9.80665)
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
     p.loadURDF("plane.urdf")
-    src = Path.joinpath(Path(__file__).parent.parent, "src")
-    state.dir_path = Path.joinpath(
-        src, "ardupilot/libraries/SITL/examples/JSON/pybullet/models"
-    )
+    state.dir_path = _TEST_MODELS
     iris.Iris()
 
 
