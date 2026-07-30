@@ -14,5 +14,7 @@ services:
       - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Required for MAVProxy: keep a live stdin/TTY so it does not EOF-exit and
+    # kill ArduPilot. Run attached (`docker compose up`), not detached (`-d`).
     stdin_open: true
     tty: true

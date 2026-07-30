@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 parser = argparse.ArgumentParser(description="pybullet robot (no pyrobolearn)")
 args = parser.parse_args()
 
-RATE_HZ = 800
+RATE_HZ = int(os.getenv("SIM_RATE_HZ", "800"))
 TIME_STEP = 1.0 / RATE_HZ
 GRAVITY_MSS = 9.80665
 MISSED_FRAMES_ALLOWED = 5
@@ -130,6 +130,7 @@ state.airside_socket.settimeout(0.1)
 
 last_SITL_frame = -1
 connected = False  # pylint: disable=invalid-name
+rate_warned = False  # pylint: disable=invalid-name
 frame_count = 0  # pylint: disable=invalid-name
 frame_time = time.time()
 PRINT_FRAME_COUNT = 1000
@@ -186,12 +187,11 @@ def main():
     update_thread = threading.Thread(target=update_camera_range_finder, daemon=True)
     update_thread.start()
 
-    global RATE_HZ
-    global TIME_STEP
     global last_SITL_frame
     global connected
     global frame_count
     global frame_time
+    global rate_warned
 
     logging.info("Starting main loop")
     for camera in cameras:
@@ -253,12 +253,6 @@ def main():
         frame_rate_hz = decoded[1]
         frame_number = decoded[2]
         pwm = decoded[3:]
-        if frame_rate_hz != RATE_HZ:
-            print(f"Updated rate from {RATE_HZ} to {frame_rate_hz} Hz")
-            RATE_HZ = frame_rate_hz
-            TIME_STEP = 1.0 / RATE_HZ
-            p.setTimeStep(TIME_STEP)
-
         keys = p.getKeyboardEvents()
         for key_code, event_state in keys.items():
             if key_code == ord("q") and event_state & p.KEY_WAS_TRIGGERED:
@@ -318,6 +312,14 @@ def main():
             continue
 
         if frame_count % PRINT_FRAME_COUNT == 0:
+            if frame_rate_hz != RATE_HZ and not rate_warned:
+                logging.warning(
+                    "SITL settled at %d Hz but physics is pinned to %d Hz; "
+                    "set SIM_RATE_HZ to match",
+                    frame_rate_hz,
+                    RATE_HZ,
+                )
+                rate_warned = True
             now = time.time()
             total_time = now - frame_time
             logging.info(

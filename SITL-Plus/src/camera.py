@@ -96,40 +96,41 @@ class Camera:
         while True:
             self.update()
             self.capture_image()
-            rgba_array = np.reshape(self.rgb_img, (self.width, self.height, 4)).astype(
-                np.uint8
+            rgba_array = np.asarray(self.rgb_img, dtype=np.uint8).reshape(
+                self.height, self.width, 4
             )
-            rgb_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
-            rr.log(str(self.port) + "_rgb_image", rr.Image(rgb_array))
+            bgr_array = cv2.cvtColor(rgba_array, cv2.COLOR_RGBA2BGR)
             ok, rgb_bytes = cv2.imencode(
-                ".jpg", rgb_array, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+                ".jpg", bgr_array, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
             )
             if not ok:
                 logging.error("Failed to encode image")
                 continue
             rgb_bytes = rgb_bytes.tobytes()
+            rr.log(
+                str(self.port) + "_rgb_image",
+                rr.EncodedImage(contents=rgb_bytes, media_type="image/jpeg"),
+            )
             real_depth = (
                 100
                 * self.far
                 * self.near
-                / (self.far - (self.far - self.near) * np.array(self.depth_img))
+                / (self.far - (self.far - self.near) * np.asarray(self.depth_img))
             )
-            depth_array = np.reshape(real_depth, (self.width, self.height)).astype(
-                np.uint16
-            )
-            rr.log(str(self.port) + "_depth_map", rr.DepthImage(0.01 * depth_array))
+            depth_array = real_depth.reshape(self.height, self.width).astype(np.uint16)
+            rr.log(str(self.port) + "_depth_map", rr.DepthImage(depth_array, meter=100))
             if not self.depth_map:
                 depth_bytes = b""
             else:
                 ok, depth_bytes = cv2.imencode(
-                    ".png", np.array(depth_array), [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
+                    ".png", depth_array, [int(cv2.IMWRITE_PNG_COMPRESSION), 3]
                 )
                 if not ok:
                     logging.error("Failed to encode depth image")
                     continue
                 depth_bytes = depth_bytes.tobytes()
 
-            # Segmentation encoding can be added here if needed in the future.
+            # On airside, divide depth by 100 to convert centimetres to metres.
             udp_header = struct.pack(
                 "QQff", len(rgb_bytes), len(depth_bytes), self.far, self.near
             )

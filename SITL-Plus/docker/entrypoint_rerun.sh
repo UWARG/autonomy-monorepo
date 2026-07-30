@@ -7,11 +7,17 @@ LOG_DIR="/app/logs"
 mkdir -p "$LOG_DIR"
 export PYTHONUNBUFFERED=1
 
+
+export SIM_RATE_HZ=800
+
+
 echo "[entrypoint] Logs: ${LOG_DIR}/sim_vehicle.log (MAVProxy/SITL), ${LOG_DIR}/pybullet.log"
 
 echo "[entrypoint] Starting PyBullet physics (main.py)..."
 cd "$SITL_PLUS_DIR"
-uv run python3 main.py --nogui >>"${LOG_DIR}/pybullet.log" 2>&1 &
+# Close stdin for physics only — it does not need the TTY. Leave SITL/MAVProxy
+# on the compose-provided TTY (stdin_open/tty) so MAVProxy does not see EOF and exit.
+uv run python3 main.py >"${LOG_DIR}/pybullet.log" 2>&1 < /dev/null &
 MAIN_PID=$!
 
 
@@ -28,8 +34,18 @@ DIR=270
 
 source /home/devuser/venv-ardupilot/bin/activate
 # --out must come before --mavproxy-args (otherwise sim_vehicle can glue --out into mavproxy args)
-python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
+#
+# Do NOT pass --non-interactive and do NOT redirect SITL stdin to /dev/null.
+# With docker-compose stdin_open+tty and an attached `docker compose up`, MAVProxy
+# inherits a live TTY, blocks on input instead of EOFError, and keeps ArduPilot alive.
+#
+# Unset DISPLAY so run_in_terminal_window.sh logs to a file instead of launching
+# xterm (which can stall lockstep if nothing reads the pty).
+env -u DISPLAY python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 -f quad --model JSON:127.0.0.1 -w \
+--param SIM_RATE_HZ=800 \
+--param FRAME_CLASS=1 \
+--param FRAME_TYPE=1 \
 --out tcpin:0.0.0.0:5761 \
 --mavproxy-args "--moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
 --custom-location=${LAT},${LON},${ALT},${DIR} \
@@ -37,7 +53,8 @@ python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 SITL_PID=$!
 
 
-wait -n $MAIN_PID
+# If SITL dies alone, exit so the container does not look "up" with a dead FC.
+wait -n "$MAIN_PID" "$SITL_PID"
 EXIT_CODE=$?
 
 echo "[entrypoint] Stopping processes..."

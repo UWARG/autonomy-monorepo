@@ -142,28 +142,6 @@ def main():
             file_line = line.split("\t")
             file_line[-1] = file_line[-1].strip("\n")
             lines.append(file_line)
-    conn.mav.param_set_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        param_id=b"FRAME_TYPE",
-        param_value=1,
-        param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32,
-    )
-    conn.mav.param_set_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        param_id=b"FRAME_CLASS",
-        param_value=1,
-        param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32,
-    )
-    time.sleep(10)
-    conn.mav.param_set_send(
-        target_system=conn.target_system,
-        target_component=conn.target_component,
-        param_id=b"SIM_RATE_HZ",
-        param_value=800,
-        param_type=mavutil.mavlink.MAV_PARAM_TYPE_INT32,
-    )
     while continue_flag:
         time.sleep(20)
         continue_flag = False

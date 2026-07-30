@@ -36,8 +36,17 @@ ENV USER=devuser
 ENV HOME=/home/devuser
 ENV LOGNAME=devuser
 
-RUN git clone --recurse-submodules https://github.com/ArduPilot/ardupilot.git ardupilot && \
+# Pin to the ArduPilot revision from the working 2026-07-07 run
+# (sim_vehicle.log: AP: ArduCopter V4.8.0-dev (5190fb32)). Unpinned clone
+# drifts on every cache-busting rebuild.
+# Clone without --recurse-submodules so submodule SHAs match ARDUPILOT_REF,
+# not whatever master has at clone time.
+ARG ARDUPILOT_REF=5190fb3244d5c16cb197f91f8aedf752ff68fbdb
+RUN git clone https://github.com/ArduPilot/ardupilot.git ardupilot && \
       cd ardupilot && \
+      git checkout "${ARDUPILOT_REF}" && \
+      git submodule update --init --recursive && \
+      git log -1 --format='ArduPilot %H (%ci) %s' | tee /app/ardupilot_version.txt && \
       Tools/environment_install/install-prereqs-ubuntu.sh -y;
 
 WORKDIR /app/src/ardupilot
