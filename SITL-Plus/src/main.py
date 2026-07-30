@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """PyBullet SITL physics simulation entry point."""
 
-import argparse
 import json
 import logging
 import math
