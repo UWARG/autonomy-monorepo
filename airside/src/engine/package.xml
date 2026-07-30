@@ -24,6 +24,8 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nodes</exec_depend>
   <exec_depend>v4l2_camera</exec_depend>
+  <exec_depend>rosbridge_server</exec_depend>
+  <exec_depend>rosapi</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

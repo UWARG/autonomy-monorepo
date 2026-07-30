@@ -21,7 +21,7 @@ setup(
                 "launch/engine_jetson.launch.py",
             ],
         ),
-        (f"share/{package_name}/config", ["config/waypoints.yaml"]),
+        (f"share/{package_name}/config", ["config/waypoints.yaml","config/landing_pads.yaml"]),
         (
             f"share/{package_name}",
             [
@@ -42,6 +42,7 @@ setup(
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
             "manager_jetson = engine.manager_jetson:main",
+            "heartbeat = engine.heartbeat_node:main",
         ],
     },
 )
