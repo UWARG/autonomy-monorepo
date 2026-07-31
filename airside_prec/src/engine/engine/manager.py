@@ -14,9 +14,9 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from rclpy.qos import HistoryPolicy
 
-CAM_FORWARD_OFFSET=0.09
-CAM_RIGHT_OFFSET=0.08
-CAM_DOWN_OFFSET=0.18
+CAM_FORWARD_OFFSET=0.06
+CAM_RIGHT_OFFSET=0.05
+CAM_DOWN_OFFSET=0.10
 
 TAG_ID = "36h11_1"
 class ManagerNode(Node):
