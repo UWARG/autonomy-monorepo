@@ -9,12 +9,14 @@ import struct
 ALTITUDE=10.0
 CONNECTION_STRING="/dev/ttyAMA0"
 
-sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(("100.73.30.108", 2000))
 
 
 def main():
     conn=mavutil.mavlink_connection(CONNECTION_STRING)
     conn.wait_heartbeat()
+    print("Connected")
     with open(os.path.join(os.path.dirname(__file__),"camera_info.yaml"), "r") as f:
         camera_info = yaml.safe_load(f)
         height=camera_info["height"]
@@ -103,14 +105,13 @@ def main():
         print(tx,ty)
         cv2.arrowedLine(dst_live, (int(cx), int(cy)), (int(cx+tx*250), int(cy+ty*250)), (255,0,0), 2)
         combined_img = cv2.hconcat([dst_live, dst_original])
-        ok,res=cv2.imencode(".jpg", combined_img,[int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        ok, res = cv2.imencode(
+            ".jpg", combined_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+        )
         if not ok:
             continue
-        res=np.array(res).tobytes()
-        sock.sendto(res, ("100.73.30.108", 2000))
-        cv2.namedWindow("Combined", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("Combined", 1200, 600)
-        cv2.imshow("Combined", combined_img)
+        data = res.tobytes()
+        sock.sendall(struct.pack("!I", len(data)) + data)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
     video_cap.release()

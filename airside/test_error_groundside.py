@@ -3,19 +3,49 @@ import struct
 import cv2
 import numpy as np
 
-sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(("0.0.0.0", 2000))
+HOST = "0.0.0.0"
+PORT = 2000
+
+
+def recv_exact(conn: socket.socket, n: int) -> bytes | None:
+    """Read exactly n bytes, or None if the peer closes early."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            return None
+        buf.extend(chunk)
+    return bytes(buf)
+
 
 def main():
-    while True:
-        data, addr=sock.recvfrom(65535)
-        if not data:
-            continue
-        img=cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-        cv2.imshow("Image", img)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-    cv2.destroyAllWindows()
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((HOST, PORT))
+    server.listen(1)
+    print(f"Listening on {HOST}:{PORT}")
+    conn, addr = server.accept()
+    print(f"Connected by {addr}")
+    try:
+        while True:
+            header = recv_exact(conn, 4)
+            if header is None:
+                break
+            (length,) = struct.unpack("!I", header)
+            data = recv_exact(conn, length)
+            if data is None:
+                break
+            img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            cv2.imshow("Image", img)
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+    finally:
+        conn.close()
+        server.close()
+        cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
