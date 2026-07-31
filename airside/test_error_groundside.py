@@ -26,6 +26,16 @@ def main():
     print(f"Listening on {HOST}:{PORT}")
     conn, addr = server.accept()
     print(f"Connected by {addr}")
+    header=recv_exact(conn, 4)
+    if header is None:
+        print("No header received")
+        return
+    (length,) = struct.unpack("!I", header)
+    data = recv_exact(conn, length)
+    if data is None:
+        print("No data received")
+        return
+    img1 = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     try:
         while True:
             header = recv_exact(conn, 4)
@@ -38,6 +48,7 @@ def main():
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
             if img is None:
                 continue
+            cv2.hconcat([img1, img])
             cv2.imshow("Image", img)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break

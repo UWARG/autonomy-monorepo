@@ -104,9 +104,8 @@ def main():
         tx,ty=H[0,2],H[1,2]
         print(tx,ty)
         cv2.arrowedLine(dst_live, (int(cx), int(cy)), (int(cx+tx*250), int(cy+ty*250)), (255,0,0), 2)
-        combined_img = cv2.hconcat([dst_live, dst_original])
         ok, res = cv2.imencode(
-            ".jpg", combined_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+            ".jpg", dst_live, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
         )
         if not ok:
             continue
