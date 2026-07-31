@@ -462,11 +462,32 @@ def _unload_paths(
         if name in registry.projects
     }
     paths.update(dependents)
+
+    unloaded_names = {project_name} | dependent_names
     if include_dependencies and project_name in registry.projects:
-        paths.update(
-            project.relative_path for project in registry.dependency_order(project_name)
-        )
+        for project in registry.dependency_order(project_name):
+            paths.add(project.relative_path)
+            unloaded_names.add(project.name)
+
+    paths.update(_removable_extra_paths(registry, unloaded_names))
     return sorted(paths), dependents
+
+
+def _removable_extra_paths(
+    registry: Registry, unloaded_names: set[str]
+) -> set[str]:
+    candidate: set[str] = set()
+    for name in unloaded_names:
+        entry = registry.entries.get(name)
+        if entry is not None:
+            candidate.update(entry.extra_paths)
+
+    retained: set[str] = set()
+    for name, entry in registry.entries.items():
+        if name not in unloaded_names:
+            retained.update(entry.extra_paths)
+
+    return candidate - retained
 
 
 def _path_for_project(root: Path, project_name: str) -> str:

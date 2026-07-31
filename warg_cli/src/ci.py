@@ -44,10 +44,18 @@ def _directly_changed_projects(
         for name, entry in registry.entries.items()
         if name in registry.projects
     }
+    extra_paths = {
+        name: [Path(path) for path in entry.extra_paths]
+        for name, entry in registry.entries.items()
+        if name in registry.projects
+    }
 
     for changed_file in changed_files:
         for name, project_path in project_paths.items():
             if _is_relative_to(changed_file, project_path):
+                changed.add(name)
+        for name, paths in extra_paths.items():
+            if any(_is_relative_to(changed_file, path) for path in paths):
                 changed.add(name)
     return changed
 
