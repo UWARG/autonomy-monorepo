@@ -3,10 +3,19 @@ import yaml
 import numpy as np
 import os
 import math
+from pymavlink import mavutil
+import socket
+import struct
 ALTITUDE=10.0
+CONNECTION_STRING="/dev/ttyAMA0"
+
+sock=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
 
 def main():
-    with open(os.path.join(os.path.dirname(__file__),"src","engine", "camera_info.yaml"), "r") as f:
+    conn=mavutil.mavlink_connection(CONNECTION_STRING)
+    conn.wait_heartbeat()
+    with open(os.path.join(os.path.dirname(__file__),"camera_info.yaml"), "r") as f:
         camera_info = yaml.safe_load(f)
         height=camera_info["height"]
         width=camera_info["width"]
@@ -30,8 +39,10 @@ def main():
     BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
     if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
         BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
-    orb = cv2.ORB_create(nfeatures=1000)
+    orb = cv2.ORB_create(nfeatures=10000)
     video_cap= cv2.VideoCapture(0)
+    video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cv2.waitKey(0)
     _,frame= video_cap.read()
     dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
@@ -43,30 +54,41 @@ def main():
     kp1, des1 = orb.detectAndCompute(gray_original, None)
     while True:
         ret, frame= video_cap.read()
+        if not ret:
+            continue
+        message=conn.recv_match(type="ATTITUDE",blocking=True)
+        if message is None:
+            continue
+        roll=message.roll
+        pitch=message.pitch
+        message=conn.recv_match(type="GLOBAL_POSITION_INT",blocking=True)
+        if message is None:
+            continue
+        altitude=message.relative_alt*1000
         dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
         x,y,w,h=roi
         dst_live=dst[y:y+h, x:x+w]
         gray_live=cv2.cvtColor(dst_live, cv2.COLOR_RGB2GRAY)
-        if not ret:
-            continue
         kp2, des2 = orb.detectAndCompute(gray_live, None)
-        matches = BFMatcher.match(des1, des2)
+        try:
+            matches = BFMatcher.match(des1, des2)
+        except Exception:
+            continue
         matches = sorted(matches, key=lambda x: x.distance)
-        good_matches = matches[:500]
         takeoff_3d_points=[]
         landing_3d_points=[]
-        for match in good_matches:
+        for match in matches:
             x_px=kp1[match.queryIdx].pt[0]-cx
             y_px=kp1[match.queryIdx].pt[1]-cy
-            pz=ALTITUDE
-            px=(-x_px)*pz/fx
-            py=(-y_px)*pz/fy
+            pz=altitude*math.cos(pitch)*math.cos(roll)
+            px=(-x_px-math.sin(pitch)*fx)*pz/fx
+            py=(-y_px+math.sin(roll)*fy)*pz/fy
             takeoff_3d_points.append([px,py])
             x_px=kp2[match.trainIdx].pt[0]-cx
             y_px=kp2[match.trainIdx].pt[1]-cy
-            pz=ALTITUDE
-            px=(-x_px)*pz/fx
-            py=(-y_px)*pz/fy
+            pz=altitude*math.cos(pitch)*math.cos(roll)
+            px=(-x_px-math.sin(pitch)*fx)*pz/fx
+            py=(-y_px+math.sin(roll)*fy)*pz/fy
             landing_3d_points.append([px,py])
         H,inliers=cv2.estimateAffinePartial2D(
             np.asarray(takeoff_3d_points,dtype=np.float32),
@@ -81,6 +103,11 @@ def main():
         print(tx,ty)
         cv2.arrowedLine(dst_live, (int(cx), int(cy)), (int(cx+tx*250), int(cy+ty*250)), (255,0,0), 2)
         combined_img = cv2.hconcat([dst_live, dst_original])
+        ok,res=cv2.imencode(".jpg", combined_img,[int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        if not ok:
+            continue
+        res=np.array(res).tobytes()
+        sock.sendto(res, ("100.73.30.108", 2000))
         cv2.namedWindow("Combined", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Combined", 1200, 600)
         cv2.imshow("Combined", combined_img)
