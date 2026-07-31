@@ -90,7 +90,7 @@ From the monorepo root directory:
 
 ```bash
 warg run warg_cli setup
-
+warg run warg_cli test
 warg run warg_cli run -- --help
 ```
 
