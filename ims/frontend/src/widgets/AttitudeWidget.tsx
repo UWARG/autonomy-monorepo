@@ -1,4 +1,7 @@
 import type { AttitudeMessage } from '../types';
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js'
 
 const DASH = '\u2014';
 const DEG = 180 / Math.PI;
@@ -23,6 +26,32 @@ function Readout({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+
+interface PoseStamped {
+  pose: {
+    position: { x: number; y: number; z: number };
+    orientation: { x: number; y: number; z: number; w: number };
+  };
+}
+ 
+function quaternionToEuler(q: { w: number; x: number; y: number; z: number }): {
+  roll: number;
+  pitch: number;
+  yaw: number;
+} {
+  const sinrCosp = 2 * (q.w * q.x + q.y * q.z);
+  const cosrCosp = 1 - 2 * (q.x * q.x + q.y * q.y);
+  const roll = Math.atan2(sinrCosp, cosrCosp);
+ 
+  const sinp = Math.max(-1, Math.min(1, 2 * (q.w * q.y - q.z * q.x)));
+  const pitch = Math.asin(sinp);
+ 
+  const sinyCosp = 2 * (q.w * q.z + q.x * q.y);
+  const cosyCosp = 1 - 2 * (q.y * q.y + q.z * q.z);
+  const yaw = Math.atan2(sinyCosp, cosyCosp);
+ 
+  return { roll: roll, pitch: pitch, yaw: yaw };
 }
 
 /**
@@ -100,11 +129,26 @@ function Horizon({ attitude }: { attitude?: AttitudeMessage }) {
   );
 }
 
-export default function AttitudeWidget({
-  attitude,
-}: {
-  attitude?: AttitudeMessage;
-}) {
+export default function AttitudeWidget() {
+  const [attitude, setAttitude] = useState<AttitudeMessage>();
+
+  useEffect(() => {
+    const poseTopic = new ROSLIB.Topic<PoseStamped>({
+      ros,
+      name: '/mavros/local_position/pose',
+      messageType: 'geometry_msgs/PoseStamped',
+    });
+
+    const onPose = (message: PoseStamped) => {
+      const { x, y, z, w } = message.pose.orientation;
+      const { roll, pitch, yaw } = quaternionToEuler({ w, x, y, z });
+      
+      setAttitude({ roll, pitch, yaw });
+    }
+
+    poseTopic.subscribe(onPose);
+    return () => poseTopic.unsubscribe(onPose);
+  }, []);
   return (
     <section className="widget flex h-full min-h-[120px] flex-col overflow-hidden p-4"
       style={{
