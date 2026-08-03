@@ -6,7 +6,7 @@ import pytest
 
 from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
 from errors import DependencyError, ManifestError
-from registry import Registry, find_repo_root
+from registry import Registry, find_repo_root, find_repo_root_or_none
 
 
 def test_discovers_top_level_manifests(fixture_repo: Path) -> None:
@@ -20,7 +20,9 @@ def test_discovers_top_level_manifests(fixture_repo: Path) -> None:
 def test_resolves_dependency_order(fixture_repo: Path) -> None:
     registry = Registry(fixture_repo)
 
-    assert [project.name for project in registry.dependency_order("gesture_control")] == [
+    assert [
+        project.name for project in registry.dependency_order("gesture_control")
+    ] == [
         "camera",
         "mavlink_comm",
         "gesture_control",
@@ -61,6 +63,11 @@ def test_find_repo_root_from_nested_path(fixture_repo: Path) -> None:
     nested.mkdir()
 
     assert find_repo_root(nested) == fixture_repo
+    assert find_repo_root_or_none(nested) == fixture_repo
+
+
+def test_find_repo_root_or_none_returns_none_outside_repo(tmp_path: Path) -> None:
+    assert find_repo_root_or_none(tmp_path) is None
 
 
 def test_unknown_project_lists_available_projects(fixture_repo: Path) -> None:
@@ -103,3 +110,55 @@ def write_manifest(root: Path, project: str, content: str) -> None:
     project_dir = root / project
     project_dir.mkdir()
     (project_dir / PROJECT_MANIFEST_FILENAME).write_text(content)
+
+
+def test_parses_extra_paths_for_project(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.airside]
+path = "airside"
+extra_paths = ["shared/protos"]
+""".strip()
+        + "\n"
+    )
+
+    registry = Registry(tmp_path)
+
+    assert registry.entries["airside"].extra_paths == ("shared/protos",)
+
+
+def test_extra_paths_defaults_to_empty(fixture_repo: Path) -> None:
+    registry = Registry(fixture_repo)
+
+    assert registry.entries["camera"].extra_paths == ()
+
+
+def test_extra_paths_must_be_list_of_strings(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.a]
+path = "a"
+extra_paths = "not-a-list"
+""".strip()
+        + "\n"
+    )
+
+    with pytest.raises(ManifestError, match="extra_paths must be a list of strings"):
+        Registry(tmp_path)
+
+
+def test_extra_paths_must_be_repo_relative(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.a]
+path = "a"
+extra_paths = ["../escape"]
+""".strip()
+        + "\n"
+    )
+
+    with pytest.raises(ManifestError, match="extra_paths must be repo-relative"):
+        Registry(tmp_path)

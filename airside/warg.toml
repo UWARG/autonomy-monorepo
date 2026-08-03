@@ -1,0 +1,19 @@
+name = "airside"
+description = "ROS 2 Humble workspace for airside autonomy."
+
+depends_on = ["utils", "camera"]
+
+[commands]
+setup = "docker compose build"
+build = "docker compose build"
+run = "docker compose --profile default up"
+run-jetson = "docker compose --profile jetson up"
+compose-up = "docker compose --profile default up -d"
+compose-up-jetson = "docker compose --profile jetson up -d"
+compose-down = "docker compose --profile default --profile jetson down"
+logs = "docker compose logs -f"
+test = "echo 'Tests are not implemented yet'"
+shell = "docker compose --profile default run --rm airside bash"
+
+[ci]
+pr = ["test"]

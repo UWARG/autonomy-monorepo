@@ -1,11 +1,14 @@
+include_paths = [".github"]
+
 [projects.warg_cli]
 path = "warg_cli"
 
-[projects.sitl-plus]
-path="sitl-plus"
 
-[projects.kernel]
-path = "kernel"
+[projects.gnc]
+path = "gnc"
+
+[projects.perception]
+path = "perception"
 
 [projects.camera]
 path = "camera"
@@ -18,3 +21,12 @@ path = "mav_comms"
 
 [projects.ims]
 path = "ims"
+
+[projects.airside]
+path = "airside"
+
+[projects.gesture_control]
+path = "gesture_control"
+
+[projects.target_tracking]
+path = "target_tracking"

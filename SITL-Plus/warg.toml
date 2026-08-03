@@ -1,4 +1,4 @@
-name = "sitl-plus"
+name = "SITL-Plus"
 description = "WARG's SITL archtecture"
 
 depends_on = []
@@ -7,9 +7,7 @@ depends_on = []
 setup = "uv sync"
 build = "uv build"
 test = "uv run --extra dev pytest"
-run = "uv run python -m main"
-groundside="uv run python tests/integration_tests/telem_camera_test.py"
-airside="uv run python tests/integration_tests/mavlink_test.py"
+run = "uv run python -m sitl_plus.main"
 lint = "uv run --extra dev ruff check ."
 
 [ci]

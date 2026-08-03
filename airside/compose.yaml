@@ -1,0 +1,59 @@
+services:
+  airside:
+    profiles: ["default"]
+    build:
+      context: ..
+      dockerfile: airside/docker/Dockerfile
+    image: warg/airside:latest
+    network_mode: host
+    ipc: private
+    # Fallback if host networking is unavailable:
+    # ports:
+    #   - "14550:14550/udp"
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
+      ROS_LOG_DIR: /ros_ws/log/ros
+    devices:
+      - /dev/serial0:/dev/serial0
+      - /dev/ttyAMA0:/dev/ttyAMA0
+      - /dev/video0:/dev/video0
+    volumes:
+      - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
+      - ..:/monorepo
+      - ./data:/ros_ws/data
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    command: ros2 launch engine engine.launch.py
+    restart: on-failure
+
+  airside_jetson:
+    profiles: ["jetson"]
+    build:
+      context: ..
+      dockerfile: airside/docker/Jetson.Dockerfile
+      # Orin Nano (8GB): lower if OpenCV compile OOMs, e.g. OPENCV_JOBS=2
+      args:
+        OPENCV_JOBS: ${OPENCV_JOBS:-4}
+    # Separate tag so default profile keeps warg/airside:latest
+    image: warg/airside:jetson
+    network_mode: host
+    ipc: private
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility,video}
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_LOG_DIR: /ros_ws/log/ros
+    devices:
+      - /dev/ttyAMA0:/dev/ttyAMA0
+      - /dev/video0:/dev/video0
+    volumes:
+      - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
+      - ..:/monorepo
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    command: ros2 launch engine engine_jetson.launch.py
+    restart: unless-stopped
