@@ -6,12 +6,11 @@ import math
 from pymavlink import mavutil
 import socket
 import struct
-ALTITUDE=10.0
+ALTITUDE=0.78
 CONNECTION_STRING="/dev/ttyAMA0"
 
 sock=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect(("100.73.30.108", 2000))
-
 
 def main():
     conn=mavutil.mavlink_connection(CONNECTION_STRING)
@@ -42,18 +41,26 @@ def main():
     if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
         BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
     orb = cv2.ORB_create(nfeatures=10000)
-    video_cap= cv2.VideoCapture(0)
+    video_cap= cv2.VideoCapture(1)
     video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cv2.waitKey(0)
+    #warm up camera
+    for _ in range(20):
+        ret, frame= video_cap.read()
+        if not ret:
+            continue
     _,frame= video_cap.read()
     dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
     x,y,w,h=roi
     dst_original=dst[y:y+h, x:x+w]
     gray_original=cv2.cvtColor(dst_original, cv2.COLOR_RGB2GRAY)
-    if cv2.waitKey(0) & 0xFF == ord("q"):
-        return
     kp1, des1 = orb.detectAndCompute(gray_original, None)
+    ok, res = cv2.imencode(
+        ".jpg", dst_original, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+    )
+    if ok:
+        data = res.tobytes()
+        sock.sendall(struct.pack("!I", len(data)) + data)
     while True:
         ret, frame= video_cap.read()
         if not ret:
