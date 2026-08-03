@@ -24,6 +24,7 @@ def generate_launch_description() -> LaunchDescription:
                             "mission",
                             "rc_io",
                             "global_position",
+                            "distance_sensor",
                             "setpoint_raw",
                         ],
                     },
