@@ -87,6 +87,7 @@ class ReturnToLaunch(py_trees.behaviour.Behaviour):
         self._latest_state = msg
 
     def initialise(self) -> None:
+        self._node.get_logger().info("Mode switch: flight -> RTL")
         latitude = self.blackboard.get("latitude")
         longitude = self.blackboard.get("longitude")
         altitude = self.blackboard.get("altitude")

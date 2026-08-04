@@ -13,10 +13,10 @@ from cv_bridge import CvBridge
 from sortedcontainers import SortedDict
 
 import rclpy
-from rclpy.action import ActionServer
+from rclpy.action import ActionServer, CancelResponse
 from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallbackGroup
-from rclpy.executors import SingleThreadedExecutor
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
@@ -36,12 +36,12 @@ class Processor(Node):
         self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
         self.image_subscriber = self.create_subscription(Image, "camera/image", self.image_callback, 1, callback_group=self._cb_group)
         self.imu_subscriber = self.create_subscription(Imu, "/mavros/imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
-        self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, callback_group=self._cb_group)
-        self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, callback_group=self._cb_group)
+        self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, cancel_callback=self.takeoff_cancel_callback, callback_group=self._cb_group)
+        self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, cancel_callback=self.landing_cancel_callback, callback_group=self._cb_group)
 
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
-
+        self._range_sub = self.create_subscription(Float64,"/mavros/distance_sensor/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
 
         self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
@@ -54,6 +54,7 @@ class Processor(Node):
         self.last_altitude=0
         self.altitude_threshold=0.1
         self.last_image_altitude=7.5
+        self.range=None
         # CPU OpenCV setup before any CUDA context — mixing the other way
         # SIGSEGV'd on this Jetson OpenCV build after createBFMatcher.
         self.get_logger().info("init: ORB_create")
@@ -86,6 +87,18 @@ class Processor(Node):
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
 
+    def range_callback(self, msg: Float64):
+        if not math.isfinite(msg.data) or msg.data <= 0.0:
+            self.range = None
+            return
+        self.range = msg.data
+        if self.range < 1.0:
+            self.image_rate = 0.1
+            self.error_margin = 0.02
+        else:
+            self.image_rate = 0.25
+            self.error_margin = 0.05
+
     def publish_invalid_error(self, align_before_descent: bool=False):
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,valid_error=False,
@@ -98,12 +111,6 @@ class Processor(Node):
         self.longitude=msg.longitude
 
     def rel_alt_callback(self, msg: Float64):
-        if msg.data<1.0:
-            self.image_rate=0.1
-            self.error_margin=0.02
-        else:
-            self.image_rate=0.25
-            self.error_margin=0.05
         self.rel_alt=msg.data
 
     def fail_landing(self, reason: str):
@@ -114,6 +121,10 @@ class Processor(Node):
             landing_complete=True,
         ))
         self.landing_failed=True
+
+    def landing_cancel_callback(self,goal_handle:ServerGoalHandle):
+        self.get_logger().info("Landing cancelled")
+        return CancelResponse.ACCEPT
 
     def landing_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Landing requested")
@@ -145,6 +156,9 @@ class Processor(Node):
                 rate.sleep()
         finally:
             self.landing_goal_handle=None
+    def takeoff_cancel_callback(self,goal_handle:ServerGoalHandle):
+        self.get_logger().info("Takeoff cancelled")
+        return CancelResponse.ACCEPT
 
     def takeoff_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Takeoff requested")
@@ -153,7 +167,6 @@ class Processor(Node):
         self.imu_dict.clear()
         result=Takeoff.Result()
         rate=self.create_rate(10)
-
         try:
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
@@ -190,34 +203,33 @@ class Processor(Node):
             return
         if self.takeoff_goal_handle is None and self.landing_goal_handle is None:
             return
-        if self.rel_alt is None or self.pitch is None or self.roll is None:
+        if self.range is None or self.pitch is None or self.roll is None:
             return
         if self.last_altitude>self.last_image_altitude and self.takeoff_goal_handle:
             return
+        agl=self.range
         if self.takeoff_goal_handle:
             #snapshot
             image=self.image
-            rel_alt=self.rel_alt
             roll=self.roll
             pitch=self.pitch
-            if rel_alt-self.last_altitude>=self.image_rate-self.error_margin:
+            if agl-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
                     return
-                self.imu_dict[rel_alt]=[kp,des,roll,pitch]
-                self.last_altitude=rel_alt
+                self.imu_dict[agl]=[kp,des,roll,pitch]
+                self.last_altitude=agl
         elif self.landing_goal_handle:
             #snapshot
             image=self.image
-            rel_alt=self.rel_alt
             land_roll=self.roll
             land_pitch=self.pitch
-            align_before_descent=rel_alt<=self.align_altitude
+            align_before_descent=agl<=self.align_altitude
             if not self.imu_dict:
                 self.fail_landing("Empty map")
                 return
-            if rel_alt<=0.0+ACCEPTABLE_OFFSET:
+            if agl<=0.1+ACCEPTABLE_OFFSET:
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,valid_error=False,
                     below_last_landing_altitude=False,align_before_descent=False,
@@ -225,14 +237,14 @@ class Processor(Node):
                 ))
                 self.landing_complete=True
                 return
-            if rel_alt<=self.last_landing_altitude:
+            if agl<=self.last_landing_altitude:
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,valid_error=False,
                     below_last_landing_altitude=True,align_before_descent=False,
                     landing_complete=False,
                 ))
                 return
-            index=self.imu_dict.bisect_right(rel_alt)-1
+            index=self.imu_dict.bisect_right(agl)-1
             if index<0:
                 self.get_logger().error("No takeoff key found")
                 self.publish_invalid_error(align_before_descent)
@@ -268,7 +280,7 @@ class Processor(Node):
                 if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
                     continue
                 self.get_logger().info(f"Landing match: {x_land_px}, {y_land_px}, {x_takeoff_px}, {y_takeoff_px}")
-                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,rel_alt)
+                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,agl)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
@@ -365,7 +377,7 @@ def main(args=None):
     faulthandler.enable(file=sys.stderr, all_threads=True)
     rclpy.init(args=args)
     processor=Processor()
-    executor=SingleThreadedExecutor()
+    executor=MultiThreadedExecutor()
     executor.add_node(processor)
     try:
         executor.spin()

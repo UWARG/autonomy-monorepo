@@ -31,16 +31,17 @@ class Takeoff(py_trees.behaviour.Behaviour):
         self._takeoff_action_client=ActionClient(self._node, TakeoffAction, "/takeoff")
     
     def rc_callback(self, msg: RCIn):
-        self.channel6=msg.channels[6]
+        self.channel7=msg.channels[6]
 
     def initialise(self) -> None:
         """
         Called each time this behavior transitions from IDLE to RUNNING.
         """
         self._goal_handle=None
-        self.channel6=988
+        self.channel7=988
         self.cancelling=False
-        self.status=None
+        self.success=None
+        self._ended_early=False
         while not self._takeoff_action_client.wait_for_server(timeout_sec=5.0):
             self._node.get_logger().info("Waiting for takeoff action server")
         goal=TakeoffAction.Goal()
@@ -51,7 +52,7 @@ class Takeoff(py_trees.behaviour.Behaviour):
         goal_handle=future.result()
         if not goal_handle.accepted:
             self._node.get_logger().info('Goal rejected')
-            self.status=GoalStatus.STATUS_ABORTED
+            self.success=GoalStatus.STATUS_ABORTED
             return
         self._node.get_logger().info('Goal accepted')
         self._goal_handle=goal_handle
@@ -60,31 +61,41 @@ class Takeoff(py_trees.behaviour.Behaviour):
 
     def get_result_callback(self, future):
         response=future.result()
+        self._node.get_logger().info("Get result callback "+str(response.status))
         result=response.result
         self.blackboard.altitude=result.altitude
         self.blackboard.longitude=result.longitude
         self.blackboard.latitude=result.latitude
+        self._node.get_logger().info("altitude "+str(result.altitude)+" longitude "+str(result.longitude)+" latitude "+str(result.latitude))
         if response.status==GoalStatus.STATUS_SUCCEEDED:
             self._node.get_logger().info("Takeoff Action Succeeded")
         elif response.status==GoalStatus.STATUS_CANCELED:
             self._node.get_logger().info("Takeoff Action Ended Early")
-        self.status=response.status
+            self._ended_early=True
+        self.success=response.status
 
 
     def update(self) -> py_trees.common.Status:
         """
         Called on every tick while RUNNING.
         """
-        if self.channel6 is not None and self.channel6>1400:
+        if self.channel7 is not None and self.channel7>1400:
             if self.cancelling:
                 pass
             else:
                 self.cancelling=True
-                self._node.get_logger().info("Takeoff Action Cancelled")
                 if self._goal_handle is not None:
                     self._goal_handle.cancel_goal_async()
-        if self.status is not None and self.status!=GoalStatus.STATUS_ABORTED:
+        if self.success is not None and self.success!=GoalStatus.STATUS_ABORTED:
             return py_trees.common.Status.SUCCESS
-        elif self.status==GoalStatus.STATUS_ABORTED:
+        elif self.success==GoalStatus.STATUS_ABORTED:
             return py_trees.common.Status.FAILURE
         return py_trees.common.Status.RUNNING
+
+    def terminate(self, new_status: py_trees.common.Status) -> None:
+        if new_status != py_trees.common.Status.SUCCESS:
+            return
+        if self._ended_early:
+            self._node.get_logger().info("Mode switch: early takeoff -> flight")
+        else:
+            self._node.get_logger().info("Mode switch: takeoff -> flight "+str(new_status))

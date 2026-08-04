@@ -2,6 +2,7 @@ from rclpy.node import Node
 from mavros_msgs.msg import RCIn, Mavlink
 import rclpy
 from rclpy.qos import qos_profile_sensor_data
+import struct
 
 class RCNode(Node):
     def __init__(self):

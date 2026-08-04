@@ -26,7 +26,6 @@ setup(
             f"share/{package_name}",
             [
                 "camera_info.yaml",
-                "pluginlists.yaml",
             ],
         ),
     ],
