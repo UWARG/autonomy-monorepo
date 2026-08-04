@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Hardware abstraction layer for RGB and depth cameras."
 license = "MIT"
 requires-python = ">=3.9"
-dependencies = ["numpy>=1.24.0"]
+dependencies = ["numpy>=1.24.0", "depthai>=3.0.0,<4.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/camera"
