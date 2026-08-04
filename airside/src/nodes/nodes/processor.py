@@ -321,6 +321,7 @@ class Processor(Node):
             land_roll=self.roll
             land_pitch=self.pitch
             align_before_descent=agl<=self.align_altitude
+            range=self.range
             if not self.imu_dict:
                 self.fail_landing("Empty map")
                 return
@@ -363,7 +364,7 @@ class Processor(Node):
             takeoff_3d_points=[]
             landing_3d_points=[]
             for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(land_pts,takeoff_pts):
-                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,rel_alt)
+                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,range)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 landing_3d_points.append([x_land_3d,y_land_3d])
