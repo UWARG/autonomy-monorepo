@@ -93,8 +93,8 @@ class Processor(Node):
         self.min_inlier_ratio=0.6
 
     def _init_feature_extractor(self) -> None:
+        self._use_cuda = False
         if self._feature_method == FEATURE_METHOD_ORB:
-            self._use_cuda = False
             self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
             self.get_logger().info("init: CUDA BFMatcher")
             if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
@@ -103,13 +103,13 @@ class Processor(Node):
                 self.get_logger().info("Using CUDA BFMatcher")
             else:
                 self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
-            self.orb = cv2.ORB_create(nfeatures=1000)
             return
 
         self.xfeat = xfeat.XFeat()
-        with torch.inference_mode():  # for cuda kernel autotuning warmup
+        _,_,roi_w,roi_h=self.roi
+        with torch.inference_mode():  # warm up cuda kernel autotuning at frame size
             self.xfeat.detectAndCompute(
-                torch.zeros(1, 1, 480, 640, device=self.xfeat.dev), top_k=10
+                torch.zeros(1, 1, roi_h, roi_w, device=self.xfeat.dev), top_k=10
             )
 
     def detect_and_compute(self, gray: np.ndarray):
@@ -169,19 +169,21 @@ class Processor(Node):
         return land_pts, takeoff_pts
 
     def _match_xfeat(self, landing_kp, landing_des, takeoff_kp, takeoff_des):
-        landing_idx, takeoff_idx = self.xfeat.match(
-            landing_des, takeoff_des, min_cossim=0.7
-        )
-        if len(landing_idx) < 50 or len(takeoff_idx) < 50:
-            return None, None
-        matched_landing_des = landing_des[landing_idx]
-        matched_takeoff_des = takeoff_des[takeoff_idx]
-        cosim = (matched_landing_des * matched_takeoff_des).sum(dim=1)
-        order = torch.argsort(cosim, descending=True)
-        selection = order[:50]
-        land_pts = landing_kp[landing_idx[selection]].cpu().numpy()
-        takeoff_pts = takeoff_kp[takeoff_idx[selection]].cpu().numpy()
+        with torch.inference_mode():
+            landing_idx, takeoff_idx = self.xfeat.match(
+                landing_des, takeoff_des, min_cossim=0.7
+            )
+            if len(landing_idx) < 50 or len(takeoff_idx) < 50:
+                return None, None
+            matched_landing_des = landing_des[landing_idx]
+            matched_takeoff_des = takeoff_des[takeoff_idx]
+            cosim = (matched_landing_des * matched_takeoff_des).sum(dim=1)
+            order = torch.argsort(cosim, descending=True)
+            selection = order[:50]
+            land_pts = landing_kp[landing_idx[selection]].cpu().numpy()
+            takeoff_pts = takeoff_kp[takeoff_idx[selection]].cpu().numpy()
         return land_pts, takeoff_pts
+
     def range_callback(self, msg: Range):
         if not math.isfinite(msg.range) or msg.range <= 0.0:
             self.range = None
@@ -321,7 +323,6 @@ class Processor(Node):
             land_roll=self.roll
             land_pitch=self.pitch
             align_before_descent=agl<=self.align_altitude
-            range=self.range
             if not self.imu_dict:
                 self.fail_landing("Empty map")
                 return
@@ -364,7 +365,7 @@ class Processor(Node):
             takeoff_3d_points=[]
             landing_3d_points=[]
             for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(land_pts,takeoff_pts):
-                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,range)
+                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,agl)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 landing_3d_points.append([x_land_3d,y_land_3d])
