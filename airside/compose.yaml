@@ -25,7 +25,7 @@ services:
       - ./data:/ros_ws/data
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
-    command: ros2 launch engine engine.launch.py
+    command: ros2 launch engine engine_jetson.launch.py
     restart: on-failure
 
   airside_jetson:

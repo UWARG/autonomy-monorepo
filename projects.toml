@@ -1,3 +1,5 @@
+include_paths = [".github"]
+
 [projects.warg_cli]
 path = "warg_cli"
 

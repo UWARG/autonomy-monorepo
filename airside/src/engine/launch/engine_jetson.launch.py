@@ -1,8 +1,17 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
 
 def generate_launch_description() -> LaunchDescription:
+    mavros_distance_sensor_yaml = os.path.join(
+        get_package_share_directory("engine"),
+        "config",
+        "mavros_distance_sensor.yaml",
+    )
+
     return LaunchDescription(
         [
             Node(
@@ -24,9 +33,11 @@ def generate_launch_description() -> LaunchDescription:
                             "mission",
                             "rc_io",
                             "global_position",
+                            "distance_sensor",
                             "setpoint_raw",
                         ],
                     },
+                    mavros_distance_sensor_yaml,
                 ],
             ),
             Node(

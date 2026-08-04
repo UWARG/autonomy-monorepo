@@ -67,11 +67,12 @@ class Controller(Node):
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
             PositionTarget.IGNORE_YAW_RATE
         )
-        velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
+        velocity.coordinate_frame=PositionTarget.FRAME_BODY_FRD
         velocity.velocity.x=self.vx
         velocity.velocity.y=self.vy
         velocity.velocity.z=self.vz
         velocity.yaw=self.yaw
+        self.get_logger().info(f"Publishing velocity: {velocity.velocity.x}, {velocity.velocity.y}, {velocity.velocity.z}, {velocity.yaw}")
         self.velocity_publisher.publish(velocity)
 
     def _publish_zero_velocity(self):

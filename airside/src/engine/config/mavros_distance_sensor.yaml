@@ -1,0 +1,11 @@
+# Mavros distance_sensor plugin sub-node (/mavros/distance_sensor).
+# FCU sends DISTANCE_SENSOR id=0, orientation=25 (PITCH_270).
+/**/distance_sensor:
+  ros__parameters:
+    config: |
+      rangefinder_lidar:
+        id: 0
+        orientation: PITCH_270
+        frame_id: rangefinder_lidar
+        field_of_view: 0.0
+        send_tf: false
