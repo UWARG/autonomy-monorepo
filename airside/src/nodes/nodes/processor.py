@@ -20,7 +20,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
-from sensor_msgs.msg import Image, Imu, NavSatFix
+from sensor_msgs.msg import Image, Imu, NavSatFix, Range
 from std_msgs.msg import Float64
 
 from custom_interfaces.action import Landing, Takeoff
@@ -41,7 +41,7 @@ class Processor(Node):
 
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
-        self._range_sub = self.create_subscription(Float64,"/mavros/distance_sensor/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
+        self._range_sub = self.create_subscription(Range,"/mavros/distance_sensor/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
 
         self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
@@ -87,11 +87,11 @@ class Processor(Node):
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
 
-    def range_callback(self, msg: Float64):
-        if not math.isfinite(msg.data) or msg.data <= 0.0:
+    def range_callback(self, msg: Range):
+        if not math.isfinite(msg.range) or msg.range <= 0.0:
             self.range = None
             return
-        self.range = msg.data
+        self.range = msg.range
         if self.range < 1.0:
             self.image_rate = 0.1
             self.error_margin = 0.02

@@ -1,3 +1,6 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
@@ -11,6 +14,12 @@ _RC_BRIDGE_MAVLINK_URL = f"udpin:127.0.0.1:{_RC_BRIDGE_PORT}"
 
 
 def generate_launch_description() -> LaunchDescription:
+    mavros_distance_sensor_yaml = os.path.join(
+        get_package_share_directory("engine"),
+        "config",
+        "mavros_distance_sensor.yaml",
+    )
+
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -35,7 +44,8 @@ def generate_launch_description() -> LaunchDescription:
                         "tgt_system": 1,
                         "tgt_component": 1,
                         "plugin_denylist": ["rc_io"],
-                    }
+                    },
+                    mavros_distance_sensor_yaml,
                 ],
             ),
             Node(

@@ -21,7 +21,11 @@ setup(
                 "launch/engine_jetson.launch.py",
             ],
         ),
-        (f"share/{package_name}/config", ["config/waypoints.yaml","config/landing_pads.yaml"]),
+        (f"share/{package_name}/config", [
+            "config/waypoints.yaml",
+            "config/landing_pads.yaml",
+            "config/mavros_distance_sensor.yaml",
+        ]),
         (
             f"share/{package_name}",
             [
