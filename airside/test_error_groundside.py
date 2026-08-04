@@ -48,8 +48,8 @@ def main():
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
             if img is None:
                 continue
-            cv2.hconcat([img1, img])
-            cv2.imshow("Image", img)
+            a=cv2.hconcat([img1, img])
+            cv2.imshow("Image", a)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
