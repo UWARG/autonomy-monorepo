@@ -65,6 +65,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="processor",
                 name="processor",
                 output="screen",
+                parameters=[{"feature_method": "orb"}],
             ),
             Node(
                 package="nodes",
