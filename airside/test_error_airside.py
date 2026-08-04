@@ -6,6 +6,7 @@ import math
 from pymavlink import mavutil
 import socket
 import struct
+import time
 ALTITUDE=0.78
 CONNECTION_STRING="/dev/ttyAMA0"
 
@@ -62,6 +63,7 @@ def main():
         data = res.tobytes()
         sock.sendall(struct.pack("!I", len(data)) + data)
     while True:
+        time.sleep(0.5)
         ret, frame= video_cap.read()
         if not ret:
             continue
@@ -73,7 +75,7 @@ def main():
         message=conn.recv_match(type="GLOBAL_POSITION_INT",blocking=True)
         if message is None:
             continue
-        altitude=message.relative_alt/1000.0
+        altitude=ALTITUDE
         dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
         x,y,w,h=roi
         dst_live=dst[y:y+h, x:x+w]
@@ -99,7 +101,7 @@ def main():
             takeoff_3d_points.append([px,py])
             x_px=kp2[match.trainIdx].pt[0]-cx
             y_px=kp2[match.trainIdx].pt[1]-cy
-            pz=altitude*math.cos(pitch)*math.cos(roll)
+            pz=ALTITUDE*math.cos(pitch)*math.cos(roll)
             px=(-x_px-math.sin(pitch)*fx)*pz/fx
             py=(-y_px+math.sin(roll)*fy)*pz/fy
             landing_3d_points.append([px,py])
