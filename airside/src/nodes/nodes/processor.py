@@ -3,6 +3,8 @@ import math
 import os
 import sys
 
+from numpy.ma import true_divide
+
 # Import CUDA OpenCV *before* cv_bridge. If cv_bridge loads first it can bind the
 # wrong OpenCV, and the first initUndistortRectifyMap then SIGSEGVs on Jetson.
 import cv2
@@ -64,7 +66,7 @@ class Processor(Node):
         self.get_logger().info("init: camera_intrinsics")
         self.camera_intrinsics()
         self._use_cuda = False
-        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         self.get_logger().info("init: CUDA BFMatcher")
         if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
             self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
