@@ -66,7 +66,7 @@ class Processor(Node):
         self.get_logger().info("init: camera_intrinsics")
         self.camera_intrinsics()
         self._use_cuda = False
-        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
         self.get_logger().info("init: CUDA BFMatcher")
         if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
             self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
@@ -89,6 +89,7 @@ class Processor(Node):
         self.last_landing_altitude=0.25
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
+        self.lowe_ratio=0.75
 
     def range_callback(self, msg: Range):
         if not math.isfinite(msg.range) or msg.range <= 0.0:
@@ -277,9 +278,17 @@ class Processor(Node):
                 gpu_takeoff_des=cv2.cuda.GpuMat()
                 gpu_landing_des.upload(des)
                 gpu_takeoff_des.upload(des_takeoff)
-                matches=self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+                knn_matches=self.BFMatcher.knnMatch(gpu_landing_des, gpu_takeoff_des, 2)
             else:
-                matches=self.BFMatcher.match(des, des_takeoff)
+                knn_matches=self.BFMatcher.knnMatch(des, des_takeoff, 2)
+            # Lowe ratio test. Ground texture (asphalt, grass, concrete aggregate)
+            # produces many near-identical descriptors, so a small Hamming distance
+            # alone does not mean the correspondence is right. Keep a match only when
+            # its best candidate is clearly better than its runner-up.
+            matches=[
+                pair[0] for pair in knn_matches
+                if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
+            ]
             matches=sorted(matches, key=lambda x: x.distance)
             if len(matches)<50:
                 self.publish_invalid_error(align_before_descent,yaw_error)
