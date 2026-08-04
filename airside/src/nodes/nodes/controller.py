@@ -67,7 +67,7 @@ class Controller(Node):
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
             PositionTarget.IGNORE_YAW_RATE
         )
-        velocity.coordinate_frame=PositionTarget.FRAME_BODY_FRD
+        velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
         velocity.velocity.x=self.vx
         velocity.velocity.y=self.vy
         velocity.velocity.z=self.vz
@@ -97,6 +97,7 @@ class Controller(Node):
             self.vx=0.0
             self.vy=0.0
             self.vz=0.0
+            self.yaw=0.0
             self._publish_zero_velocity()
             self.commanding=False
             self.pi_x.reset()
@@ -106,6 +107,7 @@ class Controller(Node):
             self.pi_x.reset()
             self.pi_y.reset()
         self.commanding=True
+        self.yaw=error.yaw_error
         if error.below_last_landing_altitude:
             self.vx=0.0
             self.vy=0.0

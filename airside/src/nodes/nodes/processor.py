@@ -77,6 +77,7 @@ class Processor(Node):
         self.get_logger().info("Processor initialized")
         self.roll=None
         self.pitch=None
+        self.yaw=None
         self.takeoff_goal_handle=None
         self.landing_goal_handle=None
         self.landing_complete=False
@@ -101,12 +102,16 @@ class Processor(Node):
             self.image_rate = 0.25
             self.error_margin = 0.05
 
-    def publish_invalid_error(self, align_before_descent: bool=False):
+    def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,valid_error=False,
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,valid_error=False,
             below_last_landing_altitude=False,align_before_descent=align_before_descent,
             landing_complete=False,
         ))
+
+    @staticmethod
+    def wrap_pi(angle: float) -> float:
+        return math.atan2(math.sin(angle), math.cos(angle))
 
     def fix_callback(self, msg: NavSatFix):
         self.latitude=msg.latitude
@@ -205,7 +210,7 @@ class Processor(Node):
             return
         if self.takeoff_goal_handle is None and self.landing_goal_handle is None:
             return
-        if self.range is None or self.pitch is None or self.roll is None:
+        if self.range is None or self.pitch is None or self.roll is None or self.yaw is None:
             return
         if self.last_altitude>self.last_image_altitude and self.takeoff_goal_handle:
             return
@@ -215,18 +220,20 @@ class Processor(Node):
             image=self.image
             roll=self.roll
             pitch=self.pitch
+            yaw=self.yaw
             if agl-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
                     return
-                self.imu_dict[agl]=[kp,des,roll,pitch]
+                self.imu_dict[agl]=[kp,des,roll,pitch,yaw]
                 self.last_altitude=agl
         elif self.landing_goal_handle:
             #snapshot
             image=self.image
             land_roll=self.roll
             land_pitch=self.pitch
+            land_yaw=self.yaw
             align_before_descent=agl<=self.align_altitude
             if not self.imu_dict:
                 self.fail_landing("Empty map")
@@ -252,14 +259,18 @@ class Processor(Node):
                 self.publish_invalid_error(align_before_descent)
                 return
             key,entry=self.imu_dict.peekitem(index)
-            kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch=entry
+            kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch,takeoff_yaw=entry
+            if takeoff_yaw is None:
+                self.publish_invalid_error(align_before_descent)
+                return
+            yaw_error=self.wrap_pi(takeoff_yaw-land_yaw)
             gray=self.undistort_image(image)
             kp,des=self.generate_orb_descriptors(gray)
             if kp is None or des is None:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             if self._use_cuda:
                 gpu_landing_des=cv2.cuda.GpuMat()
@@ -271,7 +282,7 @@ class Processor(Node):
                 matches=self.BFMatcher.match(des, des_takeoff)
             matches=sorted(matches, key=lambda x: x.distance)
             if len(matches)<50:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             good_matches=matches[:50]
             self.takeoff_3d_points=[]
@@ -287,7 +298,7 @@ class Processor(Node):
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
             if len(self.takeoff_3d_points)<50:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
@@ -300,23 +311,25 @@ class Processor(Node):
                 refineIters=10,
                 )
             if H is None or inliers is None:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             inlier_ratio=float(np.count_nonzero(inliers))/len(inliers)
             if inlier_ratio<self.min_inlier_ratio:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             translation_x=H[0,2]
             translation_y=H[1,2]
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error(align_before_descent,yaw_error)
                 return
+            self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")
             error=Error()
             error.x=translation_x
             error.y=translation_y
             error.angle=rotation_angle
+            error.yaw_error=yaw_error
             error.valid_error=True
             error.below_last_landing_altitude=False
             error.align_before_descent=align_before_descent
@@ -346,11 +359,13 @@ class Processor(Node):
             self.get_logger().error("No orientation received")
             self.roll=None
             self.pitch=None
+            self.yaw=None
             return
         quaternion=[q.x, q.y, q.z, q.w]
         euler=R.from_quat(quaternion).as_euler("xyz", degrees=False)
         self.roll=euler[0]
         self.pitch=euler[1]
+        self.yaw=euler[2]
     
     def camera_intrinsics(self):
         with open(os.path.join(get_package_share_directory("engine"),"camera_info.yaml"), "r") as f:
