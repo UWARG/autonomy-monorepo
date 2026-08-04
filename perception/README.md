@@ -8,22 +8,51 @@ Converts a target's pixel location in a rectified camera image into a 3D positio
 relative to the drone.
 
 ```python
-from target_location import CameraIntrinsics, locate_target_frd
+from target_location import Attitude, CameraIntrinsics, ImageFrame, locate_target_frd
 
-intrinsics = CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0)
 position = locate_target_frd(
-    pixel=(412.0, 190.0),
-    intrinsics=intrinsics,
+    image_frame=ImageFrame(u=412.0, v=190.0),
+    intrinsics=CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0),
     distance_to_plane_m=12.5,
-    roll_rad=0.05,
-    pitch_rad=-0.10,
+    attitude=Attitude.from_euler(roll_rad=0.05, pitch_rad=-0.10),
 )
-# -> array([forward, right, down]) in metres, or None if not localizable
+# -> TargetPosition(forward_m=..., right_m=..., down_m=...), or None if not localizable
 ```
 
-It back-projects the pixel into a ray, rotates it into the drone's body frame using the
-camera's mounting transform, builds the ground plane from the drone's attitude and the
-measured distance, and intersects the two.
+It back-projects the detection into a ray, rotates it into the drone's body frame using
+the camera's mounting transform, builds the ground plane from the drone's attitude and
+the measured distance, and intersects the two.
+
+`ImageFrame` is the detection's location in the image's coordinate frame — this module
+never touches pixel data. A bare `(u, v)` pair is accepted anywhere an `ImageFrame` is.
+
+### Orientation input
+
+`Attitude` reduces the drone's orientation to the only part that affects the answer:
+which way is down in the body frame. Heading drops out — the result is in the body
+frame, and a level plane looks identical from every heading.
+
+| Constructor | Use when your source gives you |
+| --- | --- |
+| `Attitude.from_euler(roll_rad, pitch_rad, yaw_rad=0.0)` | Tait-Bryan angles in NED. Yaw is accepted for call-site convenience and ignored. |
+| `Attitude.from_quaternion(w, x, y, z)` | A quaternion rotating **body-FRD → NED**. Immune to gimbal lock. |
+| `Attitude.from_mavros_quaternion(w, x, y, z)` | A `sensor_msgs/Imu` orientation off `/mavros/imu/data`. |
+| `Attitude.level()` | Nothing — a perfectly level drone, mostly for tests. |
+
+> [!WARNING]
+> MAVROS follows the ROS convention and publishes **body-FLU → ENU**, not FRD → NED.
+> Passing a raw `/mavros/imu/data` quaternion to `from_quaternion` silently flips the
+> forward axis, placing targets behind the drone when they are in front of it. Use
+> `from_mavros_quaternion` for anything coming off that topic.
+
+### Output
+
+`TargetPosition(forward_m, right_m, down_m)`, with `.to_array()` and `.range_m`.
+
+This is a **position, not a pose**. A single ray to a detection centroid carries no
+information about how the target is *oriented*; returning an orientation would mean
+fabricating three numbers. If you need target heading, it has to come from the detector
+(e.g. an oriented bounding box), not from this geometry.
 
 ### Frames
 
