@@ -43,7 +43,7 @@ class Processor(Node):
 
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
-        self._range_sub = self.create_subscription(Range,"/mavros/distance_sensor/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
+        self._range_sub = self.create_subscription(Range,"/mavros/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
 
         self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
