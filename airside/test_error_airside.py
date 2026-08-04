@@ -41,7 +41,7 @@ def main():
     if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
         BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
     orb = cv2.ORB_create(nfeatures=10000)
-    video_cap= cv2.VideoCapture(1)
+    video_cap= cv2.VideoCapture(0)
     video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     #warm up camera
@@ -73,23 +73,27 @@ def main():
         message=conn.recv_match(type="GLOBAL_POSITION_INT",blocking=True)
         if message is None:
             continue
-        altitude=message.relative_alt*1000
+        altitude=message.relative_alt/1000.0
         dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
         x,y,w,h=roi
         dst_live=dst[y:y+h, x:x+w]
         gray_live=cv2.cvtColor(dst_live, cv2.COLOR_RGB2GRAY)
         kp2, des2 = orb.detectAndCompute(gray_live, None)
+        if des1 is None or des2 is None or not kp1 or not kp2:
+            continue
         try:
             matches = BFMatcher.match(des1, des2)
         except Exception:
             continue
-        matches = sorted(matches, key=lambda x: x.distance)
+        if len(matches) < 50:
+            continue
+        matches = sorted(matches, key=lambda x: x.distance)[:50]
         takeoff_3d_points=[]
         landing_3d_points=[]
         for match in matches:
             x_px=kp1[match.queryIdx].pt[0]-cx
             y_px=kp1[match.queryIdx].pt[1]-cy
-            pz=altitude*math.cos(pitch)*math.cos(roll)
+            pz=ALTITUDE*math.cos(pitch)*math.cos(roll)
             px=(-x_px-math.sin(pitch)*fx)*pz/fx
             py=(-y_px+math.sin(roll)*fy)*pz/fy
             takeoff_3d_points.append([px,py])
@@ -108,9 +112,22 @@ def main():
         )
         if H is None:
             continue
-        tx,ty=H[0,2],H[1,2]
+        tx,ty=float(H[0,2]),float(H[1,2])
         print(tx,ty)
-        cv2.arrowedLine(dst_live, (int(cx), int(cy)), (int(cx+tx*250), int(cy+ty*250)), (255,0,0), 2)
+        if not (math.isfinite(tx) and math.isfinite(ty)):
+            continue
+        arrow_scale=min(250.0, 100.0/max(abs(tx), abs(ty), 1e-6))
+        end_x=int(round(cx+tx*arrow_scale))
+        end_y=int(round(cy+ty*arrow_scale))
+        end_x=max(0, min(w-1, end_x))
+        end_y=max(0, min(h-1, end_y))
+        cv2.arrowedLine(
+            dst_live,
+            (int(round(cx)), int(round(cy))),
+            (end_x, end_y),
+            (255, 0, 0),
+            2,
+        )
         ok, res = cv2.imencode(
             ".jpg", dst_live, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
         )
