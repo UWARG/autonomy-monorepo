@@ -223,7 +223,6 @@ class Processor(Node):
             pitch=self.pitch
             yaw=self.yaw
             if agl-self.last_altitude>=self.image_rate-self.error_margin:
-                self.get_logger().info(f"Taking off at altitude: {agl:.2f} meters")
                 gray=self.undistort_image(image)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:

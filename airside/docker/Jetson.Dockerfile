@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libavformat-dev \
     libswscale-dev \
     libv4l-dev \
+    v4l-utils \
     libgtk-3-dev \
     libopenexr-dev \
     libtbb-dev \
@@ -184,7 +185,8 @@ COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
 # OpenCV was built against apt NumPy 1.x; Jammy python3-scipy wants NumPy <1.25.
 # Avoid dual ABI (apt scipy + pip numpy 1.26) which can SIGSEGV in native calls.
-RUN pip3 install --no-cache-dir "numpy>=1.17.3,<1.25" sortedcontainers \
+RUN chmod +x /monorepo/camera/scripts/setup_arducam_v4l2.sh \
+  && pip3 install --no-cache-dir "numpy>=1.17.3,<1.25" sortedcontainers \
   && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils \
   && pip3 install --no-cache-dir "numpy>=1.17.3,<1.25"
 
