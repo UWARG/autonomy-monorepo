@@ -39,18 +39,22 @@ def _directly_changed_projects(
     registry: Registry, changed_files: list[Path]
 ) -> set[str]:
     changed: set[str] = set()
-    project_paths = {
-        name: Path(entry.path)
-        for name, entry in registry.entries.items()
-        if name in registry.projects
-    }
+    project_paths: dict[str, Path] = {}
+    extra_paths: dict[str, list[Path]] = {}
+    for name, entry in registry.entries.items():
+        if name not in registry.projects:
+            continue
+        project_paths[name] = Path(entry.path)
+        extra_paths[name] = [Path(path) for path in entry.extra_paths]
 
     for changed_file in changed_files:
         for name, project_path in project_paths.items():
             if _is_relative_to(changed_file, project_path):
                 changed.add(name)
+        for name, paths in extra_paths.items():
+            if any(_is_relative_to(changed_file, path) for path in paths):
+                changed.add(name)
     return changed
-
 
 def _dependency_order_for_projects(
     registry: Registry, project_names: set[str]
