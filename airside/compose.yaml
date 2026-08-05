@@ -24,6 +24,7 @@ services:
       - ..:/monorepo
       - ./data:/ros_ws/data
       - /dev/bus/usb:/dev/bus/usb
+      - ./src/images:/images
     privileged: true
     command: ros2 launch engine engine_jetson.launch.py
     restart: on-failure
@@ -54,7 +55,7 @@ services:
       - ./log:/ros_ws/log
       - ..:/monorepo
       - /dev/bus/usb:/dev/bus/usb
-      - /images:/images
+      - ./src/images:/images
     privileged: true
     command: ros2 launch engine engine_jetson.launch.py
     restart: unless-stopped

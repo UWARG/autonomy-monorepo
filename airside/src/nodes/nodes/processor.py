@@ -223,6 +223,7 @@ class Processor(Node):
             pitch=self.pitch
             yaw=self.yaw
             if agl-self.last_altitude>=self.image_rate-self.error_margin:
+                self.get_logger().info(f"Taking off at altitude: {agl:.2f} meters")
                 gray=self.undistort_image(image)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
@@ -230,6 +231,7 @@ class Processor(Node):
                 self.imu_dict[agl]=[kp,des,roll,pitch,yaw]
                 self.last_altitude=agl
                 cv2.imwrite(os.path.join("/images", f"takeoff_{agl:.2f}.png"), gray)
+                self.get_logger().info(f"Takeoff image saved to /images/takeoff_{agl:.2f}.png")
         elif self.landing_goal_handle:
             #snapshot
             image=self.image
@@ -270,6 +272,7 @@ class Processor(Node):
             kp,des=self.generate_orb_descriptors(gray)
             if not os.path.exists(os.path.join("/images", f"landing_{key:.2f}.png")):
                 cv2.imwrite(os.path.join("/images", f"landing_{key:.2f}.png"), gray)
+                self.get_logger().info(f"Landing image saved to /images/landing_{key:.2f}.png")
             if kp is None or des is None:
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
@@ -294,6 +297,7 @@ class Processor(Node):
             ]
             matches=sorted(matches, key=lambda x: x.distance)
             if len(matches)<50:
+                self.get_logger().error(f"Not enough matches: {len(matches)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             good_matches=matches[:50]
@@ -310,6 +314,7 @@ class Processor(Node):
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
             if len(self.takeoff_3d_points)<50:
+                self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
             #implement RANSAC 
@@ -324,10 +329,12 @@ class Processor(Node):
                 )
             if H is None or inliers is None:
                 self.publish_invalid_error(align_before_descent,yaw_error)
+                self.get_logger().error("RANSAC failed")
                 return
             inlier_ratio=float(np.count_nonzero(inliers))/len(inliers)
             if inlier_ratio<self.min_inlier_ratio:
                 self.publish_invalid_error(align_before_descent,yaw_error)
+                self.get_logger().error(f"Inlier ratio too low: {inlier_ratio:.2f}")
                 return
             translation_x=H[0,2]
             translation_y=H[1,2]
@@ -335,6 +342,7 @@ class Processor(Node):
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
                 self.publish_invalid_error(align_before_descent,yaw_error)
+                self.get_logger().error(f"Scale out of margin: {scale:.2f}")
                 return
             self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")
             error=Error()

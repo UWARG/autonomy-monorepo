@@ -45,8 +45,8 @@ class Controller(Node):
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
         self.velocity_publisher=self.create_publisher(PositionTarget, "/mavros/setpoint_raw/local", 10)
         self.get_logger().info('Controller node initialized')
-        self.pi_x=PI(0.01,0.1,10,10)
-        self.pi_y=PI(0.01,0.1,10,10)
+        self.pi_x=PI(0.01,0.1,1,1)
+        self.pi_y=PI(0.01,0.1,1,1)
         self.vx=0.0
         self.vy=0.0
         self.vz=0.0
@@ -70,6 +70,7 @@ class Controller(Node):
         velocity.velocity.y=-self.vy
         velocity.velocity.z=-self.vz
         velocity.yaw=self.yaw
+        self.get_logger().info(f"Publishing velocity: {velocity.velocity.x}, {velocity.velocity.y}, {velocity.velocity.z}, {velocity.yaw}")
         self.velocity_publisher.publish(velocity)
 
     def _publish_zero_velocity(self):
@@ -122,6 +123,7 @@ class Controller(Node):
             self.pi_y.update_prev_time()
             self.publish_velocity()
             return
+        self.get_logger().info(f"Updating PI: {error.x}, {error.y}")
         self.vx=self.pi_y.update(error.y)
         self.vy=-self.pi_x.update(error.x)
         #Aligning before descent
