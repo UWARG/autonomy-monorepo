@@ -483,12 +483,13 @@ def _removable_extra_paths(
             candidate.update(entry.extra_paths)
 
     retained: set[str] = set()
-    for name, entry in registry.entries.items():
+    for name in registry.projects: 
         if name not in unloaded_names:
-            retained.update(entry.extra_paths)
+            entry = registry.entries.get(name)
+            if entry is not None:
+                retained.update(entry.extra_paths)
 
     return candidate - retained
-
 
 def _path_for_project(root: Path, project_name: str) -> str:
     registry = Registry(root)
