@@ -1,6 +1,7 @@
 """
 Constants for the camera module.
 """
+
 import math
 
 CAMERA_HFOV_RAD = math.radians(80)
