@@ -1,4 +1,7 @@
 import type { ConnectionMessage, ConnectionStatus } from '../types';
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 
 const DASH = '\u2014';
 
@@ -31,11 +34,36 @@ function Row({
   );
 }
 
-export default function ConnectionWidget({
-  connection,
-}: {
-  connection?: ConnectionMessage;
-}) {
+interface PoseStamped {
+  pose: {
+    status: ConnectionStatus;
+    transport: string;
+    frequency: number;
+  };
+}
+
+export default function ConnectionWidget() {
+  const [connection, setConnection] = useState<ConnectionMessage>();
+
+  useEffect(() => {
+    const poseTopic = new ROSLIB.Topic<PoseStamped>({
+      ros,
+      name: '/heartbeat',
+      messageType: 'mavros_msgs/State'
+    });
+
+    const onPose = (message: PoseStamped) => {
+      const status = message.pose.status;
+      const transport = message.pose.transport;
+      const heartbeatHz = message.pose.frequency;
+
+      setConnection({ status, transport, heartbeatHz });
+    }
+
+    poseTopic.subscribe(onPose);
+    return () => poseTopic.unsubscribe(onPose);
+  }, []);
+
   const pill = connection
     ? STATUS_PILL[connection.status]
     : { className: 'pill', label: 'NO DATA' };
