@@ -86,7 +86,7 @@ class Processor(Node):
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
-        self.last_landing_altitude=0.25
+        self.last_landing_altitude=0.25 #alt to go straight down
         self.align_altitude=1.5
         self.min_inlier_ratio=0.6
         self.lowe_ratio=0.75
@@ -229,6 +229,7 @@ class Processor(Node):
                     return
                 self.imu_dict[agl]=[kp,des,roll,pitch,yaw]
                 self.last_altitude=agl
+                cv2.imwrite(os.path.join("/images", f"takeoff_{agl:.2f}.png"), gray)
         elif self.landing_goal_handle:
             #snapshot
             image=self.image
@@ -267,6 +268,8 @@ class Processor(Node):
             yaw_error=self.wrap_pi(takeoff_yaw-land_yaw)
             gray=self.undistort_image(image)
             kp,des=self.generate_orb_descriptors(gray)
+            if not os.path.exists(os.path.join("/images", f"landing_{key:.2f}.png")):
+                cv2.imwrite(os.path.join("/images", f"landing_{key:.2f}.png"), gray)
             if kp is None or des is None:
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
