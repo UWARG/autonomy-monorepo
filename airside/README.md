@@ -41,6 +41,12 @@ warg run airside shell                 # Open an interactive shell in the contai
 
 ### Via docker compose
 
+For sitl testing
+
+```bash
+docker compose -f compose.jetson-sitl.yaml
+```
+
 ```bash
 docker compose build
 docker compose --profile default up          # competition BT
@@ -50,7 +56,16 @@ docker compose logs -f
 docker compose --profile default run --rm airside bash
 ```
 
-## Adding a monorepo library
+### Jetson + SITL-Plus (shared Docker network)
+
+Runs both containers on a bridge network so MAVROS reaches the FCU by service name:
+
+```bash
+docker compose -f compose.jetson-sitl.yaml up
+```
+
+MAVROS uses `FCU_URL=tcp://sitl-plus:5761`. Mission Planner on the host can still use TCP `127.0.0.1:5761`.
+
 
 To expose a new monorepo library (e.g. `camera/`) inside the container, add the following lines to the dockerfile:
 
@@ -66,7 +81,7 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
-| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `FCU_URL` | `serial:///dev/serial0:115200` (default profile) / `tcp://127.0.0.1:5761` (jetson launch) | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` or `compose.jetson-sitl.yaml` (`tcp://sitl-plus:5761`) |
 
 ### Networking
 

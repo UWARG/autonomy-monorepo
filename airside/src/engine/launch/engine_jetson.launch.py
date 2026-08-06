@@ -2,6 +2,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -14,6 +16,13 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription(
         [
+            DeclareLaunchArgument(
+                "fcu_url",
+                default_value=EnvironmentVariable(
+                    "FCU_URL", default_value="tcp://127.0.0.1:5761"
+                ),
+                description="MAVROS connection URL to ArduPilot",
+            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -21,7 +30,7 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
                 parameters=[
                     {
-                        "fcu_url": "serial:///dev/ttyAMA0:115200",
+                        "fcu_url": LaunchConfiguration("fcu_url"),
                         "fcu_protocol": "v2.0",
                         "tgt_system": 1,
                         "tgt_component": 1,

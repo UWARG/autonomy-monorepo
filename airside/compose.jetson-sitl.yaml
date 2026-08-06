@@ -1,0 +1,60 @@
+# Jetson airside + SITL-Plus on a shared Docker network.
+#
+# MAVROS reaches the simulated FCU at tcp://sitl-plus:5761 (not 127.0.0.1).
+#
+# Usage (from airside/):
+#   docker compose -f compose.jetson-sitl.yaml up
+#
+# Mission Planner on the host: TCP 127.0.0.1:5761 (sitl-plus port publish).
+networks:
+  sitl_net:
+    driver: bridge
+
+services:
+  sitl-plus:
+    build:
+      context: ../SITL-Plus
+      dockerfile: Dockerfile
+    entrypoint: ["/app/docker/entrypoint_rerun.sh"]
+    networks:
+      - sitl_net
+    ports:
+      - 5761:5761
+      - 14550:14550
+    environment:
+      DEBIAN_FRONTEND: noninteractive
+      # Camera/range-finder UDP targets the airside container on the shared network.
+      SENSOR_HOST: airside_jetson
+    volumes:
+      - ../SITL-Plus/logs:/app/logs
+    stdin_open: true
+    tty: true
+
+  airside-sitl:
+    build:
+      context: ..
+      dockerfile: airside/docker/Dockerfile
+      args:
+        OPENCV_JOBS: ${OPENCV_JOBS:-4}
+    image: warg/airside:jetson
+    networks:
+      - sitl_net
+    ipc: private
+    depends_on:
+      - sitl-plus
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      FCU_URL: tcp://sitl-plus:5761
+      ROS_LOG_DIR: /ros_ws/log/ros
+    devices:
+      - /dev/ttyAMA0:/dev/ttyAMA0
+      - /dev/video0:/dev/video0
+    volumes:
+      - ./src:/ros_ws/src
+      - ./log:/ros_ws/log
+      - ..:/monorepo
+      - /dev/bus/usb:/dev/bus/usb
+      - ./src/images:/images
+    privileged: true
+    command: ros2 launch engine engine_jetson.launch.py
+    restart: unless-stopped
