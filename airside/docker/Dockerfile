@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
     ros-humble-rosbridge-suite \
+    v4l-utils \
     wget \
     #for non-optimal
     ros-humble-v4l2-camera \
@@ -47,7 +48,8 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils && pip install "numpy>=1.17.3,<1.25" sortedcontainers scipy
+RUN chmod +x /monorepo/camera/scripts/setup_arducam_v4l2.sh \
+  && pip install /monorepo/camera /monorepo/utils && pip install "numpy>=1.17.3,<1.25" sortedcontainers scipy
 
 COPY airside/src/ src/
 

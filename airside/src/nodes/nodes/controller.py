@@ -5,7 +5,6 @@ from custom_interfaces.msg import Error
 import math
 import time
 
-HZ=20
 ALIGN_XY_TOLERANCE_M=0.15
 DESCENT_VZ=0.1
 
@@ -45,10 +44,9 @@ class Controller(Node):
         super().__init__('controller')
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
         self.velocity_publisher=self.create_publisher(PositionTarget, "/mavros/setpoint_raw/local", 10)
-        self.create_timer(1/HZ, self.publish_velocity)
         self.get_logger().info('Controller node initialized')
-        self.pi_x=PI(0.01,0.1,10,10)
-        self.pi_y=PI(0.01,0.1,10,10)
+        self.pi_x=PI(0.01,0.1,1,1)
+        self.pi_y=PI(0.01,0.1,1,1)
         self.vx=0.0
         self.vy=0.0
         self.vz=0.0
@@ -67,10 +65,10 @@ class Controller(Node):
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
             PositionTarget.IGNORE_YAW_RATE
         )
-        velocity.coordinate_frame=PositionTarget.FRAME_BODY_FRD
+        velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
         velocity.velocity.x=self.vx
-        velocity.velocity.y=self.vy
-        velocity.velocity.z=self.vz
+        velocity.velocity.y=-self.vy
+        velocity.velocity.z=-self.vz
         velocity.yaw=self.yaw
         self.get_logger().info(f"Publishing velocity: {velocity.velocity.x}, {velocity.velocity.y}, {velocity.velocity.z}, {velocity.yaw}")
         self.velocity_publisher.publish(velocity)
@@ -97,6 +95,7 @@ class Controller(Node):
             self.vx=0.0
             self.vy=0.0
             self.vz=0.0
+            self.yaw=0.0
             self._publish_zero_velocity()
             self.commanding=False
             self.pi_x.reset()
@@ -106,12 +105,14 @@ class Controller(Node):
             self.pi_x.reset()
             self.pi_y.reset()
         self.commanding=True
+        self.yaw=error.yaw_error
         if error.below_last_landing_altitude:
             self.vx=0.0
             self.vy=0.0
             self.vz=0.1
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
+            self.publish_velocity()
             return
         if not error.valid_error:
             #ascend a bit to increase fov
@@ -120,7 +121,9 @@ class Controller(Node):
             self.vz=-0.05
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
+            self.publish_velocity()
             return
+        self.get_logger().info(f"Updating PI: {error.x}, {error.y}")
         self.vx=self.pi_y.update(error.y)
         self.vy=-self.pi_x.update(error.x)
         #Aligning before descent
@@ -129,6 +132,7 @@ class Controller(Node):
             self.vz=DESCENT_VZ if xy_error<=ALIGN_XY_TOLERANCE_M else 0.0
         else:
             self.vz=DESCENT_VZ
+        self.publish_velocity()
 
 def main(args=None):
     rclpy.init(args=args)
