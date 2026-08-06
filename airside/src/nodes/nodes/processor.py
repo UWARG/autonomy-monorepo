@@ -2,6 +2,7 @@ import faulthandler
 import math
 import os
 import sys
+import struct
 
 from numpy.ma import true_divide
 
@@ -25,8 +26,10 @@ from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import Image, Imu, NavSatFix, Range
 from std_msgs.msg import Float64
 
+import socket
 from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
+
 
 ACCEPTABLE_OFFSET=0.05
 
@@ -43,10 +46,12 @@ class Processor(Node):
 
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
-        self._range_sub = self.create_subscription(Range,"/mavros/rangefinder_lidar",self.range_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
-
+        self.airside_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.airside_socket.bind(("0.0.0.0", 6004))
+        self.airside_socket.settimeout(0.1)
         self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
+        self.create_range_timer(0.1, self.range_callback, callback_group=self._cb_group)
 
         self.imu_dict=SortedDict()
         self.image=None
@@ -92,10 +97,12 @@ class Processor(Node):
         self.lowe_ratio=0.75
 
     def range_callback(self, msg: Range):
-        if not math.isfinite(msg.range) or msg.range <= 0.0:
+        data,_=self.airside_socket.recvfrom(65535)
+        self.range=struct.unpack("f", data)[0]
+
+        if not math.isfinite(self.range) or self.range <= 0.0:
             self.range = None
             return
-        self.range = msg.range
         if self.range < 1.0:
             self.image_rate = 0.1
             self.error_margin = 0.02

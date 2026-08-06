@@ -24,7 +24,7 @@ services:
     environment:
       DEBIAN_FRONTEND: noninteractive
       # Camera/range-finder UDP targets the airside container on the shared network.
-      SENSOR_HOST: airside_jetson
+      SENSOR_HOST: airside-sitl
     volumes:
       - ../SITL-Plus/logs:/app/logs
     stdin_open: true
@@ -36,7 +36,7 @@ services:
       dockerfile: airside/docker/Dockerfile
       args:
         OPENCV_JOBS: ${OPENCV_JOBS:-4}
-    image: warg/airside:jetson
+    image: warg/airside:airside-sitl
     networks:
       - sitl_net
     ipc: private
