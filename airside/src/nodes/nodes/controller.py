@@ -6,7 +6,7 @@ import math
 import time
 
 ALIGN_XY_TOLERANCE_M=0.15
-DESCENT_VZ=0.1
+DESCENT_VZ=0.22
 
 class PI():
     def __init__(self,ki,kp,max_integral,max_output):
@@ -115,10 +115,9 @@ class Controller(Node):
             self.publish_velocity()
             return
         if not error.valid_error:
-            #ascend a bit to increase fov
             self.vx=0.0
             self.vy=0.0
-            self.vz=-0.05
+            self.vz=error.vz
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
             self.publish_velocity()

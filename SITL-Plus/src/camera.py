@@ -32,16 +32,19 @@ class Camera:
         pos, orn = p.getBasePositionAndOrientation(self.attached_to_object)
         rot_matrix = p.getMatrixFromQuaternion(orn)
         rot_matrix = np.reshape(rot_matrix, (3, 3))
+        # Body-frame "image up" so yaw rolls the frame with the airframe.
+        # Nadir: body +X (forward) is up in the image. Forward cam: body +Z.
         if self.direction in _DOWNWARD_DIRECTIONS:
-            up_vector = [1, 0, 0]
+            up_local = np.array([1.0, 0.0, 0.0])
         else:
-            up_vector = [0, 0, 1]
+            up_local = np.array([0.0, 0.0, 1.0])
+        up_vector = rot_matrix @ up_local
         local_direction = rot_matrix @ np.array(self.direction)
         cam_pos = np.array(pos) + constants.CAMERA_OFFSET * np.array(local_direction)
         self.view_matrix = p.computeViewMatrix(
             cam_pos,
             cam_pos + np.array(local_direction),
-            np.array(up_vector),
+            up_vector,
         )
 
     def __init__(
@@ -135,9 +138,10 @@ class Camera:
                 depth_bytes = depth_bytes.tobytes()
 
             # On airside, divide depth by 100 to convert centimetres to metres.
+
             udp_header = struct.pack(
-                "QQff", len(rgb_bytes), len(depth_bytes), self.far, self.near
+                "Qff", len(rgb_bytes), self.far, self.near
             )
             state.airside_socket.sendto(
-                udp_header + rgb_bytes + depth_bytes, (_sensor_host(), self.port)
+                udp_header + rgb_bytes, (_sensor_host(), self.port) #no depth bytes cuz dont need
             )

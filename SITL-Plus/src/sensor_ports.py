@@ -9,7 +9,7 @@ CAMERA_PORTS = {
     6000: {
         "port": 6000,
         "direction": [0, 0, -1],
-        "fov": 60,
+        "fov": 90,
         "near": 0.1,
         "far": 100.0,
         "height": 224,

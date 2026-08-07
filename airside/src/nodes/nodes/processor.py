@@ -39,7 +39,6 @@ class Processor(Node):
         super().__init__("processor")
         self._cb_group=ReentrantCallbackGroup()
         self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
-        self.image_subscriber = self.create_subscription(Image, "camera/image", self.image_callback, 1, callback_group=self._cb_group)
         self.imu_subscriber = self.create_subscription(Imu, "/mavros/imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
         self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, cancel_callback=self.takeoff_cancel_callback, callback_group=self._cb_group)
         self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, cancel_callback=self.landing_cancel_callback, callback_group=self._cb_group)
@@ -47,11 +46,17 @@ class Processor(Node):
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self.error_publisher=self.create_publisher(Error, "error", 10, callback_group=self._cb_group)
-        self.airside_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.airside_socket.bind(("0.0.0.0", 6004))
-        self.airside_socket.settimeout(0.1)
+        self.airside_socket_range = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.airside_socket_range.bind(("0.0.0.0", 6004))
+        self.airside_socket_range.settimeout(0.1)
+
+        self.airside_socket_image = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.airside_socket_image.bind(("0.0.0.0", 6000))
+        self.airside_socket_image.settimeout(0.1)
+
         self.create_timer(0.1, self.process, callback_group=self._mutual_cb_group)
-        self.create_range_timer(0.1, self.range_callback, callback_group=self._cb_group)
+        self.create_timer(0.1, self.range_callback, callback_group=self._cb_group)
+        self.create_timer(0.1, self.image_callback, callback_group=self._cb_group)
 
         self.imu_dict=SortedDict()
         self.image=None
@@ -66,10 +71,6 @@ class Processor(Node):
         # SIGSEGV'd on this Jetson OpenCV build after createBFMatcher.
         self.get_logger().info("init: ORB_create")
         self.orb=cv2.ORB_create(nfeatures=1000)
-        self.get_logger().info("init: CvBridge")
-        self._bridge=CvBridge()
-        self.get_logger().info("init: camera_intrinsics")
-        self.camera_intrinsics()
         self._use_cuda = False
         self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
         self.get_logger().info("init: CUDA BFMatcher")
@@ -93,12 +94,18 @@ class Processor(Node):
         self.takeoff_3d_points=[]
         self.last_landing_altitude=0.25 #alt to go straight down
         self.align_altitude=1.5
-        self.min_inlier_ratio=0.6
-        self.lowe_ratio=0.75
+        self.min_inlier_ratio=0.4
+        self.lowe_ratio=0.55
 
-    def range_callback(self, msg: Range):
-        data,_=self.airside_socket.recvfrom(65535)
-        self.range=struct.unpack("f", data)[0]
+        self.camera_fov=90 # from sensor_ports.py, horizontal and vertical FOV are the same
+
+
+    def range_callback(self):
+        try:
+            data,_=self.airside_socket_range.recvfrom(65535)
+            self.range=struct.unpack("f", data)[0]
+        except Exception as e:
+            return
 
         if not math.isfinite(self.range) or self.range <= 0.0:
             self.range = None
@@ -112,7 +119,8 @@ class Processor(Node):
 
     def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,valid_error=False,
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=-0.1,
+            valid_error=False,
             below_last_landing_altitude=False,align_before_descent=align_before_descent,
             landing_complete=False,
         ))
@@ -210,8 +218,20 @@ class Processor(Node):
         py=(-y_px+math.sin(roll)*self.fy)*pz/self.fy
         return px,py
     
-    def image_callback(self, image: Image):
-        self.image=image
+    def image_callback(self):
+        try:
+            data,_=self.airside_socket_image.recvfrom(65535)
+            header=data[:16]
+            image_length,_,_=struct.unpack("Qff", header)
+            image_data=data[16:16+image_length]
+            self.image=cv2.imdecode(np.frombuffer(image_data, dtype=np.uint8), cv2.IMREAD_COLOR)
+            width,height=self.image.shape[1],self.image.shape[0]
+            self.cx=width/2.0
+            self.cy=height/2.0
+            self.fx=(width/2.0)/math.tan(math.radians(self.camera_fov/2.0)) 
+            self.fy=(height/2.0)/math.tan(math.radians(self.camera_fov/2.0))
+        except Exception as e:
+            return
 
     def process(self):
         if self.image is None:
@@ -230,7 +250,7 @@ class Processor(Node):
             pitch=self.pitch
             yaw=self.yaw
             if agl-self.last_altitude>=self.image_rate-self.error_margin:
-                gray=self.undistort_image(image)
+                gray=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
                     return
@@ -264,6 +284,13 @@ class Processor(Node):
                 ))
                 return
             index=self.imu_dict.bisect_right(agl)-1
+            if index==0:
+                self.error_publisher.publish(Error(
+                    x=0.0,y=0.0,angle=0.0,valid_error=False,
+                    below_last_landing_altitude=True,align_before_descent=False,
+                    landing_complete=False,
+                ))
+                return
             if index<0:
                 self.get_logger().error("No takeoff key found")
                 self.publish_invalid_error(align_before_descent)
@@ -274,7 +301,7 @@ class Processor(Node):
                 self.publish_invalid_error(align_before_descent)
                 return
             yaw_error=self.wrap_pi(takeoff_yaw-land_yaw)
-            gray=self.undistort_image(image)
+            gray=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             kp,des=self.generate_orb_descriptors(gray)
             if not os.path.exists(os.path.join("/images", f"landing_{key:.2f}.png")):
                 cv2.imwrite(os.path.join("/images", f"landing_{key:.2f}.png"), gray)
@@ -314,7 +341,6 @@ class Processor(Node):
                 x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
                 if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
                     continue
-                self.get_logger().info(f"Landing match: {x_land_px}, {y_land_px}, {x_takeoff_px}, {y_takeoff_px}")
                 x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,agl)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
@@ -328,7 +354,7 @@ class Processor(Node):
                 np.asarray(self.takeoff_3d_points,dtype=np.float32),
                 np.asarray(self.landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
-                ransacReprojThreshold=0.02,
+                ransacReprojThreshold=0.1,
                 maxIters=1000,
                 confidence=0.99,
                 refineIters=10,
@@ -347,8 +373,21 @@ class Processor(Node):
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
-                self.publish_invalid_error(align_before_descent,yaw_error)
-                self.get_logger().error(f"Scale out of margin: {scale:.2f}")
+                # Nudge altitude toward the teach key so scale can converge to ~1.
+                if key<agl:  # above teach key → descend
+                    scale_vz=0.1
+                elif key>agl:  # below teach key → ascend
+                    scale_vz=-0.1
+                else:
+                    scale_vz=0.0
+                self.error_publisher.publish(Error(
+                    x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=scale_vz,
+                    valid_error=False,below_last_landing_altitude=False,
+                    align_before_descent=align_before_descent,landing_complete=False,
+                ))
+                self.get_logger().error(
+                    f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f}, vz={scale_vz})"
+                )
                 return
             self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")
             error=Error()
@@ -369,13 +408,6 @@ class Processor(Node):
         kp_pts=np.array([pt.pt for pt in kp])
         return kp_pts,des
         
-    def undistort_image(self, image: Image):
-        image=self._bridge.imgmsg_to_cv2(image, "rgb8")
-        dst=cv2.remap(image, self.mapx, self.mapy, cv2.INTER_LINEAR)
-        x,y,w,h=self.roi
-        dst=dst[y:y+h, x:x+w]
-        gray=cv2.cvtColor(dst, cv2.COLOR_RGB2GRAY)
-        return gray
     
     def imu_callback(self, msg: Imu):
         if self.takeoff_goal_handle is None and self.landing_goal_handle is None:
@@ -393,29 +425,6 @@ class Processor(Node):
         self.pitch=euler[1]
         self.yaw=euler[2]
     
-    def camera_intrinsics(self):
-        with open(os.path.join(get_package_share_directory("engine"),"camera_info.yaml"), "r") as f:
-            camera_info = yaml.safe_load(f)
-            self.height=camera_info["height"]
-            self.width=camera_info["width"]
-            self.distortion_model=camera_info["distortion_model"]
-            self.k=camera_info["camera_matrix"]["data"]
-            self.d=camera_info["distortion_coefficients"]["data"]
-            self.r=camera_info["rectification_matrix"]["data"]
-            self.p=camera_info["projection_matrix"]["data"]
-        reshaped_k=np.asarray(self.k, dtype=np.float64).reshape(3, 3)
-        reshaped_d=np.asarray(self.d, dtype=np.float64).reshape(-1)
-        size=(int(self.width), int(self.height))
-        self.new_camera_matrix,self.roi=cv2.getOptimalNewCameraMatrix(reshaped_k, reshaped_d, size, 0)
-        self.mapx,self.mapy=cv2.initUndistortRectifyMap(
-            reshaped_k, reshaped_d, None, self.new_camera_matrix, size, cv2.CV_32FC1
-        )
-        x,y,w,h=self.roi
-        self.fx=self.new_camera_matrix[0,0]
-        self.fy=self.new_camera_matrix[1,1]
-        self.cx=self.new_camera_matrix[0,2]-x
-        self.cy=self.new_camera_matrix[1,2]-y
-
 def main(args=None):
     faulthandler.enable(file=sys.stderr, all_threads=True)
     rclpy.init(args=args)
@@ -427,7 +436,6 @@ def main(args=None):
     finally:
         processor.destroy_node()
         rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()

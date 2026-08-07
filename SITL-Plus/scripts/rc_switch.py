@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         type=int,
-        default=5761,
+        default=5762,
         help="TCP port (default: 5761)",
     )
     parser.add_argument(
@@ -56,7 +56,7 @@ def override_channel(master: mavutil.mavfile, channel: int, pwm: int) -> None:
     if not 1 <= channel <= 18:
         raise ValueError(f"channel must be 1-18, got {channel}")
 
-    channels = [0] * 18
+    channels = [65535] * 8 #unchanged 
     channels[channel - 1] = pwm
     master.mav.rc_channels_override_send(
         master.target_system,
@@ -72,11 +72,16 @@ def main() -> None:
 
     print(f"Connecting to {url}...")
     master = mavutil.mavlink_connection(url)
-    master.wait_heartbeat()
-    print(
-        f"Heartbeat from system {master.target_system} "
-        f"component {master.target_component}"
-    )
+    res=master.wait_heartbeat(timeout=10)
+    if not res:
+        print("No heartbeat received")
+        master.target_system = 1
+        master.target_component = 1
+    else:
+        print(
+            f"Heartbeat from system {master.target_system} "
+            f"component {master.target_component}"
+        )
 
     print(f"RC ch{args.channel} -> {args.position} ({pwm} us)")
     deadline = time.monotonic() + max(args.hold, 0.3)

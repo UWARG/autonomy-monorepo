@@ -39,6 +39,7 @@ env -u DISPLAY python3 -u ./Tools/autotest/sim_vehicle.py -N -v ArduCopter \
 --param FRAME_CLASS=1 \
 --param FRAME_TYPE=1 \
 --out tcpin:0.0.0.0:5761 \
+--out tcpin:0.0.0.0:15560 \
 --out host.docker.internal:14550 \
 --mavproxy-args "--non-interactive --moddebug=3 --show-errors --state-basedir=${LOG_DIR}" \
 --custom-location=${LAT},${LON},${ALT},${DIR} \

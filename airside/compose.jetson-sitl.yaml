@@ -20,6 +20,7 @@ services:
       - sitl_net
     ports:
       - 5761:5761
+      - 5762:5762
       - 14550:14550
     environment:
       DEBIAN_FRONTEND: noninteractive

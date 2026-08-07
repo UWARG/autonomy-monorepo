@@ -23,7 +23,7 @@ import sensor_ports
 import state
 from camera import Camera
 from iris import Iris
-from object import Object
+from object import Object, create_landing_clutter, create_landing_pad
 from range_finder import Range_Finder
 
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +49,9 @@ else:
     p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)
 
 ENV_ID = p.loadURDF("plane.urdf")
+# Non-repeating pad + clutter under home so ORB teach/land has unique features.
+create_landing_pad(center=(0.0, 0.0), size=10.0)
+create_landing_clutter(center=(0.0, 0.0))
 
 object_ids = list(range(p.getNumBodies()))
 print(f"All Object IDs: {object_ids}")
