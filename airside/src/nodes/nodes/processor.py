@@ -40,8 +40,6 @@ class Processor(Node):
         self._cb_group=ReentrantCallbackGroup()
         self._mutual_cb_group=MutuallyExclusiveCallbackGroup()
         self.imu_subscriber = self.create_subscription(Imu, "/mavros/imu/data", self.imu_callback, qos_profile_sensor_data, callback_group=self._cb_group)
-        self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, cancel_callback=self.takeoff_cancel_callback, callback_group=self._cb_group)
-        self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, cancel_callback=self.landing_cancel_callback, callback_group=self._cb_group)
 
         self._gps_sub = self.create_subscription(NavSatFix,"/mavros/global_position/global",self.fix_callback,qos_profile_sensor_data,callback_group=self._cb_group)
         self._rel_alt_sub = self.create_subscription(Float64,"/mavros/global_position/rel_alt",self.rel_alt_callback,qos_profile_sensor_data,callback_group=self._cb_group)
@@ -98,6 +96,9 @@ class Processor(Node):
         self.lowe_ratio=0.55
 
         self.camera_fov=90 # from sensor_ports.py, horizontal and vertical FOV are the same
+        
+        self.takeoff_server=ActionServer(self, Takeoff, "takeoff", self.takeoff_callback, cancel_callback=self.takeoff_cancel_callback, callback_group=self._cb_group)
+        self.landing_server=ActionServer(self, Landing, "landing", self.landing_callback, cancel_callback=self.landing_cancel_callback, callback_group=self._cb_group)
 
 
     def range_callback(self):
@@ -329,11 +330,11 @@ class Processor(Node):
                 if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
             ]
             matches=sorted(matches, key=lambda x: x.distance)
-            if len(matches)<50:
+            if len(matches)<30:
                 self.get_logger().error(f"Not enough matches: {len(matches)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
-            good_matches=matches[:50]
+            good_matches=matches[:30]
             self.takeoff_3d_points=[]
             self.landing_3d_points=[]
             for match in good_matches:
@@ -345,7 +346,7 @@ class Processor(Node):
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
-            if len(self.takeoff_3d_points)<50:
+            if len(self.takeoff_3d_points)<30:
                 self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return

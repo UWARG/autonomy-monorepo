@@ -67,6 +67,13 @@ class Takeoff(py_trees.behaviour.Behaviour):
         self.blackboard.longitude=result.longitude
         self.blackboard.latitude=result.latitude
         self._node.get_logger().info("altitude "+str(result.altitude)+" longitude "+str(result.longitude)+" latitude "+str(result.latitude))
+        if response.status==GoalStatus.STATUS_UNKNOWN:
+            self._node.get_logger().warning("Takeoff returned UNKNOWN; retrying")
+            self._goal_handle=None
+            goal=TakeoffAction.Goal()
+            self.goal_future=self._takeoff_action_client.send_goal_async(goal)
+            self.goal_future.add_done_callback(self.goal_response_callback)
+            return
         if response.status==GoalStatus.STATUS_SUCCEEDED:
             self._node.get_logger().info("Takeoff Action Succeeded")
         elif response.status==GoalStatus.STATUS_CANCELED:
