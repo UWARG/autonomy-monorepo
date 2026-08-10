@@ -39,11 +39,11 @@ CAMERA_OFFSET=0.3
 # and fast during the climb are the ones that fall below this.
 MIN_TEACH_KEYPOINTS=150
 
-# If vision has been unavailable for this long but the last good fix had us
-# inside COMMIT_XY_TOLERANCE_M of the teach point, commit to a rangefinder-only
-# descent rather than hovering indefinitely waiting for a match.
+# If vision has been unavailable for this long, holding position cannot recover
+# a fix. Either commit to the descent (last fix was inside the 1x full-descent
+# core) or climb to widen the footprint and re-acquire (it was not).
 VISION_TIMEOUT_S=2.0
-COMMIT_XY_TOLERANCE_M=0.30
+REACQUIRE_VZ=0.1
 
 # Descent authority tapers with alignment quality inside an altitude-proportional
 # cone, instead of being hard-gated to zero by a fixed tolerance.
@@ -116,6 +116,7 @@ class Processor(Node):
         self.landed_state=None
         self.land_handoff_done=False
         self.on_ground_count=0
+        self._agl=0.0
         self._extended_state_sub=self.create_subscription(
             ExtendedState,"/mavros/extended_state",self.extended_state_callback,
             qos_profile_sensor_data,callback_group=self._cb_group,
@@ -177,42 +178,57 @@ class Processor(Node):
         # Tell the controller to stop commanding so we are not fighting LAND mode.
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,yaw_error=0.0,vz=0.0,
-            valid_error=False,below_last_landing_altitude=False,
-            align_before_descent=False,landing_complete=True,
+            valid_error=False,align_before_descent=False,landing_complete=True,
         ))
         self.get_logger().info(f"Vision exhausted: handing off to {LAND_MODE} mode")
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds/1e9
 
-    def _commit_descent_if_stale(self, yaw_error: float=0.0) -> bool:
-        """Descend on the rangefinder when vision is stale but we were aligned.
+    def _handle_stale_vision(self, yaw_error: float=0.0) -> bool:
+        """Break the deadlock once vision has been unavailable for a while.
 
-        Without this, any sustained run of unmatchable frames leaves the aircraft
-        hovering forever: the reject path commands zero velocity and nothing ever
-        re-establishes a fix, because holding position does not improve the view.
+        Holding position cannot recover a fix, because the view never changes.
+        If we were aligned when we last saw the ground, finish on the rangefinder;
+        if we were not, climb to widen the footprint and re-acquire. Returns True
+        if a command was published.
         """
         if self.last_valid_time is None or self.last_valid_xy is None:
             return False
         if self._now()-self.last_valid_time<VISION_TIMEOUT_S:
             return False
-        if self.last_valid_xy>COMMIT_XY_TOLERANCE_M:
+        # Commit only if last fix was inside the full-descent core (1x cone).
+        # Live vision still tapers out to 2x; blind commit is irreversible.
+        tolerance=max(MIN_ALIGN_TOLERANCE_M,ALIGN_TOLERANCE_RATIO*self._agl)
+        if self.last_valid_xy<=tolerance:
+            self.error_publisher.publish(Error(
+                x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=DESCENT_VZ,
+                valid_error=False,align_before_descent=False,landing_complete=False,
+            ))
+            return True
+        if self.imu_dict and self._agl>=self.imu_dict.peekitem(-1)[0]:
+            # Already at the top of the teach map: climbing further cannot help.
+            self.get_logger().error(
+                f"Vision stale at {self._agl:.2f} m, {self.last_valid_xy:.2f} m off "
+                "target, and above the top of the teach map",throttle_duration_sec=2.0,
+            )
             return False
+        self.get_logger().warn(
+            f"Vision stale, {self.last_valid_xy:.2f} m off target "
+            f"(> {tolerance:.2f} m): climbing to re-acquire",throttle_duration_sec=2.0,
+        )
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
-            valid_error=False,
-            below_last_landing_altitude=True,align_before_descent=False,
-            landing_complete=False,
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=-REACQUIRE_VZ,
+            valid_error=False,align_before_descent=False,landing_complete=False,
         ))
         return True
 
     def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
-        if self._commit_descent_if_stale(yaw_error):
+        if self._handle_stale_vision(yaw_error):
             return
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
-            valid_error=False,
-            below_last_landing_altitude=False,align_before_descent=align_before_descent,
+            valid_error=False,align_before_descent=align_before_descent,
             landing_complete=False,
         ))
 
@@ -230,9 +246,8 @@ class Processor(Node):
     def fail_landing(self, reason: str):
         self.get_logger().error(reason)
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,valid_error=False,
-            below_last_landing_altitude=False,align_before_descent=False,
-            landing_complete=True,
+            x=0.0,y=0.0,angle=0.0,vz=0.0,valid_error=False,
+            align_before_descent=False,landing_complete=True,
         ))
         self.landing_failed=True
 
@@ -338,6 +353,7 @@ class Processor(Node):
         if self.last_altitude>self.last_image_altitude and self.takeoff_goal_handle:
             return
         agl=self.range-CAMERA_OFFSET
+        self._agl=agl
         if self.takeoff_goal_handle:
             #snapshot
             image=self.image
@@ -469,7 +485,7 @@ class Processor(Node):
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
-                if self._commit_descent_if_stale(yaw_error):
+                if self._handle_stale_vision(yaw_error):
                     return
                 # Nudge altitude toward the teach key so scale can converge to ~1.
                 if key<agl:  # above teach key → descend
@@ -480,8 +496,8 @@ class Processor(Node):
                     scale_vz=0.0
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=scale_vz,
-                    valid_error=False,below_last_landing_altitude=False,
-                    align_before_descent=align_before_descent,landing_complete=False,
+                    valid_error=False,align_before_descent=align_before_descent,
+                    landing_complete=False,
                 ))
                 self.get_logger().error(
                     f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f}, vz={scale_vz})"
@@ -503,7 +519,6 @@ class Processor(Node):
             error.yaw_error=yaw_error
             error.vz=DESCENT_VZ*taper
             error.valid_error=True
-            error.below_last_landing_altitude=False
             error.align_before_descent=align_before_descent
             error.landing_complete=False
             self.error_publisher.publish(error)

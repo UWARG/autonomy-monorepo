@@ -105,14 +105,6 @@ class Controller(Node):
             self.pi_yaw.reset()
         self.commanding=True
         self.yaw_rate=self.pi_yaw.update(error.yaw_error)
-        if error.below_last_landing_altitude:
-            self.vx=0.0
-            self.vy=0.0
-            self.vz=0.1
-            self.pi_x.update_prev_time()
-            self.pi_y.update_prev_time()
-            self.publish_velocity()
-            return
         if not error.valid_error:
             self.vx=0.0
             self.vy=0.0
