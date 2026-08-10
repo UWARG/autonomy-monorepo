@@ -30,8 +30,26 @@ import socket
 from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
 
+CAMERA_OFFSET=0.3
 
 ACCEPTABLE_OFFSET=0.05
+
+# A teach frame with too few features is worse than no frame at all: the repeat
+# pass selects it by altitude, fails to match, and stalls. Frames captured low
+# and fast during the climb are the ones that fall below this.
+MIN_TEACH_KEYPOINTS=150
+
+# If vision has been unavailable for this long but the last good fix had us
+# inside COMMIT_XY_TOLERANCE_M of the teach point, commit to a rangefinder-only
+# descent rather than hovering indefinitely waiting for a match.
+VISION_TIMEOUT_S=2.0
+COMMIT_XY_TOLERANCE_M=0.30
+
+# Descent authority tapers with alignment quality inside an altitude-proportional
+# cone, instead of being hard-gated to zero by a fixed tolerance.
+DESCENT_VZ=0.1
+ALIGN_TOLERANCE_RATIO=0.15
+MIN_ALIGN_TOLERANCE_M=0.05
 
 
 class Processor(Node):
@@ -86,6 +104,8 @@ class Processor(Node):
         self.landing_goal_handle=None
         self.landing_complete=False
         self.landing_failed=False
+        self.last_valid_time=None
+        self.last_valid_xy=None
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
@@ -118,9 +138,35 @@ class Processor(Node):
             self.image_rate = 0.25
             self.error_margin = 0.05
 
-    def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
+    def _now(self) -> float:
+        return self.get_clock().now().nanoseconds/1e9
+
+    def _commit_descent_if_stale(self, yaw_error: float=0.0) -> bool:
+        """Descend on the rangefinder when vision is stale but we were aligned.
+
+        Without this, any sustained run of unmatchable frames leaves the aircraft
+        hovering forever: the reject path commands zero velocity and nothing ever
+        re-establishes a fix, because holding position does not improve the view.
+        """
+        if self.last_valid_time is None or self.last_valid_xy is None:
+            return False
+        if self._now()-self.last_valid_time<VISION_TIMEOUT_S:
+            return False
+        if self.last_valid_xy>COMMIT_XY_TOLERANCE_M:
+            return False
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=-0.1,
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
+            valid_error=False,
+            below_last_landing_altitude=True,align_before_descent=False,
+            landing_complete=False,
+        ))
+        return True
+
+    def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
+        if self._commit_descent_if_stale(yaw_error):
+            return
+        self.error_publisher.publish(Error(
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
             valid_error=False,
             below_last_landing_altitude=False,align_before_descent=align_before_descent,
             landing_complete=False,
@@ -155,6 +201,8 @@ class Processor(Node):
         self.landing_goal_handle=goal_handle
         self.landing_complete=False
         self.landing_failed=False
+        self.last_valid_time=None
+        self.last_valid_xy=None
         result=Landing.Result()
         if not self.imu_dict:
             self.fail_landing("Empty teach map; cannot land")
@@ -243,7 +291,7 @@ class Processor(Node):
             return
         if self.last_altitude>self.last_image_altitude and self.takeoff_goal_handle:
             return
-        agl=self.range
+        agl=self.range-CAMERA_OFFSET
         if self.takeoff_goal_handle:
             #snapshot
             image=self.image
@@ -254,6 +302,14 @@ class Processor(Node):
                 gray=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 kp,des=self.generate_orb_descriptors(gray)
                 if kp is None or des is None:
+                    return
+                if len(kp)<MIN_TEACH_KEYPOINTS:
+                    # Do not advance last_altitude: retry on the next tick so the
+                    # map simply starts higher rather than storing a dead frame.
+                    self.get_logger().warn(
+                        f"Teach frame at {agl:.2f} m rejected: {len(kp)} keypoints "
+                        f"(< {MIN_TEACH_KEYPOINTS})"
+                    )
                     return
                 self.imu_dict[agl]=[kp,des,roll,pitch,yaw]
                 self.last_altitude=agl
@@ -329,15 +385,13 @@ class Processor(Node):
                 pair[0] for pair in knn_matches
                 if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
             ]
-            matches=sorted(matches, key=lambda x: x.distance)
-            if len(matches)<30:
+            if len(matches)<10:
                 self.get_logger().error(f"Not enough matches: {len(matches)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
-            good_matches=matches[:30]
             self.takeoff_3d_points=[]
             self.landing_3d_points=[]
-            for match in good_matches:
+            for match in matches:
                 x_land_px,y_land_px=kp[match.queryIdx]
                 x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
                 if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
@@ -346,7 +400,7 @@ class Processor(Node):
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
                 self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
-            if len(self.takeoff_3d_points)<30:
+            if len(self.takeoff_3d_points)<10:
                 self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
                 self.publish_invalid_error(align_before_descent,yaw_error)
                 return
@@ -374,6 +428,8 @@ class Processor(Node):
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
             if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
+                if self._commit_descent_if_stale(yaw_error):
+                    return
                 # Nudge altitude toward the teach key so scale can converge to ~1.
                 if key<agl:  # above teach key → descend
                     scale_vz=0.1
@@ -391,11 +447,20 @@ class Processor(Node):
                 )
                 return
             self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")
+            # Altitude-proportional alignment cone: require tight centring only as
+            # the ground approaches, and taper descent authority with alignment
+            # quality instead of stopping dead outside a fixed tolerance.
+            xy_error=math.hypot(translation_x,translation_y)
+            align_tolerance=max(MIN_ALIGN_TOLERANCE_M,ALIGN_TOLERANCE_RATIO*agl)
+            taper=max(0.0,min(1.0,2.0-xy_error/align_tolerance))
+            self.last_valid_time=self._now()
+            self.last_valid_xy=xy_error
             error=Error()
             error.x=translation_x
             error.y=translation_y
             error.angle=rotation_angle
             error.yaw_error=yaw_error
+            error.vz=DESCENT_VZ*taper
             error.valid_error=True
             error.below_last_landing_altitude=False
             error.align_before_descent=align_before_descent

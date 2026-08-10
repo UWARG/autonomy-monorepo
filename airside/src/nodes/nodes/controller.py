@@ -2,11 +2,7 @@ from rclpy.node import Node
 import rclpy
 from mavros_msgs.msg import PositionTarget
 from custom_interfaces.msg import Error
-import math
 import time
-
-ALIGN_XY_TOLERANCE_M=0.15
-DESCENT_VZ=0.22
 
 class PI():
     def __init__(self,ki,kp,max_integral,max_output):
@@ -45,9 +41,9 @@ class Controller(Node):
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
         self.velocity_publisher=self.create_publisher(PositionTarget, "/mavros/setpoint_raw/local", 10)
         self.get_logger().info('Controller node initialized')
-        self.pi_x=PI(0.01,0.1,1,1)
-        self.pi_y=PI(0.01,0.1,1,1)
-        self.pi_yaw=PI(0.01,0.5,0.5,0.4)
+        self.pi_x=PI(0.01,0.25,1.0,1.0)
+        self.pi_y=PI(0.01,0.25,1.0,1.0)
+        self.pi_yaw=PI(0.01,0.75,0.5,0.4)
         self.vx=0.0
         self.vy=0.0
         self.vz=0.0
@@ -128,12 +124,9 @@ class Controller(Node):
         self.get_logger().info(f"Updating PI: {error.x}, {error.y}")
         self.vx=self.pi_y.update(error.y)
         self.vy=-self.pi_x.update(error.x)
-        #Aligning before descent
-        if error.align_before_descent:
-            xy_error=math.hypot(error.x, error.y)
-            self.vz=DESCENT_VZ if xy_error<=ALIGN_XY_TOLERANCE_M else 0.0
-        else:
-            self.vz=DESCENT_VZ
+        # Descent rate is tapered by the processor against an altitude-proportional
+        # alignment cone, so it already reaches zero when we are badly off-centre.
+        self.vz=error.vz
         self.publish_velocity()
 
 def main(args=None):

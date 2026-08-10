@@ -32,7 +32,7 @@ class Camera:
         pos, orn = p.getBasePositionAndOrientation(self.attached_to_object)
         rot_matrix = p.getMatrixFromQuaternion(orn)
         rot_matrix = np.reshape(rot_matrix, (3, 3))
-        # Body-frame "image up" so yaw rolls the frame with the airframe.
+        # Body-frame "image up" so yaw rolls the frame with the .
         # Nadir: body +X (forward) is up in the image. Forward cam: body +Z.
         if self.direction in _DOWNWARD_DIRECTIONS:
             up_local = np.array([1.0, 0.0, 0.0])
