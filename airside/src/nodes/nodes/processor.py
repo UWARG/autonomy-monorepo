@@ -129,7 +129,6 @@ class Processor(Node):
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
         self.last_landing_altitude=0.4 #alt to go straight down
-        self.align_altitude=1.5
         self.min_inlier_ratio=0.4
         self.lowe_ratio=0.55
 
@@ -178,7 +177,7 @@ class Processor(Node):
         # Tell the controller to stop commanding so we are not fighting LAND mode.
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,yaw_error=0.0,vz=0.0,
-            valid_error=False,align_before_descent=False,landing_complete=True,
+            valid_error=False,landing_complete=True,
         ))
         self.get_logger().info(f"Vision exhausted: handing off to {LAND_MODE} mode")
 
@@ -203,7 +202,7 @@ class Processor(Node):
         if self.last_valid_xy<=tolerance:
             self.error_publisher.publish(Error(
                 x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=DESCENT_VZ,
-                valid_error=False,align_before_descent=False,landing_complete=False,
+                valid_error=False,landing_complete=False,
             ))
             return True
         if self.imu_dict and self._agl>=self.imu_dict.peekitem(-1)[0]:
@@ -219,17 +218,16 @@ class Processor(Node):
         )
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=-REACQUIRE_VZ,
-            valid_error=False,align_before_descent=False,landing_complete=False,
+            valid_error=False,landing_complete=False,
         ))
         return True
 
-    def publish_invalid_error(self, align_before_descent: bool=False, yaw_error: float=0.0):
+    def publish_invalid_error(self, yaw_error: float=0.0):
         if self._handle_stale_vision(yaw_error):
             return
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
-            valid_error=False,align_before_descent=align_before_descent,
-            landing_complete=False,
+            valid_error=False,landing_complete=False,
         ))
 
     @staticmethod
@@ -247,7 +245,7 @@ class Processor(Node):
         self.get_logger().error(reason)
         self.error_publisher.publish(Error(
             x=0.0,y=0.0,angle=0.0,vz=0.0,valid_error=False,
-            align_before_descent=False,landing_complete=True,
+            landing_complete=True,
         ))
         self.landing_failed=True
 
@@ -383,7 +381,6 @@ class Processor(Node):
             land_roll=self.roll
             land_pitch=self.pitch
             land_yaw=self.yaw
-            align_before_descent=agl<=self.align_altitude
             if self.land_handoff_done:
                 # LAND mode owns the aircraft: just wait for the FCU to confirm
                 # ground contact, debounced against a single spurious sample.
@@ -407,12 +404,12 @@ class Processor(Node):
                 return
             if index<0:
                 self.get_logger().error("No takeoff key found")
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error()
                 return
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch,takeoff_yaw=entry
             if takeoff_yaw is None:
-                self.publish_invalid_error(align_before_descent)
+                self.publish_invalid_error()
                 return
             yaw_error=self.wrap_pi(takeoff_yaw-land_yaw)
             gray=cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -421,10 +418,10 @@ class Processor(Node):
                 cv2.imwrite(os.path.join("/images", f"landing_{key:.2f}.png"), gray)
                 self.get_logger().info(f"Landing image saved to /images/landing_{key:.2f}.png")
             if kp is None or des is None:
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 return
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 return
             if self._use_cuda:
                 gpu_landing_des=cv2.cuda.GpuMat()
@@ -444,7 +441,7 @@ class Processor(Node):
             ]
             if len(matches)<10:
                 self.get_logger().error(f"Not enough matches: {len(matches)}")
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 return
             self.takeoff_3d_points=[]
             self.landing_3d_points=[]
@@ -459,7 +456,7 @@ class Processor(Node):
                 self.landing_3d_points.append([x_land_3d,y_land_3d])
             if len(self.takeoff_3d_points)<10:
                 self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 return
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
@@ -472,12 +469,12 @@ class Processor(Node):
                 refineIters=10,
                 )
             if H is None or inliers is None:
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 self.get_logger().error("RANSAC failed")
                 return
             inlier_ratio=float(np.count_nonzero(inliers))/len(inliers)
             if inlier_ratio<self.min_inlier_ratio:
-                self.publish_invalid_error(align_before_descent,yaw_error)
+                self.publish_invalid_error(yaw_error)
                 self.get_logger().error(f"Inlier ratio too low: {inlier_ratio:.2f}")
                 return
             translation_x=H[0,2]
@@ -496,8 +493,7 @@ class Processor(Node):
                     scale_vz=0.0
                 self.error_publisher.publish(Error(
                     x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=scale_vz,
-                    valid_error=False,align_before_descent=align_before_descent,
-                    landing_complete=False,
+                    valid_error=False,landing_complete=False,
                 ))
                 self.get_logger().error(
                     f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f}, vz={scale_vz})"
@@ -519,7 +515,6 @@ class Processor(Node):
             error.yaw_error=yaw_error
             error.vz=DESCENT_VZ*taper
             error.valid_error=True
-            error.align_before_descent=align_before_descent
             error.landing_complete=False
             self.error_publisher.publish(error)
 
