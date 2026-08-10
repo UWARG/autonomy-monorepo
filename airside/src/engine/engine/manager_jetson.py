@@ -14,7 +14,11 @@ def create_sequence():
         ReturnToLaunch(),
         Landing()
     ])
-    return sequence
+    frozen_sequence = py_trees.decorators.OneShot(
+        child=sequence,
+        name="Freeze After Success",
+        policy=py_trees.common.OneShotPolicy.ON_SUCCESSFUL_COMPLETION)
+    return frozen_sequence
 
 def initialize_blackboard():
     blackboard=py_trees.blackboard.Client(name="engine_blackboard")
