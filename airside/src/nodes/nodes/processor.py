@@ -127,7 +127,7 @@ class Processor(Node):
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
-        self.last_landing_altitude=0.25 #alt to go straight down
+        self.last_landing_altitude=0.4 #alt to go straight down
         self.align_altitude=1.5
         self.min_inlier_ratio=0.4
         self.lowe_ratio=0.55
@@ -387,11 +387,7 @@ class Processor(Node):
                 return
             index=self.imu_dict.bisect_right(agl)-1
             if index==0:
-                self.error_publisher.publish(Error(
-                    x=0.0,y=0.0,angle=0.0,valid_error=False,
-                    below_last_landing_altitude=True,align_before_descent=False,
-                    landing_complete=False,
-                ))
+                self._handoff_to_land_mode()
                 return
             if index<0:
                 self.get_logger().error("No takeoff key found")
