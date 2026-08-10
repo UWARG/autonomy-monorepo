@@ -1126,6 +1126,6 @@ def test_bootcamp_prints_manual_fork_steps_when_forking_fails(
     assert result.exit_code == 1
     assert git.clones == []
     output = " ".join(result.stdout.split())
-    assert "gh repo fork UWARG/autonomy-bootcamp" in output
+    assert "gh repo fork UWARG/autonomy-bootcamp --clone=false" in output
     assert "https://github.com/UWARG/autonomy-bootcamp" in output
     assert "Click 'Fork'" in output

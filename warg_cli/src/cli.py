@@ -190,7 +190,7 @@ def _print_manual_fork_instructions() -> None:
     )
     console.print("\n[bold]With the gh CLI[/bold]")
     console.print("  gh auth login")
-    console.print(f"  gh repo fork {BOOTCAMP_UPSTREAM} --clone=false --remote=false")
+    console.print(f"  gh repo fork {BOOTCAMP_UPSTREAM} --clone=false")
     console.print("\n[bold]With the GitHub web UI[/bold]")
     console.print(f"  1. Open https://github.com/{BOOTCAMP_UPSTREAM}")
     console.print("  2. Click 'Fork', keep the default name, and create the fork.")
