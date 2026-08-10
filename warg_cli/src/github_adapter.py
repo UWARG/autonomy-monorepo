@@ -195,7 +195,7 @@ class GitHubAdapter:
     def fork_repository(cls, upstream: str) -> GitHubRepository:
         login = cls.current_user()
         output = cls._run_gh(
-            ["gh", "repo", "fork", upstream, "--clone=false", "--remote=false"],
+            ["gh", "repo", "fork", upstream, "--clone=false"],
             merge_stderr=True,
         ).stdout
         target = cls._fork_slug_from_output(output, upstream, login)

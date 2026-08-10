@@ -193,7 +193,13 @@ def test_fork_repository_creates_and_resolves_fork(monkeypatch) -> None:
 
     assert fork.ssh_url == "git@github.com:student/autonomy-bootcamp.git"
     assert ["gh", "repo", "view", "student/autonomy-bootcamp"] == commands[-1][:4]
-    assert "--clone=false" in commands[1]
+    assert commands[1] == [
+        "gh",
+        "repo",
+        "fork",
+        "UWARG/autonomy-bootcamp",
+        "--clone=false",
+    ]
 
 
 def test_fork_repository_reuses_an_existing_fork(monkeypatch) -> None:
