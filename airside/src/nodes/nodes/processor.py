@@ -29,10 +29,10 @@ from std_msgs.msg import Float64
 import socket
 from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
+from mavros_msgs.msg import ExtendedState
+from mavros_msgs.srv import SetMode
 
 CAMERA_OFFSET=0.3
-
-ACCEPTABLE_OFFSET=0.05
 
 # A teach frame with too few features is worse than no frame at all: the repeat
 # pass selects it by altitude, fails to match, and stalls. Frames captured low
@@ -50,6 +50,13 @@ COMMIT_XY_TOLERANCE_M=0.30
 DESCENT_VZ=0.1
 ALIGN_TOLERANCE_RATIO=0.15
 MIN_ALIGN_TOLERANCE_M=0.05
+
+# Once vision is exhausted we hand the aircraft to the autopilot's LAND mode
+# rather than continuing to stream downward velocity setpoints in GUIDED: it
+# owns touchdown detection and disarm, and it stops us driving the motors into
+# the ground after the gear is loaded.
+LAND_MODE="LAND"
+ON_GROUND_SAMPLES=3
 
 
 class Processor(Node):
@@ -106,6 +113,16 @@ class Processor(Node):
         self.landing_failed=False
         self.last_valid_time=None
         self.last_valid_xy=None
+        self.landed_state=None
+        self.land_handoff_done=False
+        self.on_ground_count=0
+        self._extended_state_sub=self.create_subscription(
+            ExtendedState,"/mavros/extended_state",self.extended_state_callback,
+            qos_profile_sensor_data,callback_group=self._cb_group,
+        )
+        self._set_mode_client=self.create_client(
+            SetMode,"/mavros/set_mode",callback_group=self._cb_group,
+        )
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
@@ -137,6 +154,33 @@ class Processor(Node):
         else:
             self.image_rate = 0.25
             self.error_margin = 0.05
+
+    def extended_state_callback(self, msg: ExtendedState):
+        self.landed_state=msg.landed_state
+
+    def _handoff_to_land_mode(self):
+        """Stop guiding and let the autopilot's LAND mode finish the touchdown."""
+        if self.land_handoff_done:
+            return
+        if not self._set_mode_client.service_is_ready():
+            # Do not latch the handoff: retry next tick rather than waiting
+            # forever for a ground report from a mode we never entered.
+            self.get_logger().error(
+                "set_mode service unavailable; cannot hand off to LAND", throttle_duration_sec=2.0
+            )
+            return
+        request=SetMode.Request()
+        request.custom_mode=LAND_MODE
+        self._set_mode_client.call_async(request)
+        self.land_handoff_done=True
+        self.on_ground_count=0
+        # Tell the controller to stop commanding so we are not fighting LAND mode.
+        self.error_publisher.publish(Error(
+            x=0.0,y=0.0,angle=0.0,yaw_error=0.0,vz=0.0,
+            valid_error=False,below_last_landing_altitude=False,
+            align_before_descent=False,landing_complete=True,
+        ))
+        self.get_logger().info(f"Vision exhausted: handing off to {LAND_MODE} mode")
 
     def _now(self) -> float:
         return self.get_clock().now().nanoseconds/1e9
@@ -203,6 +247,8 @@ class Processor(Node):
         self.landing_failed=False
         self.last_valid_time=None
         self.last_valid_xy=None
+        self.land_handoff_done=False
+        self.on_ground_count=0
         result=Landing.Result()
         if not self.imu_dict:
             self.fail_landing("Empty teach map; cannot land")
@@ -322,23 +368,22 @@ class Processor(Node):
             land_pitch=self.pitch
             land_yaw=self.yaw
             align_before_descent=agl<=self.align_altitude
+            if self.land_handoff_done:
+                # LAND mode owns the aircraft: just wait for the FCU to confirm
+                # ground contact, debounced against a single spurious sample.
+                if self.landed_state==ExtendedState.LANDED_STATE_ON_GROUND:
+                    self.on_ground_count+=1
+                else:
+                    self.on_ground_count=0
+                if self.on_ground_count>=ON_GROUND_SAMPLES:
+                    self.get_logger().info("FCU reports on ground: landing complete")
+                    self.landing_complete=True
+                return
             if not self.imu_dict:
                 self.fail_landing("Empty map")
                 return
-            if agl<=0.1+ACCEPTABLE_OFFSET:
-                self.error_publisher.publish(Error(
-                    x=0.0,y=0.0,angle=0.0,valid_error=False,
-                    below_last_landing_altitude=False,align_before_descent=False,
-                    landing_complete=True,
-                ))
-                self.landing_complete=True
-                return
             if agl<=self.last_landing_altitude:
-                self.error_publisher.publish(Error(
-                    x=0.0,y=0.0,angle=0.0,valid_error=False,
-                    below_last_landing_altitude=True,align_before_descent=False,
-                    landing_complete=False,
-                ))
+                self._handoff_to_land_mode()
                 return
             index=self.imu_dict.bisect_right(agl)-1
             if index==0:
