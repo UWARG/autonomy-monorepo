@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -43,28 +44,18 @@ class GitHubAdapter:
     def _list_org_repositories_with_gh(
         cls, organization: str, include_archived: bool
     ) -> list[GitHubRepository]:
-        try:
-            result = subprocess.run(
-                [
-                    "gh",
-                    "repo",
-                    "list",
-                    organization,
-                    "--limit",
-                    "1000",
-                    "--json",
-                    "name,sshUrl,url,isArchived,updatedAt",
-                ],
-                check=False,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-        except FileNotFoundError as error:
-            raise GitHubError("gh is not installed.") from error
-        if result.returncode != 0:
-            message = result.stderr.strip() or result.stdout.strip()
-            raise GitHubError(f"gh repo list {organization} failed: {message}")
+        result = cls._run_gh(
+            [
+                "gh",
+                "repo",
+                "list",
+                organization,
+                "--limit",
+                "1000",
+                "--json",
+                "name,sshUrl,url,isArchived,updatedAt",
+            ]
+        )
 
         return cls._repositories_from_json(
             result.stdout,
@@ -191,3 +182,81 @@ class GitHubAdapter:
             key=lambda repository: repository.updated_at,
             reverse=True,
         )
+
+    @classmethod
+    def current_user(cls) -> str:
+        result = cls._run_gh(["gh", "api", "user", "--jq", ".login"])
+        login = result.stdout.strip()
+        if not login:
+            raise GitHubError("gh did not report an authenticated GitHub user.")
+        return login
+
+    @classmethod
+    def fork_repository(cls, upstream: str) -> GitHubRepository:
+        login = cls.current_user()
+        output = cls._run_gh(
+            ["gh", "repo", "fork", upstream, "--clone=false", "--remote=false"],
+            merge_stderr=True,
+        ).stdout
+        target = cls._fork_slug_from_output(output, upstream, login)
+        return cls._resolve_fork(target, upstream)
+
+    @classmethod
+    def _fork_slug_from_output(cls, output: str, upstream: str, login: str) -> str:
+        upstream_name = upstream.rsplit("/", 1)[-1]
+        for match in re.finditer(r"\b([\w.-]+/[\w.-]+)\b", output):
+            slug = match.group(1)
+            if slug.lower() != upstream.lower() and slug.startswith(f"{login}/"):
+                return slug
+        return f"{login}/{upstream_name}"
+
+    @classmethod
+    def _resolve_fork(cls, target: str, upstream: str) -> GitHubRepository:
+        result = cls._run_gh(
+            ["gh", "repo", "view", target, "--json", "name,sshUrl,url,parent"]
+        )
+        try:
+            record = json.loads(result.stdout)
+        except json.JSONDecodeError as error:
+            raise GitHubError(f"gh returned invalid data for {target}.") from error
+        if not isinstance(record, dict):
+            raise GitHubError(f"gh returned invalid data for {target}.")
+
+        parent = record.get("parent") or {}
+        parent_slug = ""
+        if isinstance(parent, dict):
+            owner = parent.get("owner") or {}
+            owner_login = owner.get("login") if isinstance(owner, dict) else None
+            if owner_login and parent.get("name"):
+                parent_slug = f"{owner_login}/{parent['name']}"
+        if parent_slug.lower() != upstream.lower():
+            raise GitHubError(
+                f"{target} exists but is not a fork of {upstream}. Rename or delete "
+                "it, then try again."
+            )
+
+        name = record.get("name")
+        ssh_url = record.get("sshUrl")
+        url = record.get("url")
+        if not name or not ssh_url or not url:
+            raise GitHubError(f"gh returned incomplete data for {target}.")
+        return GitHubRepository(name=name, ssh_url=ssh_url, url=url)
+
+    @classmethod
+    def _run_gh(
+        cls, command: list[str], *, merge_stderr: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        try:
+            result = subprocess.run(
+                command,
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
+            )
+        except FileNotFoundError as error:
+            raise GitHubError("gh is not installed.") from error
+        if result.returncode != 0:
+            message = (result.stderr or "").strip() or result.stdout.strip()
+            raise GitHubError(f"{' '.join(command)} failed: {message}")
+        return result
