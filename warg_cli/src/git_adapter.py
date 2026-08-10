@@ -83,6 +83,19 @@ class GitAdapter:
         self.set_sparse_paths(desired)
         return before - set(desired)
 
+    def remote_url(self, name: str) -> str | None:
+        return self._config_value(f"remote.{name}.url")
+
+    def add_remote(self, name: str, url: str) -> None:
+        self._run("remote", "add", name, url)
+
+    def add_remote_if_absent(self, name: str, url: str) -> tuple[bool, str]:
+        current = self.remote_url(name)
+        if current is not None:
+            return False, current
+        self.add_remote(name, url)
+        return True, url
+
     def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
         separator = "..." if merge_base else ".."
         result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
