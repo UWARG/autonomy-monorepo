@@ -33,33 +33,23 @@ from typing import Union
 
 import numpy as np
 
+from utils import MIN_VECTOR_NORM, Attitude, ImageFrame, Quaternion, TargetPosition
+
 DEFAULT_MAX_INCIDENCE_ANGLE_RAD = math.radians(85.0)
 
 # Tolerance for verifying that a supplied mount rotation is orthonormal.
 _ROTATION_TOLERANCE = 1e-6
 
-# Below this, a vector is too short for its direction to mean anything.
-_MIN_VECTOR_NORM = 1e-9
-
-
-@dataclass(frozen=True)
-class ImageFrame:
-    """Where the detector found the target within the image, in pixels.
-
-    "Frame" here is the image's coordinate frame, not a video frame: this module never
-    touches pixel data, only the detection's location within it.
-    """
-
-    u: float
-    v: float
-
-    def to_tuple(self) -> tuple[float, float]:
-        return (self.u, self.v)
-
-    def validate(self) -> None:
-        """Raise ``ValueError`` if this detection cannot be back-projected."""
-        if not math.isfinite(self.u) or not math.isfinite(self.v):
-            raise ValueError(f"Pixel must be finite, got (u={self.u}, v={self.v}).")
+# Camera->FRD rotation for a camera bolted looking straight down. Image right maps to
+# body right, image down (``+v``) maps to body aft, and the optical axis maps to body
+# down. Columns are the images of the camera basis vectors.
+_NADIR_DOWN_ROTATION = np.array(
+    [
+        [0.0, -1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]
+)
 
 
 # Callers holding a bare (u, v) pair should not have to wrap it by hand.
@@ -78,7 +68,7 @@ def _as_image_frame(value: ImageFrameLike) -> ImageFrame:
 
 @dataclass(frozen=True)
 class CameraIntrinsics:
-    """Pinhole intrinsics of the rectified image, in pixels."""
+    """Pinhole intrinsics of the camera, in pixels."""
 
     fx: float
     fy: float
@@ -129,21 +119,6 @@ class CameraIntrinsics:
             )
 
 
-def _nadir_down_rotation() -> np.ndarray:
-    """Camera->FRD rotation for a camera bolted looking straight down.
-
-    Image right maps to body right, image down (``+v``) maps to body aft, and the
-    optical axis maps to body down. Columns are the images of the camera basis vectors.
-    """
-    return np.array(
-        [
-            [0.0, -1.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-
-
 @dataclass(frozen=True, eq=False)
 class CameraMount:
     """Where the camera sits on the airframe.
@@ -154,7 +129,7 @@ class CameraMount:
             from the drone's body origin).
     """
 
-    rotation: np.ndarray = field(default_factory=_nadir_down_rotation)
+    rotation: np.ndarray = field(default_factory=lambda: _NADIR_DOWN_ROTATION)
     translation: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     def __post_init__(self) -> None:
@@ -185,22 +160,23 @@ class CameraMount:
             )
 
 
+# Not hoisted into the constants block at the top of the file: instantiating a
+# CameraMount requires the class to already be defined.
 NADIR_DOWN_MOUNT = CameraMount()
 
 
 def _normalized_quaternion(w: float, x: float, y: float, z: float) -> np.ndarray:
-    components = np.array([w, x, y, z], dtype=float)
-    if not np.all(np.isfinite(components)):
-        raise ValueError(f"Quaternion must be finite, got {components.tolist()}.")
+    """Unit quaternion as a ``[w, x, y, z]`` array.
 
-    norm = float(np.linalg.norm(components))
-    if norm < _MIN_VECTOR_NORM:
-        raise ValueError("Quaternion must have non-zero norm.")
-    return components / norm
+    Normalization and its validation live on :class:`utils.Quaternion`; this only
+    adapts the result into the array form the geometry below works in.
+    """
+    unit = Quaternion(w=w, x=x, y=y, z=z).normalized()
+    return np.array(unit.to_array(), dtype=float)
 
 
 @dataclass(frozen=True, eq=False)
-class Attitude:
+class GroundPlaneGeometry:
     """The drone's orientation, reduced to the one thing localization needs.
 
     A level target plane has a world-down normal, so the only part of the drone's
@@ -221,7 +197,7 @@ class Attitude:
             raise ValueError(f"Down vector must be finite, got {vector.tolist()}.")
 
         norm = float(np.linalg.norm(vector))
-        if norm < _MIN_VECTOR_NORM:
+        if norm < MIN_VECTOR_NORM:
             raise ValueError("Down vector must have non-zero length.")
 
         vector = vector / norm
@@ -248,14 +224,23 @@ class Attitude:
         return math.asin(float(np.clip(-self.down_frd[0], -1.0, 1.0)))
 
     @classmethod
-    def level(cls) -> Attitude:
+    def level(cls) -> GroundPlaneGeometry:
         """A perfectly level drone: body-down and world-down coincide."""
         return cls(down_frd=np.array([0.0, 0.0, 1.0]))
 
     @classmethod
+    def from_attitude(cls, attitude: Attitude) -> GroundPlaneGeometry:
+        """Build from the shared :class:`utils.Attitude` a MAVLink feed carries.
+
+        Angular rates and heading play no part in the geometry, so only roll and pitch
+        are read.
+        """
+        return cls.from_euler(attitude.roll, attitude.pitch)
+
+    @classmethod
     def from_euler(
         cls, roll_rad: float, pitch_rad: float, yaw_rad: float = 0.0
-    ) -> Attitude:
+    ) -> GroundPlaneGeometry:
         """Build from ZYX (yaw-pitch-roll) Tait-Bryan angles in a NED world frame.
 
         ``yaw_rad`` is accepted so call sites holding a full (roll, pitch, yaw) triple
@@ -279,7 +264,9 @@ class Attitude:
         )
 
     @classmethod
-    def from_quaternion(cls, w: float, x: float, y: float, z: float) -> Attitude:
+    def from_quaternion(
+        cls, w: float, x: float, y: float, z: float
+    ) -> GroundPlaneGeometry:
         """Build from a quaternion rotating **body-FRD vectors into NED**.
 
         Avoids Euler angles entirely, so it is immune to gimbal lock at +/-90 degrees
@@ -302,7 +289,9 @@ class Attitude:
         )
 
     @classmethod
-    def from_mavros_quaternion(cls, w: float, x: float, y: float, z: float) -> Attitude:
+    def from_mavros_quaternion(
+        cls, w: float, x: float, y: float, z: float
+    ) -> GroundPlaneGeometry:
         """Build from a ``sensor_msgs/Imu`` orientation as MAVROS publishes it.
 
         MAVROS follows the ROS convention: the quaternion rotates **body-FLU** (forward,
@@ -327,35 +316,12 @@ class Attitude:
         )
 
 
-@dataclass(frozen=True)
-class TargetPosition:
-    """Where the target is, relative to the drone's body origin, in metres.
-
-    Position only. A single ray to a detection centroid carries no information about
-    how the target is *oriented*, so this deliberately is not a full pose; anything
-    claiming otherwise would be fabricating three numbers.
-    """
-
-    forward_m: float
-    right_m: float
-    down_m: float
-
-    def to_array(self) -> np.ndarray:
-        """As a ``(forward, right, down)`` numpy array."""
-        return np.array([self.forward_m, self.right_m, self.down_m])
-
-    @property
-    def range_m(self) -> float:
-        """Straight-line distance from the drone's body origin to the target."""
-        return float(np.linalg.norm(self.to_array()))
-
-
 TargetPositionLike = Union[TargetPosition, Sequence[float]]
 
 
 def _as_position_array(value: TargetPositionLike) -> np.ndarray:
     if isinstance(value, TargetPosition):
-        return value.to_array()
+        return np.asarray(value.to_array(), dtype=float)
 
     components = np.asarray(value, dtype=float).reshape(-1)
     if components.size != 3:
@@ -363,19 +329,29 @@ def _as_position_array(value: TargetPositionLike) -> np.ndarray:
     return components
 
 
+# A MAVLink attitude feed and a locally-built geometry are both acceptable inputs.
+GroundPlaneGeometryLike = Union[GroundPlaneGeometry, Attitude]
+
+
+def _as_ground_plane_geometry(value: GroundPlaneGeometryLike) -> GroundPlaneGeometry:
+    if isinstance(value, GroundPlaneGeometry):
+        return value
+    return GroundPlaneGeometry.from_attitude(value)
+
+
 def plane_normal_frd(roll_rad: float, pitch_rad: float) -> np.ndarray:
     """Unit normal of a level ground plane, expressed in the FRD body frame.
 
-    Convenience wrapper over ``Attitude.from_euler(...).plane_normal_frd``.
+    Convenience wrapper over ``GroundPlaneGeometry.from_euler(...).plane_normal_frd``.
     """
-    return Attitude.from_euler(roll_rad, pitch_rad).plane_normal_frd
+    return GroundPlaneGeometry.from_euler(roll_rad, pitch_rad).plane_normal_frd
 
 
 def locate_target_frd(
     image_frame: ImageFrameLike,
     intrinsics: CameraIntrinsics,
     distance_to_plane_m: float,
-    attitude: Attitude,
+    attitude: GroundPlaneGeometryLike,
     mount: CameraMount = NADIR_DOWN_MOUNT,
     max_incidence_angle_rad: float = DEFAULT_MAX_INCIDENCE_ANGLE_RAD,
     max_range_m: float | None = None,
@@ -387,15 +363,18 @@ def locate_target_frd(
 
     Args:
         image_frame: Where the detector found the target, as an :class:`ImageFrame` or
-            a bare ``(u, v)`` pair, in pixels of the rectified image.
-        intrinsics: Intrinsics of that same rectified image.
+            a bare ``(u, v)`` pair, in pixels.
+        intrinsics: Intrinsics of that same image.
         distance_to_plane_m: Perpendicular distance from the camera optical centre to
             the target's plane, in metres. This is *not* a raw rangefinder reading: a
             downward rangefinder on a drone pitched by ``theta`` reads
             ``distance / cos(theta)``.
-        attitude: The drone's orientation. Build it with :meth:`Attitude.from_euler`,
-            :meth:`Attitude.from_quaternion`, or :meth:`Attitude.from_mavros_quaternion`
-            depending on what your source publishes.
+        attitude: The drone's orientation, either a :class:`utils.Attitude` straight
+            from a MAVLink feed or a :class:`GroundPlaneGeometry` built with
+            :meth:`GroundPlaneGeometry.from_euler`,
+            :meth:`GroundPlaneGeometry.from_quaternion`, or
+            :meth:`GroundPlaneGeometry.from_mavros_quaternion`, depending on what your
+            source publishes.
         mount: Camera pose on the airframe. Defaults to a nadir-down mount at the body
             origin.
         max_incidence_angle_rad: Reject rays striking the plane at a shallower angle
@@ -451,7 +430,7 @@ def locate_target_frd(
     direction_frd = mount.rotation @ direction_cam
     direction_frd /= np.linalg.norm(direction_frd)
 
-    normal_frd = attitude.plane_normal_frd
+    normal_frd = _as_ground_plane_geometry(attitude).plane_normal_frd
 
     # How squarely the ray meets the plane. Non-positive means the ray points away from
     # the plane entirely (target behind the camera); small-positive means a grazing hit
@@ -475,7 +454,7 @@ def project_target_frd(
     intrinsics: CameraIntrinsics,
     mount: CameraMount = NADIR_DOWN_MOUNT,
 ) -> ImageFrame | None:
-    """Forward model: project an FRD position back into rectified image pixels.
+    """Forward model: project an FRD position back into image pixels.
 
     The inverse of :func:`locate_target_frd`, useful for testing and for predicting
     where a known target should appear.

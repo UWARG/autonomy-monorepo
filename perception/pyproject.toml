@@ -21,7 +21,8 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+# ".." puts the monorepo root on the path so the shared `utils` project resolves.
+pythonpath = ["src", ".."]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src"]

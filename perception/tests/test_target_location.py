@@ -7,20 +7,19 @@ import pytest
 
 from target_location import (
     NADIR_DOWN_MOUNT,
-    Attitude,
     CameraIntrinsics,
     CameraMount,
-    ImageFrame,
-    TargetPosition,
+    GroundPlaneGeometry,
     locate_target_frd,
     plane_normal_frd,
     project_target_frd,
 )
+from utils import Attitude, ImageFrame, TargetPosition
 
 INTRINSICS = CameraIntrinsics(fx=600.0, fy=600.0, cx=320.0, cy=240.0)
 CENTRE_PIXEL = ImageFrame(u=INTRINSICS.cx, v=INTRINSICS.cy)
 HEIGHT_M = 10.0
-LEVEL = Attitude.level()
+LEVEL = GroundPlaneGeometry.level()
 
 # ENU <- NED and FLU <- FRD axis swaps, used to cross-check the MAVROS constructor.
 NED_FROM_ENU = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, -1.0]])
@@ -107,22 +106,37 @@ class TestImageFrame:
         assert ImageFrame(u=1.5, v=-2.5).to_tuple() == (1.5, -2.5)
 
 
-class TestAttitude:
+class TestGroundPlaneGeometry:
     def test_level_is_body_down(self):
-        assert Attitude.level().down_frd == pytest.approx([0.0, 0.0, 1.0])
+        assert GroundPlaneGeometry.level().down_frd == pytest.approx([0.0, 0.0, 1.0])
 
     def test_plane_normal_is_the_down_vector(self):
-        attitude = Attitude.from_euler(0.3, -0.2)
+        attitude = GroundPlaneGeometry.from_euler(0.3, -0.2)
         assert attitude.plane_normal_frd == pytest.approx(attitude.down_frd)
 
     def test_down_vector_is_normalized_on_construction(self):
-        attitude = Attitude(down_frd=np.array([0.0, 0.0, 7.0]))
+        attitude = GroundPlaneGeometry(down_frd=np.array([0.0, 0.0, 7.0]))
         assert attitude.down_frd == pytest.approx([0.0, 0.0, 1.0])
+
+    @pytest.mark.parametrize("roll_rad", [-0.6, 0.0, 0.4])
+    @pytest.mark.parametrize("pitch_rad", [-0.6, 0.0, 0.4])
+    def test_from_attitude_matches_from_euler(self, roll_rad, pitch_rad):
+        attitude = Attitude(
+            roll=roll_rad,
+            pitch=pitch_rad,
+            yaw=1.3,
+            rollspeed=0.1,
+            pitchspeed=-0.2,
+            yawspeed=0.3,
+        )
+        assert GroundPlaneGeometry.from_attitude(attitude).down_frd == pytest.approx(
+            GroundPlaneGeometry.from_euler(roll_rad, pitch_rad).down_frd
+        )
 
     @pytest.mark.parametrize("roll_rad", [-1.0, -0.3, 0.0, 0.3, 1.0])
     @pytest.mark.parametrize("pitch_rad", [-1.0, -0.3, 0.0, 0.3, 1.0])
     def test_normal_is_always_a_unit_vector(self, roll_rad, pitch_rad):
-        normal = Attitude.from_euler(roll_rad, pitch_rad).plane_normal_frd
+        normal = GroundPlaneGeometry.from_euler(roll_rad, pitch_rad).plane_normal_frd
         assert np.linalg.norm(normal) == pytest.approx(1.0)
 
     @pytest.mark.parametrize("roll_rad", [-0.4, 0.0, 0.7])
@@ -132,23 +146,23 @@ class TestAttitude:
         self, roll_rad, pitch_rad, yaw_rad
     ):
         expected = rotation_zyx(yaw_rad, pitch_rad, roll_rad)[2, :]
-        actual = Attitude.from_euler(roll_rad, pitch_rad, yaw_rad).down_frd
+        actual = GroundPlaneGeometry.from_euler(roll_rad, pitch_rad, yaw_rad).down_frd
         assert actual == pytest.approx(expected)
 
     @pytest.mark.parametrize("yaw_rad", [-3.0, -1.0, 0.0, 2.5])
     def test_yaw_is_accepted_and_ignored(self, yaw_rad):
-        assert Attitude.from_euler(0.3, -0.2, yaw_rad).down_frd == pytest.approx(
-            Attitude.from_euler(0.3, -0.2).down_frd
-        )
+        expected = GroundPlaneGeometry.from_euler(0.3, -0.2).down_frd
+        actual = GroundPlaneGeometry.from_euler(0.3, -0.2, yaw_rad).down_frd
+        assert actual == pytest.approx(expected)
 
     def test_nose_up_tilts_gravity_aft(self):
         # Pitched nose up, "down" is behind the drone: negative forward component.
-        assert Attitude.from_euler(0.0, 0.5).down_frd[0] < 0.0
+        assert GroundPlaneGeometry.from_euler(0.0, 0.5).down_frd[0] < 0.0
 
     @pytest.mark.parametrize("roll_rad", [-2.5, -0.4, 0.0, 0.7, 2.5])
     @pytest.mark.parametrize("pitch_rad", [-1.2, -0.4, 0.0, 0.7, 1.2])
     def test_roll_and_pitch_properties_recover_the_inputs(self, roll_rad, pitch_rad):
-        attitude = Attitude.from_euler(roll_rad, pitch_rad)
+        attitude = GroundPlaneGeometry.from_euler(roll_rad, pitch_rad)
         assert attitude.roll_rad == pytest.approx(roll_rad)
         assert attitude.pitch_rad == pytest.approx(pitch_rad)
 
@@ -157,21 +171,19 @@ class TestAttitude:
     def test_quaternion_agrees_with_euler(self, angles, yaw_rad):
         roll_rad, pitch_rad = angles
         quaternion = quaternion_from_zyx(yaw_rad, pitch_rad, roll_rad)
-        assert Attitude.from_quaternion(*quaternion).down_frd == pytest.approx(
-            Attitude.from_euler(roll_rad, pitch_rad).down_frd
-        )
+        expected = GroundPlaneGeometry.from_euler(roll_rad, pitch_rad).down_frd
+        actual = GroundPlaneGeometry.from_quaternion(*quaternion).down_frd
+        assert actual == pytest.approx(expected)
 
     def test_quaternion_survives_gimbal_lock(self):
         # Straight-down pitch is where an Euler round trip would degenerate.
         quaternion = quaternion_from_zyx(0.9, math.pi / 2.0, 0.0)
-        assert Attitude.from_quaternion(*quaternion).down_frd == pytest.approx(
-            [-1.0, 0.0, 0.0], abs=1e-12
-        )
+        down_frd = GroundPlaneGeometry.from_quaternion(*quaternion).down_frd
+        assert down_frd == pytest.approx([-1.0, 0.0, 0.0], abs=1e-12)
 
     def test_quaternion_is_normalized_on_construction(self):
-        assert Attitude.from_quaternion(2.0, 0.0, 0.0, 0.0).down_frd == pytest.approx(
-            [0.0, 0.0, 1.0]
-        )
+        down_frd = GroundPlaneGeometry.from_quaternion(2.0, 0.0, 0.0, 0.0).down_frd
+        assert down_frd == pytest.approx([0.0, 0.0, 1.0])
 
     @pytest.mark.parametrize(
         "axis", [(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0), (1.0, -2.0, 0.5)]
@@ -184,20 +196,19 @@ class TestAttitude:
         enu_from_flu = matrix_from_quaternion(*quaternion)
         ned_from_frd = NED_FROM_ENU @ enu_from_flu @ FLU_FROM_FRD
 
-        actual = Attitude.from_mavros_quaternion(*quaternion).down_frd
+        actual = GroundPlaneGeometry.from_mavros_quaternion(*quaternion).down_frd
         assert actual == pytest.approx(ned_from_frd[2, :])
 
     def test_mavros_identity_quaternion_is_level(self):
-        assert Attitude.from_mavros_quaternion(1.0, 0.0, 0.0, 0.0).down_frd == (
-            pytest.approx([0.0, 0.0, 1.0])
-        )
+        level = GroundPlaneGeometry.from_mavros_quaternion(1.0, 0.0, 0.0, 0.0)
+        assert level.down_frd == pytest.approx([0.0, 0.0, 1.0])
 
     def test_mavros_and_ned_conventions_disagree_on_forward(self):
         # The trap the separate constructor exists to prevent: same numbers, opposite
         # forward axis. A target ahead of the drone would be reported behind it.
         quaternion = quaternion_from_axis_angle((0.0, 1.0, 0.0), 0.4)
-        ned = Attitude.from_quaternion(*quaternion).down_frd
-        mavros = Attitude.from_mavros_quaternion(*quaternion).down_frd
+        ned = GroundPlaneGeometry.from_quaternion(*quaternion).down_frd
+        mavros = GroundPlaneGeometry.from_mavros_quaternion(*quaternion).down_frd
 
         assert ned[0] == pytest.approx(-mavros[0])
         assert ned[0] != pytest.approx(0.0)
@@ -209,27 +220,27 @@ class TestAttitude:
         angles = {"roll_rad": 0.0, "pitch_rad": 0.0}
         angles.update(kwargs)
         with pytest.raises(ValueError, match="must be finite"):
-            Attitude.from_euler(**angles)
+            GroundPlaneGeometry.from_euler(**angles)
 
     def test_rejects_non_finite_yaw(self):
         with pytest.raises(ValueError, match="yaw must be finite"):
-            Attitude.from_euler(0.0, 0.0, float("nan"))
+            GroundPlaneGeometry.from_euler(0.0, 0.0, float("nan"))
 
     def test_rejects_zero_quaternion(self):
         with pytest.raises(ValueError, match="non-zero norm"):
-            Attitude.from_quaternion(0.0, 0.0, 0.0, 0.0)
+            GroundPlaneGeometry.from_quaternion(0.0, 0.0, 0.0, 0.0)
 
     def test_rejects_non_finite_quaternion(self):
         with pytest.raises(ValueError, match="must be finite"):
-            Attitude.from_quaternion(float("nan"), 0.0, 0.0, 0.0)
+            GroundPlaneGeometry.from_quaternion(float("nan"), 0.0, 0.0, 0.0)
 
     def test_rejects_zero_down_vector(self):
         with pytest.raises(ValueError, match="non-zero length"):
-            Attitude(down_frd=np.zeros(3))
+            GroundPlaneGeometry(down_frd=np.zeros(3))
 
     def test_free_function_matches_the_class(self):
         assert plane_normal_frd(0.3, -0.2) == pytest.approx(
-            Attitude.from_euler(0.3, -0.2).plane_normal_frd
+            GroundPlaneGeometry.from_euler(0.3, -0.2).plane_normal_frd
         )
 
 
@@ -264,7 +275,7 @@ class TestNadirGeometry:
     def test_pitch_stretches_slant_range_by_secant(self, pitch_rad):
         # The centre ray of a nadir camera is body-down whatever the attitude, so
         # pitching only changes how far along that ray the plane sits.
-        attitude = Attitude.from_euler(0.0, pitch_rad)
+        attitude = GroundPlaneGeometry.from_euler(0.0, pitch_rad)
         position = locate_target_frd(CENTRE_PIXEL, INTRINSICS, HEIGHT_M, attitude)
         assert position.to_array() == pytest.approx(
             [0.0, 0.0, HEIGHT_M / math.cos(pitch_rad)]
@@ -272,14 +283,38 @@ class TestNadirGeometry:
 
     @pytest.mark.parametrize("roll_rad", [-0.6, 0.0, 0.4])
     def test_roll_stretches_slant_range_by_secant(self, roll_rad):
-        attitude = Attitude.from_euler(roll_rad, 0.0)
+        attitude = GroundPlaneGeometry.from_euler(roll_rad, 0.0)
         position = locate_target_frd(CENTRE_PIXEL, INTRINSICS, HEIGHT_M, attitude)
         assert position.to_array() == pytest.approx(
             [0.0, 0.0, HEIGHT_M / math.cos(roll_rad)]
         )
 
+    @pytest.mark.parametrize("roll_rad", [-0.3, 0.0, 0.45])
+    @pytest.mark.parametrize("pitch_rad", [-0.3, 0.0, 0.45])
+    def test_accepts_a_shared_attitude_directly(self, roll_rad, pitch_rad):
+        # Callers holding a MAVLink attitude should not have to convert it by hand.
+        attitude = Attitude(
+            roll=roll_rad,
+            pitch=pitch_rad,
+            yaw=-0.8,
+            rollspeed=0.0,
+            pitchspeed=0.0,
+            yawspeed=0.0,
+        )
+        pixel = ImageFrame(u=INTRINSICS.cx + 55.0, v=INTRINSICS.cy - 25.0)
+        assert locate_target_frd(
+            pixel, INTRINSICS, HEIGHT_M, attitude
+        ).to_array() == pytest.approx(
+            locate_target_frd(
+                pixel,
+                INTRINSICS,
+                HEIGHT_M,
+                GroundPlaneGeometry.from_euler(roll_rad, pitch_rad),
+            ).to_array()
+        )
+
     def test_result_lies_on_the_plane(self):
-        attitude = Attitude.from_euler(0.25, -0.15)
+        attitude = GroundPlaneGeometry.from_euler(0.25, -0.15)
         pixel = ImageFrame(u=INTRINSICS.cx + 90.0, v=INTRINSICS.cy - 40.0)
         position = locate_target_frd(pixel, INTRINSICS, HEIGHT_M, attitude)
         assert float(attitude.plane_normal_frd @ position.to_array()) == pytest.approx(
@@ -351,7 +386,7 @@ class TestRoundTrip:
             @ rotation_zyx(mount_yaw_rad, 0.1, -0.05),
             translation=np.array([0.12, -0.04, 0.31]),
         )
-        attitude = Attitude.from_euler(roll_rad, pitch_rad)
+        attitude = GroundPlaneGeometry.from_euler(roll_rad, pitch_rad)
         normal = attitude.plane_normal_frd
 
         rng = np.random.default_rng(seed=20260801)
@@ -406,7 +441,7 @@ class TestRejections:
 
     def test_ray_pointing_away_from_the_plane_is_rejected(self):
         # Rolled past vertical, the ground plane is no longer below the camera.
-        inverted = Attitude.from_euler(math.pi, 0.0)
+        inverted = GroundPlaneGeometry.from_euler(math.pi, 0.0)
         assert locate_target_frd(CENTRE_PIXEL, INTRINSICS, HEIGHT_M, inverted) is None
 
     def test_incidence_threshold_is_honoured(self):
