@@ -1,5 +1,8 @@
 """
-To create a new behavior, copy this file, rename it, and fill in the lifecycle methods.
+Vision-map takeoff for the non-optimal/jetson tree.
+
+Distinct from ``engine.behaviors.navigation.takeoff`` (MAVROS CommandTOL).
+Writes launch latitude/longitude/altitude for ReturnToLaunch.
 """
 
 from __future__ import annotations

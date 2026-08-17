@@ -1,10 +1,10 @@
 import py_trees
 import py_trees_ros
 import rclpy
-from engine.behaviors.takeoff import Takeoff
-from engine.behaviors.fly_around import FlyAround
-from engine.behaviors.return_to_launch import ReturnToLaunch
-from engine.behaviors.landing import Landing
+from engine.behaviors.navigation.precision_takeoff import Takeoff
+from engine.behaviors.rc.fly_around import FlyAround
+from engine.behaviors.navigation.return_to_launch import ReturnToLaunch
+from engine.behaviors.navigation.landing import Landing
 
 def create_sequence():
     sequence=py_trees.composites.Sequence(name="Sequence",memory=True)
