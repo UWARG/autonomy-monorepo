@@ -30,7 +30,7 @@ from custom_interfaces.msg import Error
 from mavros_msgs.msg import ExtendedState
 from mavros_msgs.srv import SetMode
 
-CAMERA_OFFSET=0.3
+CAMERA_OFFSET=0.08
 
 # A teach frame with too few features is worse than no frame at all: the repeat
 # pass selects it by altitude, fails to match, and stalls. Frames captured low
