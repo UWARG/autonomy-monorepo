@@ -58,6 +58,7 @@ MIN_ALIGN_TOLERANCE_M=0.05
 LAND_MODE="LAND"
 ON_GROUND_SAMPLES=3
 
+SCALE_ERROR_MARGIN=1.0
 
 class Processor(Node):
     def __init__(self) -> None:
@@ -199,7 +200,7 @@ class Processor(Node):
         # Commit only if last fix was inside the full-descent core (1x cone).
         # Live vision still tapers out to 2x; blind commit is irreversible.
         tolerance=max(MIN_ALIGN_TOLERANCE_M,ALIGN_TOLERANCE_RATIO*self._agl)
-        if self.last_valid_xy<=tolerance:
+        if self.last_valid_xy<=tolerance and self._agl<=1.0:
             self.error_publisher.publish(Error(
                 x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=DESCENT_VZ,
                 valid_error=False,landing_complete=False,
@@ -222,11 +223,11 @@ class Processor(Node):
         ))
         return True
 
-    def publish_invalid_error(self, yaw_error: float=0.0):
+    def publish_invalid_error(self, yaw_error: float=0.0, vz: float=0.0):
         if self._handle_stale_vision(yaw_error):
             return
         self.error_publisher.publish(Error(
-            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=0.0,
+            x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=vz,
             valid_error=False,landing_complete=False,
         ))
 
@@ -274,6 +275,10 @@ class Processor(Node):
             while rclpy.ok():
                 if goal_handle.is_cancel_requested:
                     result.success=False
+                    self.error_publisher.publish(Error(
+                        x=0.0,y=0.0,angle=0.0,yaw_error=0.0,vz=0.0,valid_error=False,
+                        landing_complete=True,
+                    ))
                     goal_handle.canceled()
                     return result
                 if self.landing_failed:
@@ -399,12 +404,9 @@ class Processor(Node):
                 self._handoff_to_land_mode()
                 return
             index=self.imu_dict.bisect_right(agl)-1
-            if index==0:
-                self._handoff_to_land_mode()
-                return
             if index<0:
-                self.get_logger().error("No takeoff key found")
-                self.publish_invalid_error()
+                self.get_logger().error("Below bottom of teach map")
+                self._handoff_to_land_mode()
                 return
             key,entry=self.imu_dict.peekitem(index)
             kp_takeoff,des_takeoff,takeoff_roll,takeoff_pitch,takeoff_yaw=entry
@@ -481,22 +483,10 @@ class Processor(Node):
             translation_y=H[1,2]
             rotation_angle=math.atan2(H[1,0], H[0,0])
             scale=math.sqrt(H[0,0]**2 + H[1,0]**2)
-            if scale<=1.0-self.error_margin or scale>=1.0+self.error_margin:
-                if self._handle_stale_vision(yaw_error):
-                    return
-                # Nudge altitude toward the teach key so scale can converge to ~1.
-                if key<agl:  # above teach key → descend
-                    scale_vz=0.1
-                elif key>agl:  # below teach key → ascend
-                    scale_vz=-0.1
-                else:
-                    scale_vz=0.0
-                self.error_publisher.publish(Error(
-                    x=0.0,y=0.0,angle=0.0,yaw_error=yaw_error,vz=scale_vz,
-                    valid_error=False,landing_complete=False,
-                ))
+            if scale<=1.0-SCALE_ERROR_MARGIN or scale>=1.0+SCALE_ERROR_MARGIN:
+                self.publish_invalid_error(yaw_error)
                 self.get_logger().error(
-                    f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f}, vz={scale_vz})"
+                    f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f})"
                 )
                 return
             self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")

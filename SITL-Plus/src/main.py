@@ -207,14 +207,14 @@ def main():
         Object("r2d2.urdf", position=[4, 6, 0], orientation=[0, 0, math.pi / 2]),
         Object(
             "sphere_small.urdf",
-            position=[2, 2, 0],
+            position=[10,10,2],
             orientation=[math.pi / 2, 0, 0],
             scale=5,
         ),
         Object(
             "barrel",
             position=[2, 2, 3],
-            orientation=[0, 0, 0],
+            orientation=[math.pi/2, math.pi/2, 0],
             scale=1,
             radius=0.5,
             height=1,
