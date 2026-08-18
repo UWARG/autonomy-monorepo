@@ -143,14 +143,14 @@ def main():
             x_px=kp1[match.queryIdx].pt[0]-cx
             y_px=kp1[match.queryIdx].pt[1]-cy
             pz=teach_altitude*math.cos(teach_pitch)*math.cos(teach_roll)
-            px=(-x_px-math.sin(teach_pitch)*fx)*pz/fx
-            py=(-y_px+math.sin(teach_roll)*fy)*pz/fy
+            px=(x_px-math.sin(teach_pitch)*fx)*pz/fx
+            py=(y_px+math.sin(teach_roll)*fy)*pz/fy
             takeoff_3d_points.append([px,py])
             x_px=kp2[match.trainIdx].pt[0]-cx
             y_px=kp2[match.trainIdx].pt[1]-cy
             pz=altitude*math.cos(pitch)*math.cos(roll)
-            px=(-x_px-math.sin(pitch)*fx)*pz/fx
-            py=(-y_px+math.sin(roll)*fy)*pz/fy
+            px=(x_px-math.sin(pitch)*fx)*pz/fx
+            py=(y_px+math.sin(roll)*fy)*pz/fy
             landing_3d_points.append([px,py])
         H,inliers=cv2.estimateAffinePartial2D(
             np.asarray(takeoff_3d_points,dtype=np.float32),
