@@ -63,6 +63,7 @@ class Controller(Node):
             PositionTarget.IGNORE_YAW
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
+        #Converting to FLU since mavros expects FLU to be converted into FRD
         velocity.velocity.x=self.vx
         velocity.velocity.y=-self.vy
         velocity.velocity.z=-self.vz
@@ -114,6 +115,7 @@ class Controller(Node):
             self.publish_velocity()
             return
         self.get_logger().info(f"Updating PI: {error.x}, {error.y}")
+        #converting from frame of x=left y=up to frd drone frame where x=forward y=right, to do so negate y
         self.vx=self.pi_y.update(error.y)
         self.vy=-self.pi_x.update(error.x)
         # Descent rate is tapered by the processor against an altitude-proportional
