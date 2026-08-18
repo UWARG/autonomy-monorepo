@@ -464,6 +464,7 @@ class Processor(Node):
                     f"Scale out of margin: {scale:.2f} (key={key:.2f}, agl={agl:.2f})"
                 )
                 return
+            self._save_landing_overlay(gray, translation_x, translation_y, key)
             self.get_logger().info(f"Yaw delta (imu): {math.degrees(yaw_error):.1f} deg, measured rotation: {math.degrees(rotation_angle):.1f} deg")
             # Altitude-proportional alignment cone: require tight centring only as
             # the ground approaches, and taper descent authority with alignment
@@ -482,6 +483,40 @@ class Processor(Node):
             error.valid_error=True
             error.landing_complete=False
             self.error_publisher.publish(error)
+
+    def _save_landing_overlay(self, live_gray, tx: float, ty: float, altitude: float) -> None:
+        """Save teach|live+arrow once per matched teach altitude."""
+        path=os.path.join("/images", f"landing_overlay_{altitude:.2f}.png")
+        if os.path.exists(path):
+            return
+        if live_gray is None or not (math.isfinite(tx) and math.isfinite(ty)):
+            return
+        teach_path=os.path.join("/images", f"takeoff_{altitude:.2f}.png")
+        teach_gray=cv2.imread(teach_path, cv2.IMREAD_GRAYSCALE)
+        if teach_gray is None:
+            self.get_logger().warn(f"No teach frame at {teach_path}; skip overlay")
+            return
+        live_h,live_w=live_gray.shape[:2]
+        if teach_gray.shape[:2]!=(live_h, live_w):
+            teach_gray=cv2.resize(teach_gray, (live_w, live_h))
+        teach_bgr=cv2.cvtColor(teach_gray, cv2.COLOR_GRAY2BGR)
+        live_bgr=cv2.cvtColor(live_gray, cv2.COLOR_GRAY2BGR)
+        # Processor ground frame is +x=left, +y=forward; image +x=right, +y=down.
+        # Fly toward the pad: invert both axes so the arrow matches the image.
+        arrow_scale=min(250.0, 100.0/max(abs(tx), abs(ty), 1e-6))
+        end_x=int(round(self.cx-tx*arrow_scale))
+        end_y=int(round(self.cy-ty*arrow_scale))
+        end_x=max(0, min(live_w-1, end_x))
+        end_y=max(0, min(live_h-1, end_y))
+        cv2.arrowedLine(
+            live_bgr,
+            (int(round(self.cx)), int(round(self.cy))),
+            (end_x, end_y),
+            (255, 0, 0),
+            2,
+        )
+        cv2.imwrite(path, cv2.hconcat([teach_bgr, live_bgr]))
+        self.get_logger().info(f"Landing overlay saved to {path}")
 
     def generate_orb_descriptors(self, image: Image):
         kp,des=self.orb.detectAndCompute(image, None)
