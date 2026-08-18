@@ -5,7 +5,7 @@ import numpy as np
 
 HOST = "0.0.0.0"
 PORT = 2000
-
+W,H=1280,720
 
 def recv_exact(conn: socket.socket, n: int) -> bytes | None:
     """Read exactly n bytes, or None if the peer closes early."""
@@ -36,6 +36,9 @@ def main():
         print("No data received")
         return
     img1 = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img1 = cv2.resize(img1, (W, H))
+    cv2.namedWindow("Image", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Image", 2*W, H)
     try:
         while True:
             header = recv_exact(conn, 4)
@@ -48,6 +51,7 @@ def main():
             img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
             if img is None:
                 continue
+            img = cv2.resize(img, (W, H))
             a=cv2.hconcat([img1, img])
             cv2.imshow("Image", a)
             if cv2.waitKey(1) & 0xFF == ord("q"):

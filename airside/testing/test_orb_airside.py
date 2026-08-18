@@ -75,8 +75,8 @@ def main():
             video_cap= cv2.VideoCapture(0)
             break
         time.sleep(0.1)
-    video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
     #warm up camera
     for _ in range(20):
         ret, frame= video_cap.read()
