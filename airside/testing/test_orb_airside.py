@@ -3,10 +3,19 @@ import yaml
 import numpy as np
 import os
 import math
+import sys
+from pathlib import Path
 from pymavlink import mavutil
 import socket
 import struct
 import time
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CAMERA_DIR = _REPO_ROOT / "camera"
+if str(_CAMERA_DIR) not in sys.path:
+    sys.path.insert(0, str(_CAMERA_DIR))
+
+from src.arducam import Arducam
 ALTITUDE=0.78
 CONNECTION_STRING="/dev/ttyAMA0"
 DISTANCE_SENSOR_HZ=10
@@ -66,23 +75,20 @@ def main():
     if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
         BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
     orb = cv2.ORB_create(nfeatures=10000)
-    #wait for video_cap 1 or 0 to be available
-    while True:
-        if os.path.exists("/dev/video1"):
-            video_cap= cv2.VideoCapture(1)
-            break
-        if os.path.exists("/dev/video0"):
-            video_cap= cv2.VideoCapture(0)
-            break
+    while not os.path.exists("/dev/video0") and not os.path.exists("/dev/video1"):
         time.sleep(0.1)
-    video_cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    video_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-    #warm up camera
+    camera = Arducam(width=int(width), height=int(height))
+    if not camera.initialize_camera():
+        raise SystemExit("Failed to open Arducam")
+    frame = None
     for _ in range(20):
-        ret, frame= video_cap.read()
-        if not ret:
-            continue
-    _,frame= video_cap.read()
+        captured = camera.capture_frame()
+        if captured is not None:
+            frame = captured.rgb
+            break
+    if frame is None:
+        camera.stop()
+        raise SystemExit("Failed to capture teach frame")
     teach_altitude=read_distance_m(conn)
     attitude=conn.recv_match(type="ATTITUDE",blocking=True)
     if attitude is None:
@@ -102,7 +108,7 @@ def main():
     dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
     x,y,w,h=roi
     dst_original=dst[y:y+h, x:x+w]
-    gray_original=cv2.cvtColor(dst_original, cv2.COLOR_RGB2GRAY)
+    gray_original=cv2.cvtColor(dst_original, cv2.COLOR_BGR2GRAY)
     kp1, des1 = orb.detectAndCompute(gray_original, None)
     ok, res = cv2.imencode(
         ".jpg", dst_original, [int(cv2.IMWRITE_JPEG_QUALITY), 90]
@@ -112,9 +118,10 @@ def main():
         sock.sendall(struct.pack("!I", len(data)) + data)
     while True:
         time.sleep(0.5)
-        ret, frame= video_cap.read()
-        if not ret:
+        captured = camera.capture_frame()
+        if captured is None:
             continue
+        frame = captured.rgb
         message=conn.recv_match(type="ATTITUDE",blocking=True)
         if message is None:
             continue
@@ -126,7 +133,7 @@ def main():
         dst=cv2.remap(frame, mapx, mapy, cv2.INTER_LINEAR)
         x,y,w,h=roi
         dst_live=dst[y:y+h, x:x+w]
-        gray_live=cv2.cvtColor(dst_live, cv2.COLOR_RGB2GRAY)
+        gray_live=cv2.cvtColor(dst_live, cv2.COLOR_BGR2GRAY)
         kp2, des2 = orb.detectAndCompute(gray_live, None)
         if des1 is None or des2 is None or not kp1 or not kp2:
             continue
@@ -186,7 +193,7 @@ def main():
         sock.sendall(struct.pack("!I", len(data)) + data)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-    video_cap.release()
+    camera.stop()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":

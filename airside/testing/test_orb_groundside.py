@@ -38,7 +38,7 @@ def main():
     img1 = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     img1 = cv2.resize(img1, (W, H))
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Image", 2*W, H)
+    cv2.resizeWindow("Image", W, H)
     try:
         while True:
             header = recv_exact(conn, 4)
