@@ -40,6 +40,8 @@ class CameraNode(Node):
     def _create_camera() -> AbstractCamera:
         if os.path.exists("/dev/video0"):
             return Arducam(width=CameraNode.WIDTH, height=CameraNode.HEIGHT)
+        if os.path.exists("/dev/video1"):
+            return Arducam(width=CameraNode.WIDTH, height=CameraNode.HEIGHT)
         return SimCamera()
 
     def _publish_frame(self) -> None:
