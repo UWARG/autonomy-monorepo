@@ -127,7 +127,7 @@ class Processor(Node):
         self.error_margin=0.02 #meters
         self.landing_3d_points=[]
         self.takeoff_3d_points=[]
-        self.last_landing_altitude=0.4 #alt to go straight down
+        self.last_landing_altitude=1 #alt to go straight down
         self.min_inlier_ratio=0.4
         self.lowe_ratio=0.55
 
