@@ -2,3 +2,5 @@ build/
 install/
 log/
 data/
+venv/
+/src/images/
