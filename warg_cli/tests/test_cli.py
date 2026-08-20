@@ -5,6 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, app
+from doctor import Check, Section, CheckStatus
 from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
@@ -32,57 +33,77 @@ def test_info_shows_commands(fixture_repo: Path, monkeypatch) -> None:
     assert "test:unit" in result.stdout
 
 
-def test_doctor_prints_repository_access_diagnostics(
-    fixture_repo: Path, monkeypatch
-) -> None:
+def _doctor_sections() -> list[Section]:
+    return [
+        Section(
+            "Tools",
+            [
+                Check(
+                    CheckStatus.OK, "git version 2.44.0", transcript=["$ git --version"]
+                ),
+                Check(
+                    CheckStatus.WARN,
+                    "Docker is not installed — needed for airside.",
+                    fix="Install Docker Desktop: https://docs.docker.com/get-docker/",
+                ),
+            ],
+        ),
+        Section(
+            "GitHub access",
+            [Check(CheckStatus.OK, "Authenticated to GitHub over SSH as octocat.")],
+        ),
+    ]
+
+
+def test_doctor_reports_environment_checks(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
     roots = []
 
-    class FakeGit:
-        def __init__(self, root: Path | None):
-            self.root = root
-            roots.append(root)
+    def fake_run_doctor(root: Path | None) -> list[Section]:
+        roots.append(root)
+        return _doctor_sections()
 
-        def repository_access_diagnostics(self) -> list[str]:
-            return [
-                "remote.origin.url: git@github.com:UWARG/autonomy-monorepo.git",
-                "git ls-remote --exit-code origin HEAD: ok",
-            ]
-
-    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.run_doctor", fake_run_doctor)
 
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 0
     assert roots == [fixture_repo]
-    assert "Git repository access" in result.stdout
-    assert "remote.origin.url" in result.stdout
-    assert "git ls-remote --exit-code origin HEAD: ok" in result.stdout
+    assert "Tools" in result.stdout
+    assert "git version 2.44.0" in result.stdout
+    assert "Docker is not installed" in result.stdout
+    assert "fix: Install Docker Desktop" in result.stdout
+    assert "Authenticated to GitHub over SSH as octocat." in result.stdout
+    assert "No blocking problems found." in result.stdout
+    assert "$ git --version" not in result.stdout
 
 
-def test_doctor_runs_outside_git_repo(tmp_path: Path, monkeypatch) -> None:
+def test_doctor_verbose_shows_command_output(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    monkeypatch.setattr("cli.run_doctor", lambda root: _doctor_sections())
+
+    result = runner.invoke(app, ["doctor", "--verbose"])
+
+    assert result.exit_code == 0
+    assert "$ git --version" in result.stdout
+
+
+def test_doctor_fails_when_a_check_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    roots = []
-
-    class FakeGit:
-        def __init__(self, root: Path | None):
-            self.root = root
-            roots.append(root)
-
-        def repository_access_diagnostics(self) -> list[str]:
-            return [
-                "Git repository: not found",
-                "ssh -T -o BatchMode=yes git@github.com: ok",
-            ]
-
-    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    sections = [
+        Section(
+            "Tools",
+            [Check(CheckStatus.FAIL, "uv is not installed.", fix="install uv")],
+        )
+    ]
+    monkeypatch.setattr("cli.run_doctor", lambda root: sections)
 
     result = runner.invoke(app, ["doctor"])
 
-    assert result.exit_code == 0
-    assert roots == [None]
-    assert "Git repository: not found" in result.stdout
-    assert "ssh -T -o BatchMode=yes git@github.com: ok" in result.stdout
+    assert result.exit_code == 1
+    assert "uv is not installed." in result.stdout
+    assert "fix: install uv" in result.stdout
+    assert "Some checks failed." in result.stdout
 
 
 def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
@@ -104,6 +125,7 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -135,6 +157,7 @@ def test_clone_warns_when_repository_uses_https(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -174,6 +197,7 @@ def test_clone_falls_back_to_https_when_github_ssh_clone_fails(monkeypatch) -> N
                 raise GitError("SSH clone failed")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -210,6 +234,7 @@ def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
             raise GitError("SSH clone failed")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -247,6 +272,7 @@ def test_clone_full_uses_normal_clone(monkeypatch) -> None:
             raise AssertionError("unexpected sparse clone")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -288,6 +314,7 @@ def test_clone_full_falls_back_to_https_when_github_ssh_clone_fails(
             raise AssertionError("unexpected sparse clone")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -327,6 +354,7 @@ def test_clone_picks_repository_when_missing(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
     monkeypatch.setattr(
         "cli._pick_repository",
@@ -358,6 +386,7 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     class FakeGitHub:
         @classmethod
         def list_org_repositories(
@@ -640,13 +669,16 @@ def test_up_project_picker_uses_root_registry_for_sparse_checkout(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text("""
+    (tmp_path / "projects.toml").write_text(
+        """
 [projects.camera]
 path = "camera"
 
 [projects.gesture_control]
 path = "gesture_control"
-""".strip() + "\n")
+""".strip()
+        + "\n"
+    )
     monkeypatch.chdir(tmp_path)
 
     selected_choices = []
@@ -813,7 +845,8 @@ def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text("""
+    (tmp_path / "projects.toml").write_text(
+        """
 [projects.camera]
 path = "camera"
 
@@ -822,7 +855,9 @@ path = "gesture_control"
 
 [projects.mavlink_comm]
 path = "mavlink_comm"
-""".strip() + "\n")
+""".strip()
+        + "\n"
+    )
     calls = []
 
     class FakeGit:
