@@ -9,9 +9,11 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from ci import affected_projects, run_ci_pipeline
+from doctor import CheckStatus, run_doctor
 from errors import WargError
 from errors import GitError
 from git_adapter import GitAdapter
@@ -24,9 +26,6 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
 console = Console()
-GITHUB_SSH_DOCS_URL = (
-    "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
-)
 
 
 @app.callback()
@@ -128,13 +127,44 @@ def info(project: str) -> None:
 
 
 @app.command()
-def doctor() -> None:
-    """Print Git config, SSH environment, and remote access diagnostics."""
-    console.print("[bold]Git repository access[/bold]")
-    root = find_repo_root_or_none()
-    git = GitAdapter(root)
-    for line in git.repository_access_diagnostics():
-        console.print(f"  - {line}")
+def doctor(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Show the output of every command doctor runs.",
+    ),
+) -> None:
+    """Check this machine for common WARG dev environment problems."""
+    icons = {
+        CheckStatus.OK: ("✓", "green"),
+        CheckStatus.WARN: ("!", "yellow"),
+        CheckStatus.FAIL: ("✗", "red"),
+    }
+
+    console.print(f"[bold]warg doctor[/bold] v{package_version('warg-cli')}")
+
+    sections = run_doctor(find_repo_root_or_none())
+    failed = False
+    for section in sections:
+        console.print(f"\n[bold]{section.title}[/bold]")
+        for check in section.checks:
+            icon, style = icons[check.status]
+            console.print(f"  [{style}]{icon}[/{style}] {check.detail}")
+            if check.fix and check.status != CheckStatus.OK:
+                console.print(f"      [dim]fix: {check.fix}[/dim]")
+            if verbose:
+                for entry in check.transcript:
+                    for line in entry.splitlines():
+                        console.print(f"      [dim]{escape(line)}[/dim]")
+            failed = failed or check.status == CheckStatus.FAIL
+
+    if failed:
+        console.print(
+            "\n[red]Some checks failed.[/red] Fix the items marked ✗ and rerun "
+            "'warg doctor'."
+        )
+        raise typer.Exit(1)
+    console.print("\nNo blocking problems found.")
 
 
 @app.command()
@@ -315,8 +345,8 @@ def _warn_if_https_repository(repository: str) -> None:
     console.print(
         "[yellow]Warning:[/yellow] This repository is configured with an HTTPS "
         "remote, so you will be unable to push to it through the expected WARG "
-        "SSH workflow. Set up GitHub SSH access and clone with the SSH URL "
-        f"instead: {GITHUB_SSH_DOCS_URL}"
+        "SSH workflow. Set up GitHub SSH access and clone with the SSH URL instead: "
+        "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
     )
 
 
@@ -408,9 +438,7 @@ def _materialize_dependency_graph(
         requested_paths.update(missing_paths)
 
 
-def _extra_paths_for_order(
-    registry: Registry, order: list[Project]
-) -> set[str]:
+def _extra_paths_for_order(registry: Registry, order: list[Project]) -> set[str]:
     extra: set[str] = set()
     for project in order:
         entry = registry.entries.get(project.name)
