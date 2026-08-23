@@ -1,9 +1,10 @@
-# Issue 96 — Obstacle avoidance with ArduPilot: research, integration path, and SITL evidence
+# Issue 96 — Obstacle avoidance options, OAK-D, and ArduPilot SITL evidence
 
-**Scope decision:** obstacle avoidance is done **with ArduPilot's built-in avoidance stack** —
-the companion computer feeds the flight controller obstacle data over MAVLink and the autopilot
-does the avoiding. This document explains what that means, proves the integration pattern
-end-to-end in SITL (see `airside/scripts/avoidance/`), and lays out the path to the real airframe.
+**Baseline, not a locked decision:** the completed demo uses **ArduPilot's built-in avoidance
+stack** — the companion computer feeds the flight controller obstacle data over MAVLink and the
+autopilot does the avoiding. This document proves that integration pattern end-to-end in SITL
+(see `airside/scripts/avoidance/`), compares it with companion-planner and PX4 alternatives, and
+defines the experiments needed without committing to a particular camera or airframe now.
 
 ---
 
@@ -121,19 +122,110 @@ ATC-commanded *traffic* deconfliction ("Yield to Medevac"), plus soft/hard fligh
 — protecting the aircraft around site structures and de-risking future comps — exactly
 matching the issue's "may be part of current/future comps depending on reliability".
 
-## 6. Sensor options for the real airframe
+## 6. Separate the two decisions: sensing and planning
 
-The bridge is sensor-agnostic; the choice is about coverage, weight, and effort:
+The original recommendation coupled a 360° LiDAR to ArduPilot. They are actually independent:
 
-| Option | Coverage | Companion work | Notes |
-|---|---|---|---|
-| **LightWare SF45/B scanning LiDAR** (~59 g) | ~320° horizontal | **none** (native `PRX1_TYPE=8` FC driver) | WARG has prior art: the old [obstacle-avoidance repo](https://github.com/UWARG/obstacle-avoidance) + [Confluence page](https://uwarg-docs.atlassian.net/wiki/spaces/CV/pages/2599288845/Obstacle+Avoidance) were built around this sensor. Recommended primary. |
-| **OAK-D stereo depth** (already flown) | forward ~70–120° | depth frame → column-minimum sector distances → `OBSTACLE_DISTANCE` (the demo's seam) | software-only; guards only the direction of view; good complement, weak as sole sensor for lateral/backward motion |
-| **Fences only** | n/a | none | for pre-surveyed obstacles; zero perception; pairs with Dijkstra or plain fence stop |
+1. A **sensor/coverage layer** decides which parts of the vehicle's motion envelope are observed.
+2. An **avoidance layer** decides whether to stop, steer locally, or plan a new route.
 
-Recommendation: request an SF45/B (or similar native proximity LiDAR) as the primary obstacle
-sensor; build the OAK-D bridge as the software path where camera coverage suffices — both
-converge on the identical FC configuration proven here.
+That separation lets us test the OAK-D with the already-proven ArduPilot path now, then change
+either the sensor or planner later without discarding the first experiment.
+
+### 6.1 Sensor and coverage comparison
+
+| Option | Useful coverage | Pros | Cons / failure cases | Integration and cost |
+|---|---|---|---|---|
+| **OAK-D / forward stereo depth** | Forward cone only. As examples, original OAK-D is 72° H × 49° V and OAK-D S2 is 80° H × 55° V; no model selection is required for this research. | Dense depth; 20–30 Hz is realistic; on-device stereo/ROI processing; ROS2 Humble support. The selected camera will always face the commanded motion direction. | Passive stereo degrades on textureless/repetitive, transparent, reflective, very thin, and poorly lit surfaces; sunlight can defeat Pro-model IR assistance. Coverage must include the vehicle width and expected sideslip, not only the path centreline. | Software bridge required. Keep its depth/sector input generic so later hardware can change. This branch's `camera/src/oakd.py` is empty, and the existing target-tracking accuracy report is a controlled person-ranging test—not generic obstacle recall. |
+| **LightWare SF45/B** | Configurable horizontal scan up to 320° in one plane. | Native ArduPilot driver; good outdoor range; 59 g; almost no companion load; wide horizontal coverage. | One oscillating beam is not 3D coverage: it can miss overhangs, wires, obstacles above/below the scan plane, and geometry shifted by aircraft pitch/roll. Up to 5 sweeps/s. | Listed at **US$449 excluding tax** (checked July 2026), 5 V / 300 mA typical. Fastest hardware path, but should not be called low-cost. |
+| **OAK-D + SF45/B** | Dense forward 3D cue plus wide horizontal plane. | Complementary failure modes; supports forward detail and lateral awareness; ArduPilot can accept multiple proximity sensors. | More mass, power, mounting, calibration, and fusion tests; still no true rear/up/down volume. | Medium effort and highest near-term cost. Add only if forward-depth reliability tests justify it. |
+| **True 3D LiDAR (future benchmark)** | Example Livox Mid-360: 360° H, -7° to +52° V. | Real 3D points, long outdoor range, much better map/planner input. | Example is 265 g, 6.5 W, 200k points/s; needs host filtering, mapping, state estimation, and a custom planner. | High effort/cost; inappropriate as the first issue-96 experiment but useful if future comps demand general 3D navigation. |
+| **Fences only** | Known, surveyed zones rather than sensed obstacles. | Highest determinism; zero perception; already part of competition safety infrastructure. | Cannot react to people, vehicles, or unmodeled structures. | Keep regardless of the live-sensor choice. |
+
+Sources: [OAK-D hardware](https://docs.luxonis.com/hardware/products/OAK-D),
+[OAK-D S2](https://docs.luxonis.com/hardware/products/OAK-D%20S2),
+[Luxonis stereo limitations](https://docs.luxonis.com/hardware/platform/features/depth/),
+[SF45/B product data](https://lightwarelidar.com/shop/sf45-b-50-m/), and
+[Livox Mid-360 specifications](https://www.livoxtech.com/mid-360/specs).
+
+### 6.2 What the OAK-D can offer
+
+The OAK-D is a **depth/perception sensor, not an avoidance controller**. There are three useful
+integration levels:
+
+| OAK-D output | Avoidance owner | Benefit | Trade-off | Recommendation |
+|---|---|---|---|---|
+| Robust horizontal sectors → MAVLink `OBSTACLE_DISTANCE` | ArduPilot simple avoidance / BendyRuler | Reuses the proven demo and 72-sector interface; lowest effort; planner is sensor-agnostic. | Collapses 3D depth into a 2D boundary; BendyRuler remains a limited local planner. | **Build first.** |
+| Selected 3D obstacle vectors → ArduPilot `OBSTACLE_DISTANCE_3D` | ArduPilot 3D obstacle database / BendyRuler | Preserves obstacle height and direction. | One vector per MAVLink message; point cloud must be clustered/subsampled; ArduPilot's vertical BendyRuler is not a general 3D trajectory optimizer. | Evaluate only after sectors work. |
+| Depth/point cloud → ROS2 map/local planner → flight setpoints | Companion computer | Highest flexibility and true 3D planning potential. | Requires odometry, mapping, trajectory generation, compute budgeting, command watchdogs, and substantially more safety-critical WARG code. | Future path if FC planning fails the “stay on task” scenarios. |
+
+Do **not** use the minimum pixel of each image column as the flight distance. A single stereo
+speckle, propeller edge, or ground pixel would create false stops, while invalid depth could look
+clear. The first bridge should:
+
+- rectify and confidence-filter depth; enable left-right consistency checking;
+- mask propellers/landing gear and either remove the ground plane or restrict the vertical ROI;
+- divide the image into angular sectors using calibration, not pixel count alone;
+- choose the nearest spatially-supported cluster or a conservative low percentile, not one pixel;
+- require temporal persistence while still admitting genuinely sudden obstacles;
+- encode invalid/unknown separately from clear and publish timestamps/sequence health;
+- expire stale frames and independently command BRAKE/LOITER if the sensor or publisher dies.
+
+Luxonis reports ideal-target error below 2% under 4 m and below 4% from 4–7 m for a normal-FOV
+75 mm-baseline OAK at 800P. Those are useful calibration expectations, **not a safety guarantee**:
+they use a well-textured target and do not measure obstacle false negatives. See
+[depth accuracy](https://docs.luxonis.com/hardware/platform/depth/depth-accuracy/),
+[stereo configuration](https://docs.luxonis.com/hardware/platform/depth/configuring-stereo-depth/),
+[SpatialLocationCalculator](https://docs.luxonis.com/software-v3/depthai/depthai-components/nodes/spatial_location_calculator),
+and [DepthAI ROS](https://docs.luxonis.com/software-v3/depthai/ros/).
+
+### 6.3 Avoidance-controller comparison
+
+| Controller | Live obstacle | Stop safely | Stay on task / detour | Main advantages | Main disadvantages | Relative effort |
+|---|---:|---:|---:|---|---|---:|
+| **Fences + ArduPilot Dijkstra** | No | Yes, for known zones | Yes | Most deterministic; no live perception dependency. | Only predeclared geometry. | Low |
+| **ArduPilot simple avoidance** | Yes | Yes | No | Already demonstrated; minimal companion code; protects pilot-style velocity commands on tested firmware. | Stops/slides only; margin undershoot; feed fails open; current docs do not promise every GUIDED command path. | Low |
+| **ArduPilot BendyRuler** | Yes | Usually | Yes, locally | Already demonstrated in AUTO and WPNav-routed GUIDED; keeps current FC/competition architecture. | Local minima and narrow passages; about 1 Hz in the tested setup; horizontal/vertical modes are limited rather than full 3D planning; feed fails open. | Low–medium |
+| **Small companion reactive planner** | Yes | WARG-owned | Locally | Autopilot-agnostic and can be tailored to target following; more control than stop-only behavior. | WARG owns safety-critical steering, local minima, latency, setpoint, and watchdog logic. | Medium–high |
+| **Full companion 3D mapper/planner** | Yes | WARG-owned | Best potential | Exploits dense OAK/3D LiDAR; can plan trajectories in complex unknown spaces. | Needs robust odometry/map/compute; largest validation surface. Academic options are not drop-in competition components. | High |
+| **PX4 Collision Prevention** | Yes | Yes | Minor steering only | Conservative no-data default: motion into unknown sectors is blocked; data loss stops XY and then enters HOLD. | Acceleration-based Position mode only; not mission route-around; switching FCs adds requalification. | High migration cost |
+| **PX4 custom ROS2 mode/planner** | Yes | WARG-owned | Potentially | Deep ROS2 integration and replaceable flight modes. | The maintained interface is experimental; WARG still supplies the planner and must migrate/requalify the FC stack. | Very high |
+
+### 6.4 Alternatives to ArduPilot: conclusion
+
+**Do not switch to PX4 for issue 96.** PX4 Collision Prevention has a better fail-closed default
+than ArduPilot: unknown sectors block movement, >0.5 s total data loss blocks XY motion, and >5 s
+switches to HOLD. However it is a Position-mode collision limiter, not maintained mission
+avoidance. PX4 removed its Path Planning Interface in v1.15 and explicitly says the old Mission
+Obstacle Avoidance/Safe Landing path is unsupported; the associated `PX4-Avoidance` ROS1 project
+was archived in 2024. The replacement ROS2 flight-mode interface is experimental. See
+[PX4 Collision Prevention](https://docs.px4.io/main/en/computer_vision/collision_prevention),
+[removed Path Planning Interface](https://docs.px4.io/main/en/computer_vision/path_planning_interface),
+and [archived PX4-Avoidance](https://github.com/PX4/PX4-Avoidance).
+
+Companion-side frameworks/planners are useful references, not near-term dependencies:
+[Aerostack2](https://aerostack2.github.io/) is a full ROS2 aerial robotics framework whose
+adoption would compete with the existing airside architecture; [EGO-Planner](https://github.com/ZJU-FAST-Lab/ego-planner-swarm)
+is an academic high-performance planner whose primary integration is ROS1/catkin. The old
+[UWARG obstacle-avoidance repository](https://github.com/UWARG/obstacle-avoidance) has only a
+minimal public README and no releases, so reuse should be decided only after a code/flight-log
+audit rather than assumed from its existence.
+
+### 6.5 Prioritization recommendation
+
+1. **Keep fences as the deterministic baseline.** They solve known competition/site hazards.
+2. **Build a forward-depth → robust `OBSTACLE_DISTANCE` bridge first, using OAK-D as the reference
+   implementation.** Keep sensor acquisition behind a generic interface so the eventual camera
+   can change. This directly reuses the SITL seam. Pair it with ArduPilot simple avoidance and
+   BendyRuler on the exact firmware and command paths intended for flight.
+3. **Make fail-closed behavior part of that prototype, not a later enhancement.** On stale or
+   missing depth/output, the companion must request BRAKE/LOITER, confirm the command, and alert.
+4. **Exploit the confirmed camera-forward motion constraint.** Forward depth can be the sole live
+   sensor for commanded translation, so defer the SF45/B. Still include full airframe width,
+   braking sideslip, wind disturbance, and yaw transients in the tested collision envelope. Add
+   wider sensing only if forward-depth tests show an actual reliability gap.
+5. **Escalate to a companion 3D planner only if BendyRuler fails required detour scenarios.**
+   Do not pay the mapping/planning complexity before demonstrating that need.
 
 ## 7. Integration architectures — where the bridge lives
 
@@ -193,21 +285,55 @@ responsibility** — the bridge (or a sibling watchdog) should monitor its own o
 command BRAKE/LOITER on failure, mirroring the deadman pattern the follow stack already
 uses. This belongs in the reliability gates (§8).
 
-## 8. Proposed next steps
+## 8. Proposed experiments and reliability gates
 
-1. **Review this doc + demo** with the lead / Sophie; confirm sensor request (SF45/B).
-2. **OAK-D → `OBSTACLE_DISTANCE` bridge** (software ticket, no new hardware): replace
-   `wall_sector_distances()` with depth-image sector minima; bench-test pointing the camera at
-   real objects. Natural split candidate with the co-assignee.
-3. **Reliability gates** (per the issue's condition): scripted SITL scenario suite —
-   pop-up obstacle, obstacle during follow, sensor dropout, approach at mission speeds —
-   with an N/N pass bar, then a physical demonstration with soft obstacles at a flight test
-   (M-series) before any comp use.
-4. **Fail-closed watchdog** (§7.2): ArduPilot fails open on feed loss, so the bridge needs
-   a companion-side watchdog that commands BRAKE/LOITER when its sensor/output dies —
-   include a feed-kill drill in the reliability gates.
-5. **Parameter hygiene for other tickets**: any GUIDED-goto code needs `GUID_OPTIONS=64`;
-   margin params (`AVOID_MARGIN`, `OA_MARGIN_MAX`) tuned to flight speeds.
+### Phase 0 — freeze the test contract
+
+- Treat the camera-forward motion rule and a sensor-agnostic forward-depth/sector interface as the
+  research contract. Once prototype hardware is selected, record its lens/FOV and mount transform
+  together with the target aircraft, ArduCopter version/hash, avoidance parameters, maximum
+  airspeed, and command path before qualification.
+- Separate a **required safety gate** (“does not contact an obstacle”) from an optional mission
+  gate (“detours and reaches the original goal”). A safe stop can pass the first and fail the second.
+- Derive the speed cap from measured behavior, not sensor maximum range:
+  `required_range = speed × end_to_end_latency + speed²/(2 × braking_acceleration)
+  + state/sensing uncertainty + reserve`.
+
+### Phase 1 — replay and bench
+
+- Build recorded-depth replay before live flight-controller output so algorithms are deterministic
+  and regressions can run without the camera.
+- Test textured wall, low-texture tarp, foliage, thin pole/branch/netting, reflective and transparent
+  surfaces if mission-relevant, direct sun/backlight, motion blur, roll/pitch, and a moving obstacle.
+- Report per-class detection recall/false-clear rate, false-stop rate, valid-depth fill, reliable range,
+  sector jitter, and p50/p95/p99 camera-to-MAVLink latency. XYZ accuracy alone is insufficient.
+- Fault-inject USB disconnect, frozen frames, process death/restart, CPU saturation, and MAVLink loss.
+
+### Phase 2 — SITL/closed-loop qualification
+
+- Run static wall, pop-up obstacle, crossing/moving obstacle, narrow passage, U-shape/local minimum,
+  obstacle during follow, feed dropout, planner restart, and changing vehicle yaw.
+- Sweep speeds, margins, frame rates, latency, and packet loss; use many randomized seeds rather
+  than one hand-picked run. Pin every firmware/config artifact in the log.
+- Acceptance: zero collisions/clearance breaches in the agreed suite; stale data is never interpreted
+  as clear; feed kill causes acknowledged BRAKE/LOITER within the agreed deadline; RC override and
+  avoidance disable remain available.
+
+### Phase 3 — staged physical flight
+
+- Stationary/tethered or prop-off data collection → soft obstacle at low speed → representative
+  speed and lighting → combined competition behavior. Keep a pilot/kill path and geofence active.
+- Increase speed only when measured reliable range exceeds the stopping-distance budget with reserve.
+- Decide whether any wider-coverage sensor is needed only after the forward-depth failure data.
+
+### Integration hygiene
+
+- Retest the Copter-4.5 observations on the exact deployed firmware. Current ArduPilot docs describe
+  simple avoidance in AltHold/Loiter and BendyRuler in AUTO/GUIDED; the observed GUIDED-velocity
+  protection is valuable evidence but should not be treated as a cross-version API guarantee.
+- Any GUIDED position target requiring path planning needs `GUID_OPTIONS=64` or an AUTO mission.
+- Tune `AVOID_MARGIN` / `OA_MARGIN_MAX` at flight speed and verify simultaneous sensor fusion if a
+  second proximity sensor is added.
 
 ## 9. References
 
@@ -216,7 +342,11 @@ uses. This belongs in the reliability gates (§8).
 - Simple avoidance: <https://ardupilot.org/copter/docs/common-simple-object-avoidance.html>
 - Companion depth-camera pattern (RealSense): <https://ardupilot.org/copter/docs/common-realsense-depth-camera.html>
 - SF45/B setup: <https://ardupilot.org/copter/docs/common-lightware-sf45b.html>
+- SF45/B manufacturer data: <https://lightwarelidar.com/shop/sf45-b-50-m/>
 - `OBSTACLE_DISTANCE` message: <https://mavlink.io/en/messages/common.html#OBSTACLE_DISTANCE>
+- `OBSTACLE_DISTANCE_3D` message: <https://mavlink.io/en/messages/ardupilotmega.html#OBSTACLE_DISTANCE_3D>
+- Luxonis OAK-D and depth: <https://docs.luxonis.com/hardware/products/OAK-D> · <https://docs.luxonis.com/hardware/platform/features/depth/> · <https://docs.luxonis.com/hardware/platform/depth/depth-accuracy/>
+- PX4 comparison: <https://docs.px4.io/main/en/computer_vision/collision_prevention> · <https://docs.px4.io/main/en/computer_vision/path_planning_interface>
 - MAVROS `obstacle_distance` plugin (ROS2): <https://github.com/mavlink/mavros/blob/ros2/mavros_extras/src/plugins/obstacle_distance.cpp>
 - MAVLink routing between FC ports: <https://ardupilot.org/dev/docs/mavlink-routing-in-ardupilot.html> · companion/router options: <https://ardupilot.org/dev/docs/raspberry-pi-via-mavlink.html>
 - Proximity feed timeout + fail-open behavior: `libraries/AP_Proximity/AP_Proximity_MAV.cpp` (`PROXIMITY_MAV_TIMEOUT_MS`) and `libraries/AC_Avoidance/AP_OADatabase.cpp` (`OA_DB_EXPIRE`) on <https://github.com/ArduPilot/ardupilot/tree/Copter-4.5>
