@@ -1,36 +1,8 @@
 #!/usr/bin/env python3
-"""
-Issue 96 -- obstacle avoidance integration demo.
+"""Run native and WARG obstacle-avoidance scenarios in ArduCopter SITL.
 
-Proves the companion-computer integration pattern end-to-end in SITL:
-
-    obstacle source (here: a synthetic wall; later: OAK-D / LiDAR driver)
-        -> MAVLink OBSTACLE_DISTANCE @ 10 Hz          (this script)
-        -> ArduPilot proximity library (PRX1_TYPE=2)
-        -> AC_Avoid + BendyRuler (AVOID_ENABLE=7, OA_TYPE=1)
-
-The synthetic obstacle is a finite vertical wall segment fixed in the world.
-Each tick the script ray-casts the 72 five-degree body-frame sectors against
-the wall from the vehicle's current position/yaw -- exactly the shape of
-message a real depth-camera bridge would emit -- so swapping in real hardware
-later only replaces `wall_sector_distances()`.
-
-Scenarios (run inside the SITL container, one fresh boot per run):
-    clear_guided       no obstacle; GUIDED goto 40 m north. Baseline.
-    wall_guided        wall at 20 m north; same GUIDED goto. Documents the
-                       gap: plain SET_POSITION_TARGET bypasses BendyRuler.
-    wall_guided_wpnav  same, with GUID_OPTIONS=64 (position targets routed
-                       through WPNav, which carries the OA wrapper).
-    wall_guided_vel    wall at 20 m north; GUIDED *velocity* setpoints
-                       streamed at 10 Hz toward the wall -- the control path
-                       the follow stack uses. Tests AC_Avoid velocity limiting.
-    wall_auto          wall at 20 m north; 1-waypoint AUTO mission through it.
-    wall_custom_2d     wall at 20 m north; WARG's pure 2D planner consumes the
-                       same sectors and streams safe GUIDED velocity targets.
-
-Each run writes a JSONL telemetry log and prints a PASS/FAIL verdict:
-the vehicle must never come closer than MIN_CLEARANCE_M to the wall, and
-(secondary, "stay on task") ideally still reaches the goal.
+The runner streams synthetic sectors and records JSONL results. The custom
+scenario uses WARG's 2D planner to send GUIDED velocity targets.
 """
 
 from __future__ import annotations
@@ -73,7 +45,7 @@ CUSTOM_OBSTACLE_RADIUS_M = 0.75
 
 @dataclass
 class Telemetry:
-    """Latest vehicle state, updated by the RX thread."""
+    """Latest vehicle state."""
 
     lock: threading.Lock = field(default_factory=threading.Lock)
     north_m: float = 0.0
@@ -117,7 +89,7 @@ def wall_sector_distances(
 
 
 def distance_to_wall_m(north_m: float, east_m: float) -> float:
-    """True point-to-segment distance, for the verdict (not sent to the FC)."""
+    """Return point-to-wall distance for the verdict."""
     de = max(abs(east_m) - WALL_HALF_WIDTH_M, 0.0)
     dn = WALL_NORTH_M - north_m
     return math.hypot(dn, de)
@@ -149,7 +121,7 @@ class Demo:
             f"comp {self.conn.target_component}",
             flush=True,
         )
-        # Bare SITL streams nothing until asked: request all groups at 10 Hz.
+        # Request 10 Hz telemetry.
         self.conn.mav.request_data_stream_send(
             self.conn.target_system,
             self.conn.target_component,
@@ -158,7 +130,6 @@ class Demo:
             1,
         )
 
-    # ------------------------------------------------------------- threads
     def rx_loop(self) -> None:
         while not self.stop.is_set():
             msg = self.conn.recv_match(blocking=True, timeout=1.0)
@@ -218,7 +189,7 @@ class Demo:
             time.sleep(1.0)
 
     def obstacle_loop(self) -> None:
-        """The bridge: what a real depth-camera driver would publish."""
+        """Stream synthetic obstacle sectors."""
         period = 1.0 / SEND_HZ
         while not self.stop.is_set():
             with self.telem.lock:
@@ -258,7 +229,6 @@ class Demo:
             )
             time.sleep(period)
 
-    # ------------------------------------------------------------ commands
     def command(self, cmd: int, *params: float) -> None:
         args = list(params) + [0.0] * (7 - len(params))
         self.conn.mav.command_long_send(
@@ -289,12 +259,7 @@ class Demo:
         )
 
     def wait_ready_to_arm(self, timeout_s: float = 180.0) -> None:
-        """Block until 3D GPS fix + EKF on GPS + home position known.
-
-        (SYS_STATUS's prearm bit is not consistently reported by SITL, so
-        readiness is judged from GPS/EKF state; the takeoff retry loop
-        backstops any remaining prearm rejection.)
-        """
+        """Wait for GPS and EKF readiness."""
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             with self.telem.lock:
@@ -305,7 +270,7 @@ class Demo:
                 ) or self.telem.prearm_ok
             if ready:
                 print("[demo] EKF/GPS ready", flush=True)
-                time.sleep(5.0)  # settle margin before arming
+                time.sleep(5.0)  # Let the estimate settle.
                 return
             time.sleep(0.5)
         raise TimeoutError("EKF/GPS never became ready")
@@ -323,7 +288,7 @@ class Demo:
         raise TimeoutError("failed to arm")
 
     def takeoff(self, alt_m: float, timeout_s: float = 90.0) -> None:
-        """Arm + NAV_TAKEOFF, re-issuing both if the FC auto-disarms."""
+        """Arm and retry takeoff until altitude."""
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             with self.telem.lock:
@@ -355,7 +320,7 @@ class Demo:
         )
 
     def velocity_stream_loop(self, vx_mps: float) -> None:
-        """Stream body-agnostic NED velocity setpoints at 10 Hz (follow-stack style)."""
+        """Stream local-NED velocity at 10 Hz."""
         while not self.stop.is_set():
             self.send_velocity(vx_mps, 0.0)
             time.sleep(0.1)
@@ -382,7 +347,7 @@ class Demo:
         )
 
     def custom_planner_loop(self) -> None:
-        """Adapt sector data to the pure planner and stream its safe command."""
+        """Plan from sectors and stream safe velocity."""
         planner = BendyRuler2D(
             PlannerConfig(
                 first_lookahead_m=8.0,
@@ -458,7 +423,7 @@ class Demo:
             self.planner_hold_count += 1
 
     def upload_goal_mission(self) -> None:
-        """Two-item mission: takeoff, then a waypoint GOAL_NORTH_M north."""
+        """Upload takeoff and goal waypoints."""
         with self.telem.lock:
             lat, lon = self.telem.home_lat, self.telem.home_lon
         if lat is None:
@@ -507,7 +472,6 @@ class Demo:
             time.sleep(0.05)
         raise TimeoutError("mission upload not acknowledged")
 
-    # ------------------------------------------------------------- monitor
     def monitor(self, duration_s: float, log_path: str) -> dict:
         start = time.time()
         min_wall_dist = math.inf
@@ -534,9 +498,7 @@ class Demo:
                 wall_d = distance_to_wall_m(n, e) if self.wall else None
                 if wall_d is not None:
                     min_wall_dist = min(min_wall_dist, wall_d)
-                    # Impact = the path crossed the wall plane *through* the
-                    # segment (interpolate east at the crossing; flying around
-                    # the edge and passing behind the wall is legitimate).
+                    # Detect crossings through the wall segment.
                     if (
                         prev_n is not None
                         and prev_n < WALL_NORTH_M <= n
@@ -624,13 +586,13 @@ def main() -> int:
         if args.scenario == "wall_guided_wpnav":
             demo.set_param("GUID_OPTIONS", 64)
         if args.scenario == "wall_custom_2d":
-            # The companion planner owns avoidance for this scenario.
+            # The WARG planner owns avoidance.
             demo.set_param("AVOID_ENABLE", 0)
         if args.scenario == "wall_auto":
             demo.upload_goal_mission()
             demo.set_mode("AUTO")
             demo.arm()
-            # AUTO_OPTIONS=3: mission (takeoff + waypoint) starts on arming.
+            # The mission starts on arming.
         elif args.scenario == "wall_guided_vel":
             demo.set_mode("GUIDED")
             demo.takeoff(ALT_M)
@@ -655,8 +617,7 @@ def main() -> int:
 
     summary["scenario"] = args.scenario
     if demo.wall:
-        # Primary: never hit the wall. Secondary (reported, not gating):
-        # kept the intended clearance and/or still reached the goal.
+        # Native scenarios gate only on wall breach.
         summary["clearance_ok"] = summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
         if args.scenario == "wall_custom_2d":
             qualified = (

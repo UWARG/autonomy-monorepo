@@ -65,7 +65,7 @@ class PlanResult:
 
     @classmethod
     def no_path(cls, reason: NoPathReason) -> PlanResult:
-        """Return the fail-safe result integrations must translate to hold."""
+        """Return a fail-safe hold result."""
 
         return cls(
             status=PlanStatus.NO_PATH,

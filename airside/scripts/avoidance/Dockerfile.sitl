@@ -1,9 +1,5 @@
-# Headless ArduCopter SITL for the issue-96 obstacle-avoidance demo.
-# Identical to the shared SITL image from the drone-follow work (issue #24);
-# duplicated here only so this demo is self-contained until that lands on
-# main -- if `warg/sitl:latest` already exists locally, no rebuild is needed.
-#
-# Build:  docker build -f Dockerfile.sitl -t warg/sitl:latest .
+# Headless ArduCopter SITL for issue 96.
+# Build: docker build -f Dockerfile.sitl -t warg/sitl:latest .
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
@@ -15,25 +11,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libtool libxml2-dev libxslt1-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# ArduPilot Python build/runtime deps. empy MUST be 3.x (empy 4 breaks the build).
+# ArduPilot dependencies; empy 4 breaks this build.
 RUN python3 -m pip install --no-cache-dir \
       future lxml pymavlink MAVProxy pexpect "empy==3.3.4" dronecan \
       geocoder ptyprocess intelhex
 
-# Shallow-clone a stable Copter release + submodules (keeps the image smaller/faster).
+# Pin Copter 4.5 and its submodules.
 RUN git clone --depth 1 --branch Copter-4.5 https://github.com/ArduPilot/ardupilot.git /ardupilot
 WORKDIR /ardupilot
 RUN git submodule update --init --recursive --depth 1
 
-# Build the SITL copter binary once, at image-build time.
+# Build SITL once.
 RUN ./waf configure --board sitl && ./waf copter
 
 ENV PATH="/ardupilot/Tools/autotest:/ardupilot/build/sitl/bin:${PATH}"
 EXPOSE 5760
 
-# Headless bare ArduCopter (no MAVProxy). SERIAL0 = TCP server on 5760 for a
-# single MAVLink client. The avoidance demo overrides --defaults to append
-# sitl_avoidance.parm (PRX1_TYPE / OA_TYPE are reboot-required boot defaults).
+# Run headless ArduCopter with a TCP MAVLink endpoint.
 CMD ["bash", "-lc", "cd /ardupilot && exec build/sitl/bin/arducopter \
      -S -I0 --model + --speedup 1 --sim-address=127.0.0.1 \
      --defaults Tools/autotest/default_params/copter.parm"]

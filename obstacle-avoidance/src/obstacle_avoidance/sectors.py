@@ -25,12 +25,7 @@ def sector_scan_to_snapshot(
     sensor_heading_rad: float,
     obstacle_radius_m: float,
 ) -> ObstacleSnapshot:
-    """Project valid returns into the planner frame.
-
-    Unknown/invalid measurements make the whole snapshot unhealthy. A missing
-    return (None) explicitly means that sector was observed clear to the
-    sensor's configured maximum range.
-    """
+    """Project ranges; invalid values mark the snapshot unhealthy."""
 
     if obstacle_radius_m < 0.0:
         raise ValueError("obstacle radius must be non-negative")

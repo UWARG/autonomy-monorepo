@@ -57,12 +57,7 @@ class _Candidate:
 
 
 class BendyRuler2D:
-    """Stateful local planner with only heading hysteresis as memory.
-
-    The planner owns no vehicle, middleware, or sensor behavior. A caller may
-    pass any object implementing ``ClearanceField``; circular obstacles are the
-    default representation used by the package's sector adapter and tests.
-    """
+    """Pure local planner with heading hysteresis."""
 
     def __init__(self, config: PlannerConfig | None = None) -> None:
         self.config = config or PlannerConfig()
@@ -150,7 +145,7 @@ class BendyRuler2D:
         headings = [goal_heading]
         for index in range(1, count + 1):
             offset = math.radians(index * self.config.candidate_step_deg)
-            # Counter-clockwise is the documented deterministic symmetric tie.
+            # Prefer counter-clockwise on symmetric ties.
             headings.extend(
                 (wrap_angle(goal_heading + offset), wrap_angle(goal_heading - offset))
             )
