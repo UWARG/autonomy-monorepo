@@ -1,7 +1,7 @@
 # Issue 96 — ArduPilot obstacle-avoidance integration demo
 
-Proves the companion-computer integration pattern for ArduPilot-native
-obstacle avoidance in SITL, with **no hardware**: a synthetic wall is streamed
+Proves both the ArduPilot-native and original WARG 2D planner integration
+patterns in SITL, with **no hardware**: a synthetic wall is streamed
 to the flight controller as MAVLink `OBSTACLE_DISTANCE` (72 × 5° sectors,
 10 Hz, body frame) — exactly what a real depth-camera or LiDAR bridge would
 send — and ArduPilot's proximity + BendyRuler stack does the avoiding.
@@ -10,8 +10,9 @@ See `airside/docs/issue-96-ardupilot-avoidance.md` for the research write-up.
 
 ## Files
 
-- `avoidance_demo.py` — the bridge + scenario runner (runs inside the SITL
-  container; only dependency is `pymavlink`, already in the image).
+- `avoidance_demo.py` — the bridge + scenario runner. The `wall_custom_2d`
+  scenario imports the pure planner from `obstacle-avoidance/src`; ROS,
+  sensors, and MAVLink remain outside its core.
 - `sitl_avoidance.parm` — the avoidance parameters (`PRX1_TYPE=2`,
   `AVOID_ENABLE=7`, `OA_TYPE=1` BendyRuler, `OA_MARGIN_MAX=3`). These are
   reboot-required, so they load as boot defaults via `--defaults`.
@@ -25,9 +26,12 @@ See `airside/docs/issue-96-ardupilot-avoidance.md` for the research write-up.
 # 1. Build the image once (skip if warg/sitl:latest already exists):
 docker build -f Dockerfile.sitl -t warg/sitl:latest .
 
-# 2. Fresh SITL with the avoidance parameters, demo dir mounted at /demo:
+# 2. Fresh SITL with the demo and pure planner mounted:
 docker rm -f sitl-96 2>/dev/null
-docker run -d --name sitl-96 -v "$PWD":/demo warg/sitl:latest bash -lc \
+planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
+docker run -d --name sitl-96 \
+  -v "$PWD":/demo -v "$planner_src":/planner:ro -e PYTHONPATH=/planner \
+  warg/sitl:latest bash -lc \
   'cd /ardupilot && exec build/sitl/bin/arducopter -S -I0 --model + --speedup 1 \
    --sim-address=127.0.0.1 \
    --defaults Tools/autotest/default_params/copter.parm,/demo/sitl_avoidance.parm'
@@ -48,6 +52,7 @@ docker exec sitl-96 python3 /demo/avoidance_demo.py --scenario wall_auto
 | `wall_guided_wpnav` | same + `GUID_OPTIONS=64` (targets routed via WPNav) | PASS — detours around, stays on task |
 | `wall_guided_vel` | GUIDED velocity streaming at 2 m/s (follow-stack pattern) | PASS — simple avoidance stops it before the wall (no detour) |
 | `wall_auto` | AUTO waypoint mission through the wall | PASS — BendyRuler detours, mission continues |
+| `wall_custom_2d` | Sector adapter → WARG 2D planner → GUIDED velocity | PASS — detours, keeps ≥1 m clearance, and reaches goal |
 
 The wall is a 12 m-wide segment 20 m north of home; BendyRuler margin
 (`OA_MARGIN_MAX`) is 3 m. A wall scenario FAILs only on an actual wall
@@ -57,5 +62,8 @@ crossing ("breached"); minimum clearance is reported separately
 Telemetry for each run is written to `logs/<scenario>.jsonl`
 (`north/east/alt`, true distance-to-wall, elapsed time); the script prints a
 JSON summary + PASS/FAIL verdict and exits nonzero on FAIL.
+The custom scenario also records planner status, no-path reason, temporary
+waypoint, path-found count, and fail-safe hold count. Run this qualification
+before any physical avoidance test.
 See `airside/docs/issue-96-ardupilot-avoidance.md` for what these results
 mean for the real airframe.

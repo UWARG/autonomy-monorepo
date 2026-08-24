@@ -31,3 +31,6 @@ path = "gesture_control"
 
 [projects.target_tracking]
 path = "target_tracking"
+
+[projects.obstacle-avoidance]
+path = "obstacle-avoidance"

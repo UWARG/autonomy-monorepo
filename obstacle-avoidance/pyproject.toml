@@ -5,8 +5,14 @@ description = "Drone avoids obstacles while staying on task"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12",
+]
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/obstacle-avoidance"
@@ -21,5 +27,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src"]
-sources = ["src"]
+packages = ["src/obstacle_avoidance"]
+
+[tool.ruff]
+line-length = 88

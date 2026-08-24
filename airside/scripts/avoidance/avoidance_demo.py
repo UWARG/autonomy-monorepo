@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Issue 96 -- ArduPilot-native obstacle avoidance integration demo.
+Issue 96 -- obstacle avoidance integration demo.
 
 Proves the companion-computer integration pattern end-to-end in SITL:
 
@@ -25,6 +25,8 @@ Scenarios (run inside the SITL container, one fresh boot per run):
                        streamed at 10 Hz toward the wall -- the control path
                        the follow stack uses. Tests AC_Avoid velocity limiting.
     wall_auto          wall at 20 m north; 1-waypoint AUTO mission through it.
+    wall_custom_2d     wall at 20 m north; WARG's pure 2D planner consumes the
+                       same sectors and streams safe GUIDED velocity targets.
 
 Each run writes a JSONL telemetry log and prints a PASS/FAIL verdict:
 the vehicle must never come closer than MIN_CLEARANCE_M to the wall, and
@@ -40,6 +42,16 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from obstacle_avoidance import (
+    BendyRuler2D,
+    ObstacleSnapshot,
+    PlannerConfig,
+    PlanRequest,
+    PlanStatus,
+    Point2D,
+    SectorScan,
+    sector_scan_to_snapshot,
+)
 from pymavlink import mavutil
 
 SEND_HZ = 10.0
@@ -55,6 +67,8 @@ GOAL_NORTH_M = 40.0
 ALT_M = 10.0
 MIN_CLEARANCE_M = 1.0  # hard verdict floor (OA_MARGIN_MAX is 3 m)
 GOAL_TOLERANCE_M = 2.0
+CUSTOM_PLANNER_SPEED_MPS = 2.0
+CUSTOM_OBSTACLE_RADIUS_M = 0.75
 
 
 @dataclass
@@ -115,6 +129,14 @@ class Demo:
         self.wall = scenario.startswith("wall")
         self.telem = Telemetry()
         self.stop = threading.Event()
+        self.scan_lock = threading.Lock()
+        self.latest_scan: tuple[SectorScan, Point2D, float] | None = None
+        self.planner_lock = threading.Lock()
+        self.planner_status = "NOT_STARTED"
+        self.planner_reason: str | None = None
+        self.planner_waypoint: tuple[float, float] | None = None
+        self.planner_path_found_count = 0
+        self.planner_hold_count = 0
         self.conn = mavutil.mavlink_connection(
             url,
             source_system=255,
@@ -206,6 +228,23 @@ class Demo:
                     self.telem.yaw_rad,
                 )
             distances = wall_sector_distances(n, e, yaw, self.wall)
+            captured_at = time.monotonic()
+            with self.scan_lock:
+                self.latest_scan = (
+                    SectorScan(
+                        ranges_m=tuple(
+                            None
+                            if distance_cm > MAX_RANGE_CM
+                            else distance_cm / 100.0
+                            for distance_cm in distances
+                        ),
+                        angle_offset_rad=0.0,
+                        angle_increment_rad=math.radians(INCREMENT_DEG),
+                        timestamp_s=captured_at,
+                    ),
+                    Point2D(n, e),
+                    yaw,
+                )
             self.conn.mav.obstacle_distance_send(
                 int(time.time() * 1e6),
                 mavutil.mavlink.MAV_DISTANCE_SENSOR_LASER,
@@ -317,19 +356,106 @@ class Demo:
 
     def velocity_stream_loop(self, vx_mps: float) -> None:
         """Stream body-agnostic NED velocity setpoints at 10 Hz (follow-stack style)."""
-        type_mask = 0x0DC7  # use velocity only
         while not self.stop.is_set():
-            self.conn.mav.set_position_target_local_ned_send(
-                0,
-                self.conn.target_system,
-                self.conn.target_component,
-                mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-                type_mask,
-                0, 0, 0,
-                vx_mps, 0, 0,
-                0, 0, 0, 0, 0,
-            )
+            self.send_velocity(vx_mps, 0.0)
             time.sleep(0.1)
+
+    def send_velocity(self, north_mps: float, east_mps: float) -> None:
+        """Send one local-NED horizontal velocity target."""
+        self.conn.mav.set_position_target_local_ned_send(
+            0,
+            self.conn.target_system,
+            self.conn.target_component,
+            mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+            0x0DC7,  # use velocity only
+            0,
+            0,
+            0,
+            north_mps,
+            east_mps,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+
+    def custom_planner_loop(self) -> None:
+        """Adapt sector data to the pure planner and stream its safe command."""
+        planner = BendyRuler2D(
+            PlannerConfig(
+                first_lookahead_m=8.0,
+                second_lookahead_m=8.0,
+                clearance_margin_m=1.0,
+                map_freshness_s=0.3,
+                hysteresis_cost_m=0.75,
+            )
+        )
+        goal = Point2D(GOAL_NORTH_M, 0.0)
+        while not self.stop.is_set():
+            now = time.monotonic()
+            with self.telem.lock:
+                position = Point2D(self.telem.north_m, self.telem.east_m)
+            with self.scan_lock:
+                captured_scan = self.latest_scan
+
+            if captured_scan is None:
+                self._record_planner_hold("NO_SCAN")
+                self.send_velocity(0.0, 0.0)
+                time.sleep(0.1)
+                continue
+
+            scan, scan_position, scan_yaw = captured_scan
+            snapshot = sector_scan_to_snapshot(
+                scan,
+                sensor_position=scan_position,
+                sensor_heading_rad=scan_yaw,
+                obstacle_radius_m=CUSTOM_OBSTACLE_RADIUS_M,
+            )
+            result = planner.plan(
+                PlanRequest(
+                    start=position,
+                    goal=goal,
+                    obstacles=ObstacleSnapshot(
+                        obstacles=snapshot.obstacles,
+                        timestamp_s=snapshot.timestamp_s,
+                        healthy=snapshot.healthy,
+                    ),
+                    now_s=now,
+                )
+            )
+            if result.status is PlanStatus.NO_PATH or result.waypoint is None:
+                reason = result.reason.value if result.reason is not None else "NO_PATH"
+                self._record_planner_hold(reason)
+                self.send_velocity(0.0, 0.0)
+                time.sleep(0.1)
+                continue
+
+            delta_north = result.waypoint.x - position.x
+            delta_east = result.waypoint.y - position.y
+            distance_m = math.hypot(delta_north, delta_east)
+            if distance_m <= GOAL_TOLERANCE_M:
+                self.send_velocity(0.0, 0.0)
+            else:
+                speed = min(CUSTOM_PLANNER_SPEED_MPS, distance_m)
+                self.send_velocity(
+                    speed * delta_north / distance_m,
+                    speed * delta_east / distance_m,
+                )
+            with self.planner_lock:
+                self.planner_status = result.status.value
+                self.planner_reason = None
+                self.planner_waypoint = (result.waypoint.x, result.waypoint.y)
+                self.planner_path_found_count += 1
+            time.sleep(0.1)
+
+    def _record_planner_hold(self, reason: str) -> None:
+        with self.planner_lock:
+            self.planner_status = PlanStatus.NO_PATH.value
+            self.planner_reason = reason
+            self.planner_waypoint = None
+            self.planner_hold_count += 1
 
     def upload_goal_mission(self) -> None:
         """Two-item mission: takeoff, then a waypoint GOAL_NORTH_M north."""
@@ -399,6 +525,12 @@ class Demo:
                         self.telem.down_m,
                     )
                     ds_rx = self.telem.distance_sensor_rx
+                with self.planner_lock:
+                    planner_status = self.planner_status
+                    planner_reason = self.planner_reason
+                    planner_waypoint = self.planner_waypoint
+                    planner_path_found_count = self.planner_path_found_count
+                    planner_hold_count = self.planner_hold_count
                 wall_d = distance_to_wall_m(n, e) if self.wall else None
                 if wall_d is not None:
                     min_wall_dist = min(min_wall_dist, wall_d)
@@ -433,6 +565,9 @@ class Demo:
                                 round(wall_d, 2) if wall_d is not None else None
                             ),
                             "distance_sensor_rx": ds_rx,
+                            "planner_status": planner_status,
+                            "planner_reason": planner_reason,
+                            "planner_waypoint": planner_waypoint,
                         }
                     )
                     + "\n"
@@ -448,6 +583,10 @@ class Demo:
             "max_north_m": round(max_north, 2),
             "goal_reached_at_s": goal_reached_at,
             "distance_sensor_rx": ds_rx,
+            "planner_status": planner_status,
+            "planner_reason": planner_reason,
+            "planner_path_found_count": planner_path_found_count,
+            "planner_hold_count": planner_hold_count,
         }
 
     def shutdown(self) -> None:
@@ -466,6 +605,7 @@ def main() -> int:
             "wall_guided_wpnav",
             "wall_guided_vel",
             "wall_auto",
+            "wall_custom_2d",
         ],
         required=True,
     )
@@ -483,6 +623,9 @@ def main() -> int:
         demo.wait_ready_to_arm()
         if args.scenario == "wall_guided_wpnav":
             demo.set_param("GUID_OPTIONS", 64)
+        if args.scenario == "wall_custom_2d":
+            # The companion planner owns avoidance for this scenario.
+            demo.set_param("AVOID_ENABLE", 0)
         if args.scenario == "wall_auto":
             demo.upload_goal_mission()
             demo.set_mode("AUTO")
@@ -495,6 +638,11 @@ def main() -> int:
                 target=demo.velocity_stream_loop, args=(2.0,), daemon=True
             ).start()
             print("[demo] streaming 2 m/s north velocity setpoints", flush=True)
+        elif args.scenario == "wall_custom_2d":
+            demo.set_mode("GUIDED")
+            demo.takeoff(ALT_M)
+            threading.Thread(target=demo.custom_planner_loop, daemon=True).start()
+            print("[demo] WARG 2D planner owns velocity setpoints", flush=True)
         else:
             demo.set_mode("GUIDED")
             demo.takeoff(ALT_M)
@@ -510,7 +658,16 @@ def main() -> int:
         # Primary: never hit the wall. Secondary (reported, not gating):
         # kept the intended clearance and/or still reached the goal.
         summary["clearance_ok"] = summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
-        summary["verdict"] = "FAIL" if summary["breached"] else "PASS"
+        if args.scenario == "wall_custom_2d":
+            qualified = (
+                not summary["breached"]
+                and summary["clearance_ok"]
+                and summary["goal_reached_at_s"] is not None
+                and summary["planner_path_found_count"] > 0
+            )
+            summary["verdict"] = "PASS" if qualified else "FAIL"
+        else:
+            summary["verdict"] = "FAIL" if summary["breached"] else "PASS"
     else:
         reached = summary["goal_reached_at_s"] is not None
         summary["verdict"] = "PASS" if reached else "FAIL"

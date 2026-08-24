@@ -3,3 +3,4 @@
 [demo] summary: {"min_wall_dist_m": 3.84, "breached": false, "max_north_m": 39.07, "goal_reached_at_s": 14.3, "distance_sensor_rx": 585, "scenario": "wall_guided_wpnav", "clearance_ok": true, "verdict": "PASS"}
 [demo] summary: {"min_wall_dist_m": 0.77, "breached": false, "max_north_m": 19.23, "goal_reached_at_s": null, "distance_sensor_rx": 3531, "scenario": "wall_guided_vel", "clearance_ok": false, "verdict": "PASS"}
 [demo] summary: {"min_wall_dist_m": 3.79, "breached": false, "max_north_m": 38.72, "goal_reached_at_s": 23.0, "distance_sensor_rx": 616, "scenario": "wall_auto", "clearance_ok": true, "verdict": "PASS"}
+[demo] summary: {"min_wall_dist_m": 2.02, "breached": false, "max_north_m": 38.53, "goal_reached_at_s": 22.5, "distance_sensor_rx": 730, "planner_status": "PATH_FOUND", "planner_reason": null, "planner_path_found_count": 223, "planner_hold_count": 0, "scenario": "wall_custom_2d", "clearance_ok": true, "verdict": "PASS"}
