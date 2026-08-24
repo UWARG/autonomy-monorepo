@@ -1,0 +1,33 @@
+# Headless ArduCopter SITL for issue 96.
+# Build: docker build -f Dockerfile.sitl -t warg/sitl:latest .
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates sudo lsb-release tzdata rsync wget \
+      build-essential ccache g++ gawk make \
+      python3 python3-dev python3-pip python3-setuptools python3-wheel \
+      libtool libxml2-dev libxslt1-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# ArduPilot dependencies; empy 4 breaks this build.
+RUN python3 -m pip install --no-cache-dir \
+      future lxml pymavlink MAVProxy pexpect "empy==3.3.4" dronecan \
+      geocoder ptyprocess intelhex
+
+# Pin Copter 4.5 and its submodules.
+RUN git clone --depth 1 --branch Copter-4.5 https://github.com/ArduPilot/ardupilot.git /ardupilot
+WORKDIR /ardupilot
+RUN git submodule update --init --recursive --depth 1
+
+# Build SITL once.
+RUN ./waf configure --board sitl && ./waf copter
+
+ENV PATH="/ardupilot/Tools/autotest:/ardupilot/build/sitl/bin:${PATH}"
+EXPOSE 5760
+
+# Run headless ArduCopter with a TCP MAVLink endpoint.
+CMD ["bash", "-lc", "cd /ardupilot && exec build/sitl/bin/arducopter \
+     -S -I0 --model + --speedup 1 --sim-address=127.0.0.1 \
+     --defaults Tools/autotest/default_params/copter.parm"]
