@@ -34,27 +34,22 @@ function Row({
   );
 }
 
-interface StateStamped {
-  connected: boolean,
-  status: ConnectionStatus,
+interface HeartbeatStamped {
+
 }
 
 export default function ConnectionWidget() {
   const [connection, setConnection] = useState<ConnectionMessage>();
 
   useEffect(() => {
-    const poseTopic = new ROSLIB.Topic<PoseStamped>({
+    const poseTopic = new ROSLIB.Topic<HeartbeatStamped>({
       ros,
       name: '/heartbeat',
-      messageType: 'mavros_msgs/State'
+      messageType: 'std_msgs/Empty'
     });
 
-    const onPose = (message: PoseStamped) => {
-      const status = message.pose.status;
-      const transport = message.pose.transport;
-      const heartbeatHz = message.pose.frequency;
-
-      setConnection({ status, transport, heartbeatHz });
+    const onPose = (message: HeartbeatStamped) => {
+      
     }
 
     poseTopic.subscribe(onPose);
