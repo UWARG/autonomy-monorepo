@@ -34,12 +34,9 @@ function Row({
   );
 }
 
-interface PoseStamped {
-  pose: {
-    status: ConnectionStatus;
-    transport: string;
-    frequency: number;
-  };
+interface StateStamped {
+  connected: boolean,
+  status: ConnectionStatus,
 }
 
 export default function ConnectionWidget() {
