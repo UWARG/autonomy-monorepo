@@ -5,7 +5,6 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, _unload_paths, app
-from cli import _materialize_dependency_graph, app
 from doctor import Check, Section, CheckStatus
 from errors import GitError
 from github_adapter import GitHubError, GitHubRepository
