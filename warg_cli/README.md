@@ -29,6 +29,18 @@ called without a repository, `warg clone` opens a searchable list of repositorie
 in the UWARG GitHub organization, sorted by most recently updated first. You can
 also pass a UWARG repository name instead of a full clone URL.
 
+Fork, clone, and configure the autonomy bootcamp repository:
+
+```bash
+warg bootcamp
+warg bootcamp my-bootcamp
+```
+
+This forks `UWARG/autonomy-bootcamp` into your account with the `gh` CLI,
+clones the fork, and sets `origin` to your fork and `upstream` to the original
+repository. It needs `gh` installed and logged in. See the
+[bootcamp repository](https://github.com/UWARG/autonomy-bootcamp) for details.
+
 List registered projects:
 
 ```bash
