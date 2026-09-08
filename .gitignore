@@ -9,4 +9,5 @@ dist/
 build/
 *.egg-info/
 .vscode/
-
+logs/
+.env
