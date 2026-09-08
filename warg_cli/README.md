@@ -41,6 +41,20 @@ clones the fork, and sets `origin` to your fork and `upstream` to the original
 repository. It needs `gh` installed and logged in. See the
 [bootcamp repository](https://github.com/UWARG/autonomy-bootcamp) for details.
 
+Check the machine for common dev environment problems:
+
+```bash
+warg doctor
+warg doctor --verbose
+```
+
+Doctor checks the tools the CLI depends on (Git, uv, Docker, gh), SSH access to
+GitHub, and the current clone's remote, Git identity, and checked-out projects.
+Each result is marked ok, warn, or fail, with a suggested fix for anything that
+isn't ok. The command exits non-zero only when a check fails. Run it from inside
+a clone to include the repository checks; elsewhere they are skipped.
+`--verbose` prints the output of every command doctor ran.
+
 List registered projects:
 
 ```bash
