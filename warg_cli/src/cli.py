@@ -20,7 +20,7 @@ from git_adapter import GitAdapter
 from github_adapter import GitHubAdapter, GitHubError, GitHubRepository
 from models import Project
 from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
-from constants import GITHUB_SSH_DOCS_URL, BOOTCAMP_UPSTREAM
+from constants import BOOTCAMP_UPSTREAM
 from runner import CommandRunner
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
