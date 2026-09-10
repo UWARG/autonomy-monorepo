@@ -76,4 +76,4 @@ root README.
 
 - `Mav_comms`: Wrapper around pymavlink.
 
-- `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
+- `SITL-Plus` : Simulation for airside testing
