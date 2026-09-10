@@ -1,0 +1,17 @@
+{"t": 0.01, "north_m": 0.01, "east_m": -0.01, "alt_m": 9.34, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 0.53, "north_m": 0.07, "east_m": -0.01, "alt_m": 9.74, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 1.05, "north_m": 0.6, "east_m": -0.0, "alt_m": 9.82, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 1.56, "north_m": 1.78, "east_m": -0.0, "alt_m": 9.82, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 2.06, "north_m": 3.59, "east_m": -0.0, "alt_m": 9.82, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 2.59, "north_m": 6.01, "east_m": 0.0, "alt_m": 9.84, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 3.11, "north_m": 9.02, "east_m": 0.01, "alt_m": 9.86, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 3.64, "north_m": 13.37, "east_m": 0.01, "alt_m": 9.89, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 4.15, "north_m": 17.23, "east_m": 0.01, "alt_m": 9.92, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 4.65, "north_m": 21.0, "east_m": 0.01, "alt_m": 9.93, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 5.15, "north_m": 24.56, "east_m": 0.01, "alt_m": 9.94, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 5.66, "north_m": 27.87, "east_m": 0.02, "alt_m": 9.96, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 6.16, "north_m": 30.89, "east_m": 0.02, "alt_m": 9.97, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 6.67, "north_m": 33.58, "east_m": 0.03, "alt_m": 9.98, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 7.17, "north_m": 35.87, "east_m": 0.03, "alt_m": 9.98, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 7.68, "north_m": 37.74, "east_m": 0.03, "alt_m": 9.99, "wall_dist_m": null, "distance_sensor_rx": 0}
+{"t": 8.18, "north_m": 39.18, "east_m": 0.03, "alt_m": 9.99, "wall_dist_m": null, "distance_sensor_rx": 0}
