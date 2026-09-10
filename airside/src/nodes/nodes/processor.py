@@ -205,10 +205,13 @@ class Processor(Node):
             gpu_takeoff_des = cv2.cuda.GpuMat()
             gpu_landing_des.upload(landing_des)
             gpu_takeoff_des.upload(takeoff_des)
-            matches = self.BFMatcher.match(gpu_landing_des, gpu_takeoff_des)
+            matches = self.BFMatcher.knnMatch(gpu_landing_des, gpu_takeoff_des, 2)
         else:
-            matches = self.BFMatcher.match(landing_des, takeoff_des)
-        matches = sorted(matches, key=lambda match: match.distance)
+            matches = self.BFMatcher.knnMatch(landing_des, takeoff_des, 2)
+        matches=[
+            pair[0] for pair in matches
+            if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
+        ]
         if len(matches) < 50:
             return None, None
         good_matches = matches[:50]
@@ -501,45 +504,16 @@ class Processor(Node):
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
                 self.publish_invalid_error(yaw_error)
                 return
-            if self._use_cuda:
-                gpu_landing_des=cv2.cuda.GpuMat()
-                gpu_takeoff_des=cv2.cuda.GpuMat()
-                gpu_landing_des.upload(des)
-                gpu_takeoff_des.upload(des_takeoff)
-                knn_matches=self.BFMatcher.knnMatch(gpu_landing_des, gpu_takeoff_des, 2)
-            else:
-                knn_matches=self.BFMatcher.knnMatch(des, des_takeoff, 2)
-            # Lowe ratio test. Ground texture (asphalt, grass, concrete aggregate)
-            # produces many near-identical descriptors, so a small Hamming distance
-            # alone does not mean the correspondence is right. Keep a match only when
-            # its best candidate is clearly better than its runner-up.
-            matches=[
-                pair[0] for pair in knn_matches
-                if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
-            ]
-            if len(matches)<10:
-                self.get_logger().error(f"Not enough matches: {len(matches)}")
-                self.publish_invalid_error(yaw_error)
-                return
-            self.takeoff_3d_points=[]
-            self.landing_3d_points=[]
-            for match in matches:
-                x_land_px,y_land_px=kp[match.queryIdx]
-                x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
-                if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
-                    continue
-                x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,agl)
-                x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
-                self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
-                self.landing_3d_points.append([x_land_3d,y_land_3d])
-            if len(self.takeoff_3d_points)<10:
-                self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
+            landing_3d_points,takeoff_3d_points=self.match_feature_points(
+                landing_kp,landing_des,kp_takeoff,des_takeoff
+            )
+            if landing_3d_points is None or takeoff_3d_points is None:
                 self.publish_invalid_error(yaw_error)
                 return
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
-                np.asarray(takeoff_3d_points,dtype=np.float32),
-                np.asarray(landing_3d_points,dtype=np.float32),
+                np.asarray(self.takeoff_3d_points,dtype=np.float32),
+                np.asarray(self.landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
                 ransacReprojThreshold=0.1,
                 maxIters=1000,
