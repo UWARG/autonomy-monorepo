@@ -4,7 +4,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from cli import _materialize_dependency_graph, app
+from cli import _materialize_dependency_graph, _unload_paths, app
 from errors import GitError
 from github_adapter import GitHubRepository
 from models import Project
@@ -907,3 +907,35 @@ extra_paths = ["shared/protos"]
     assert "shared/protos" in paths
     assert "airside" in paths
     assert "shared/protos" in materialized
+
+
+def test_down_unloads_unique_extra_paths_but_keeps_shared(tmp_path: Path) -> None:
+    from registry import Registry
+
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "projects.toml").write_text(
+        """
+[projects.airside]
+path = "airside"
+extra_paths = ["shared/protos", "airside/only"]
+
+[projects.groundside]
+path = "groundside"
+extra_paths = ["shared/protos"]
+""".strip()
+        + "\n"
+    )
+    for name in ("airside", "groundside"):
+        project_dir = tmp_path / name
+        project_dir.mkdir()
+        (project_dir / "warg.toml").write_text(
+            f'name = "{name}"\ndepends_on = []\n[commands]\nsetup = "echo {name}"\n'
+        )
+
+    registry = Registry(tmp_path)
+    paths, _ = _unload_paths(registry, "airside", include_dependencies=False)
+
+    # unique extra path is unloaded
+    assert "airside/only" in paths
+    # shared extra path is retained because groundside still declares it
+    assert "shared/protos" not in paths

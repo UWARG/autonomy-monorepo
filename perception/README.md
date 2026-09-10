@@ -2,6 +2,13 @@
 
 Computer vision and target localization algorithms.
 
+
+## `building_target_localizer`
+
+`building_target_localizer` reconstructs finite building surfaces from processed
+planes and produces deterministic, human-readable target descriptions. Its ROS 2
+message conversion and node lifecycle remain in `airside/src/wrapper`.
+
 ## `target_location`
 
 Converts a target's pixel location in a camera image into a 3D position relative to

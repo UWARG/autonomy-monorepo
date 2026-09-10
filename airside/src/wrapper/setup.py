@@ -15,7 +15,7 @@ setup(
     zip_safe=True,
     maintainer='WARG Autonomy Subteam',
     maintainer_email='uwarg@uwaterloo.ca',
-    description='Wrapper for monorepo utilities',
+    description='ROS adapters for monorepo modules',
     license='MIT',
     extras_require={
         'test': [
@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'building_target_localizer = '
+            'wrapper.building_target_localizer_node:main',
             'camera = wrapper.camera_node:main',
             'map_manager = wrapper.map_manager_node:main',
             'ground_fusion = wrapper.ground_fusion_node:main',
