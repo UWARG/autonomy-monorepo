@@ -1,5 +1,6 @@
 services:
-  airside:
+  airside_prec:
+    ipc: private
     build:
       context: ..
       dockerfile: airside/docker/Dockerfile

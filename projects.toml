@@ -2,8 +2,9 @@ include_paths = [".github"]
 
 [projects.warg_cli]
 path = "warg_cli"
-[projects.SITL-Plus]
-path="SITL-Plus"
+
+[projects.sitl-plus]
+path="sitl-plus"
 
 [projects.gnc]
 path = "gnc"
