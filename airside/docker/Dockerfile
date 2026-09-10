@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
+    ros-humble-rosbridge-suite \
     wget \
   && rm -rf /var/lib/apt/lists/*
 

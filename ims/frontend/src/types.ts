@@ -22,9 +22,9 @@ export interface AttitudeMessage {
   roll: number;
   pitch: number;
   yaw: number;
-  rollspeed: number;
-  pitchspeed: number;
-  yawspeed: number; 
+  rollspeed?: number;
+  pitchspeed?: number;
+  yawspeed?: number; 
 }
 
 /**

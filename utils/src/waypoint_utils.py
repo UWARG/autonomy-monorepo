@@ -124,6 +124,46 @@ def parse_waypoints_file(
     return home, waypoints
 
 
+def parse_landing_pads_file(path: str | Path) -> list[Coordinate]:
+    """
+    Parses a YAML landing-pads file into a list of pad ``Coordinate``\\ s.
+
+    The file is a mapping with a ``landing_pads`` list, each pad a mapping of
+    ``lat``, ``lon``, and ``alt`` (the relative altitude to approach the pad at
+    before the final LAND-mode descent)::
+
+        landing_pads:
+          - {lat: 43.433880, lon: -80.577594, alt: 10}
+
+    The list is empty if ``landing_pads`` is omitted. Raises ``OSError`` if the
+    file cannot be read and ``ValueError`` if its contents are malformed.
+    """
+
+    text = Path(path).read_text()
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        raise ValueError(f"{path}: invalid YAML: {error}") from error
+
+    if raw is None:
+        return []
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"{path}: expected a mapping with 'landing_pads', got {raw!r}"
+        )
+
+    pads_entry = raw.get("landing_pads") or []
+    if not isinstance(pads_entry, list):
+        raise ValueError(
+            f"{path}: 'landing_pads' must be a list, got {pads_entry!r}"
+        )
+
+    return [
+        _coordinate_from_entry(entry, path, f"landing pad {index}")
+        for index, entry in enumerate(pads_entry, start=1)
+    ]
+
+
 def sort_clockwise_sweep(
     waypoints: list[Coordinate], home: Coordinate | None = None
 ) -> list[Coordinate]:

@@ -15,7 +15,10 @@ setup(
         ),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
-        (f"share/{package_name}/config", ["config/waypoints.yaml"]),
+        (
+            f"share/{package_name}/config",
+            ["config/waypoints.yaml", "config/landing_pads.yaml"],
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -28,6 +31,7 @@ setup(
         "console_scripts": [
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
+            "heartbeat = engine.heartbeat_node:main",
         ],
     },
 )
