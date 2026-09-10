@@ -11,6 +11,7 @@ import numpy as np
 class CameraFrame: 
     """Data Class for a Camera Frame"""
 
+    # Colour image in RGB channel order (red, green, blue), shape (H, W, 3).
     rgb: np.ndarray
 
     depth: np.ndarray | None 
