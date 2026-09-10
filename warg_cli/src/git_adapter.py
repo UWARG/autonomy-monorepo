@@ -20,13 +20,23 @@ class GitAdapter:
         cls._run_clone_command(command)
 
     @classmethod
-    def clone_sparse(cls, repository: str, destination: str | None = None) -> None:
+    def clone_sparse(cls, repository: str, destination: str | None = None) -> Path:
         command = ["git", "clone", "--filter=blob:none", "--sparse"]
         command.append(repository)
         if destination:
             command.append(destination)
 
         cls._run_clone_command(command)
+        return cls._clone_destination(repository, destination)
+
+    @staticmethod
+    def _clone_destination(repository: str, destination: str | None) -> Path:
+        if destination:
+            return Path(destination)
+        name = repository.rstrip("/").rsplit("/", 1)[-1]
+        if name.endswith(".git"):
+            name = name[: -len(".git")]
+        return Path(name)
 
     @staticmethod
     def _run_clone_command(command: list[str]) -> None:

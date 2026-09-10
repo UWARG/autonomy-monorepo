@@ -1,0 +1,50 @@
+# Maps changed paths to PR labels, applied by .github/workflows/label.yml
+#
+# One entry per project in projects.toml. Label names must match the repo's
+# existing labels exactly -- they are not always the directory name.
+# Labels that are not path-derivable (kernel, obstacle avoidance) are left
+# out on purpose and stay manual; sync-labels does not touch them.
+
+"warg cli":
+  - changed-files:
+      - any-glob-to-any-file: "warg_cli/**"
+
+"sitl-plus":
+  - changed-files:
+      - any-glob-to-any-file: "SITL-Plus/**"
+
+"gnc":
+  - changed-files:
+      - any-glob-to-any-file: "gnc/**"
+
+"perception":
+  - changed-files:
+      - any-glob-to-any-file: "perception/**"
+
+"camera":
+  - changed-files:
+      - any-glob-to-any-file: "camera/**"
+
+"utils":
+  - changed-files:
+      - any-glob-to-any-file: "utils/**"
+
+"mav_comms":
+  - changed-files:
+      - any-glob-to-any-file: "mav_comms/**"
+
+"IMS":
+  - changed-files:
+      - any-glob-to-any-file: "ims/**"
+
+"airside":
+  - changed-files:
+      - any-glob-to-any-file: "airside/**"
+
+"gesture control":
+  - changed-files:
+      - any-glob-to-any-file: "gesture_control/**"
+
+"target tracking":
+  - changed-files:
+      - any-glob-to-any-file: "target_tracking/**"

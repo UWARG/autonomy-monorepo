@@ -110,3 +110,55 @@ def write_manifest(root: Path, project: str, content: str) -> None:
     project_dir = root / project
     project_dir.mkdir()
     (project_dir / PROJECT_MANIFEST_FILENAME).write_text(content)
+
+
+def test_parses_extra_paths_for_project(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.airside]
+path = "airside"
+extra_paths = ["shared/protos"]
+""".strip()
+        + "\n"
+    )
+
+    registry = Registry(tmp_path)
+
+    assert registry.entries["airside"].extra_paths == ("shared/protos",)
+
+
+def test_extra_paths_defaults_to_empty(fixture_repo: Path) -> None:
+    registry = Registry(fixture_repo)
+
+    assert registry.entries["camera"].extra_paths == ()
+
+
+def test_extra_paths_must_be_list_of_strings(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.a]
+path = "a"
+extra_paths = "not-a-list"
+""".strip()
+        + "\n"
+    )
+
+    with pytest.raises(ManifestError, match="extra_paths must be a list of strings"):
+        Registry(tmp_path)
+
+
+def test_extra_paths_must_be_repo_relative(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        """
+[projects.a]
+path = "a"
+extra_paths = ["../escape"]
+""".strip()
+        + "\n"
+    )
+
+    with pytest.raises(ManifestError, match="extra_paths must be repo-relative"):
+        Registry(tmp_path)

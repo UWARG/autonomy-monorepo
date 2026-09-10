@@ -52,3 +52,16 @@ TAKEOFF_AIRBORNE_THRESHOLD_M = 2.0
 
 # Takeoff tolerance from target altitude.
 TAKEOFF_ALTITUDE_TOLERANCE_M = 1.0
+
+# Number of payload items on board at the start of the mission.
+INITIAL_ITEM_COUNT = 3
+
+# Relative altitude (meters) to climb back to after releasing a payload.
+DROP_ASCEND_ALTITUDE_M = 15.0
+
+# Payload release actuates a servo over MAVROS (MAV_CMD_DO_SET_SERVO).
+# TODO: confirm the servo output channel and open/closed PWM values
+# against the actual drop hardware.
+PAYLOAD_RELEASE_SERVO_CHANNEL = 9
+PAYLOAD_RELEASE_OPEN_PWM = 1900
+PAYLOAD_RELEASE_CLOSED_PWM = 1100
