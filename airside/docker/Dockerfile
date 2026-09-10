@@ -8,9 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
     python3-colcon-common-extensions \
+    python3-numpy \
     python3-pip \
     python3-pytest \
     python3-rosdep \
+    python3-shapely \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
@@ -34,8 +36,9 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
+COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install /monorepo/camera /monorepo/utils /monorepo/perception
 
 COPY airside/src/ src/
 

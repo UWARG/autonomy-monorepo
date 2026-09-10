@@ -1,7 +1,7 @@
 name = "perception"
 description = "Perception module - computer vision and target tracking algorithms"
 
-depends_on = []
+depends_on = ["utils"]
 
 [commands]
 setup = "uv sync"

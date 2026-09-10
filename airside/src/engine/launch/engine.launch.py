@@ -85,6 +85,12 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             Node(
+                package="wrapper",
+                executable="building_target_localizer",
+                name="building_target_localizer",
+                output="screen",
+            ),
+            Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",
