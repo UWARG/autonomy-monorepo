@@ -1,0 +1,98 @@
+[
+  {
+    "pair": 1,
+    "source": "f179158328.png",
+    "reason": "High altitude, self-similar gravel, tiny fiducials. ORB Hamming descriptors of asphalt patches are interchangeable; Lowe-ratio matches collapse onto repeating aggregate.",
+    "left": "pair1_1.png",
+    "right": "pair1_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  },
+  {
+    "pair": 2,
+    "source": "f179164968.png",
+    "reason": "High altitude with washed/low-contrast gravel. Weak corners; FAST/ORB detections are noisy and poorly localized.",
+    "left": "pair2_1.png",
+    "right": "pair2_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  },
+  {
+    "pair": 3,
+    "source": "f187635160.png",
+    "reason": "Viewpoint change: court lines at different angles and the pad is shifted. Geometry plus repeating texture makes binary matches ambiguous.",
+    "left": "pair3_1.png",
+    "right": "pair3_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  },
+  {
+    "pair": 4,
+    "source": "f200416568.png",
+    "reason": "Asymmetric FOV and lighting: left is vignetted with no court line, right has a strong line entering the frame. Scene content is not the same.",
+    "left": "pair4_1.png",
+    "right": "pair4_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  },
+  {
+    "pair": 5,
+    "source": "f200460648.png",
+    "reason": "Large scale change and a cropped tag on the left. Classic ORB pyramid miss \u2014 BRIEF descriptors do not match across this scale gap.",
+    "left": "pair5_1.png",
+    "right": "pair5_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  },
+  {
+    "pair": 6,
+    "source": "f200477032.png",
+    "reason": "Extreme scale: left is a close-up of the tag, right is much higher. Strongest scale mismatch in the unique set.",
+    "left": "pair6_1.png",
+    "right": "pair6_2.png",
+    "left_size": [
+      1279,
+      719
+    ],
+    "right_size": [
+      1279,
+      719
+    ],
+    "note": "pairN_1 is the left overlay frame (teach), pairN_2 is the right overlay frame (repeat)."
+  }
+]
