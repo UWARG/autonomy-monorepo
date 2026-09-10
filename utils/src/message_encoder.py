@@ -39,9 +39,9 @@ def encode_position(position) -> bytes:
     return _encoder.encode(
         PositionMessage(
             payload=PositionPayload(
-                lat=float(position.lat),
-                lon=float(position.lon),
-                alt=float(position.alt),
+                lat=float(position.x),
+                lon=float(position.y),
+                alt=float(position.z),
             )
         )
     )
