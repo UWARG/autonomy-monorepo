@@ -10,3 +10,6 @@ class SimCamera(AbstractCamera):
 
     def capture_frame(self) -> CameraFrame | None:
         return None
+
+    def close_camera(self) -> None:
+        return None

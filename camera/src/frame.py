@@ -1,23 +1,24 @@
 """
-CameraFrame - Data class for each camera frame. 
+CameraFrame - Data class for each camera frame.
 """
 
 from dataclasses import dataclass, field
-import time 
-import math 
-import numpy as np 
+import time
+import math
+import numpy as np
 
-@dataclass 
-class CameraFrame: 
+
+@dataclass
+class CameraFrame:
     """Data Class for a Camera Frame"""
 
     rgb: np.ndarray
 
-    depth: np.ndarray | None 
+    depth: np.ndarray | None
 
     rgb_down: np.ndarray | None
 
-    downwards_range: float = math.nan 
+    downwards_range: float = math.nan
 
     centre_depth: float = math.nan
 
@@ -26,4 +27,3 @@ class CameraFrame:
     roll: float = math.nan
 
     timestamp: float = field(default_factory=time.time)
-    
