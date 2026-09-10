@@ -2,12 +2,7 @@ from rclpy.node import Node
 import rclpy
 from mavros_msgs.msg import PositionTarget
 from custom_interfaces.msg import Error
-import math
 import time
-
-HZ=20
-ALIGN_XY_TOLERANCE_M=0.15
-DESCENT_VZ=0.1
 
 class PI():
     def __init__(self,ki,kp,max_integral,max_output):
@@ -45,14 +40,14 @@ class Controller(Node):
         super().__init__('controller')
         self.error_subscriber=self.create_subscription(Error, "/error", self.PI_control, 10)
         self.velocity_publisher=self.create_publisher(PositionTarget, "/mavros/setpoint_raw/local", 10)
-        self.create_timer(1/HZ, self.publish_velocity)
         self.get_logger().info('Controller node initialized')
-        self.pi_x=PI(0.01,0.1,10,10)
-        self.pi_y=PI(0.01,0.1,10,10)
+        self.pi_x=PI(0.01,0.25,1.0,1.0)
+        self.pi_y=PI(0.01,0.25,1.0,1.0)
+        self.pi_yaw=PI(0.01,0.75,0.5,0.4)
         self.vx=0.0
         self.vy=0.0
         self.vz=0.0
-        self.yaw=0.0
+        self.yaw_rate=0.0
         self.commanding=False
 
     def publish_velocity(self):
@@ -65,14 +60,15 @@ class Controller(Node):
         velocity.type_mask = (
             PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW_RATE
+            PositionTarget.IGNORE_YAW
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
+        #Converting to FLU since mavros expects FLU to be converted into FRD
         velocity.velocity.x=self.vx
-        velocity.velocity.y=self.vy
-        velocity.velocity.z=self.vz
-        velocity.yaw=self.yaw
-        self.get_logger().info(f"Publishing velocity: {velocity.velocity.x}, {velocity.velocity.y}, {velocity.velocity.z}, {velocity.yaw}")
+        velocity.velocity.y=-self.vy
+        velocity.velocity.z=-self.vz
+        velocity.yaw_rate=self.yaw_rate
+        self.get_logger().info(f"Publishing velocity: {velocity.velocity.x}, {velocity.velocity.y}, {velocity.velocity.z}, yaw_rate={self.yaw_rate}")
         self.velocity_publisher.publish(velocity)
 
     def _publish_zero_velocity(self):
@@ -83,13 +79,13 @@ class Controller(Node):
         velocity.type_mask = (
             PositionTarget.IGNORE_PX | PositionTarget.IGNORE_PY | PositionTarget.IGNORE_PZ |
             PositionTarget.IGNORE_AFX | PositionTarget.IGNORE_AFY | PositionTarget.IGNORE_AFZ |
-            PositionTarget.IGNORE_YAW_RATE
+            PositionTarget.IGNORE_YAW
         )
         velocity.coordinate_frame=PositionTarget.FRAME_BODY_NED
         velocity.velocity.x=0.0
         velocity.velocity.y=0.0
         velocity.velocity.z=0.0
-        velocity.yaw=0.0
+        velocity.yaw_rate=0.0
         self.velocity_publisher.publish(velocity)
 
     def PI_control(self,error):
@@ -97,38 +93,35 @@ class Controller(Node):
             self.vx=0.0
             self.vy=0.0
             self.vz=0.0
+            self.yaw_rate=0.0
             self._publish_zero_velocity()
             self.commanding=False
             self.pi_x.reset()
             self.pi_y.reset()
+            self.pi_yaw.reset()
             return
         if not self.commanding:
             self.pi_x.reset()
             self.pi_y.reset()
+            self.pi_yaw.reset()
         self.commanding=True
-        if error.below_last_landing_altitude:
-            self.vx=0.0
-            self.vy=0.0
-            self.vz=0.1
-            self.pi_x.update_prev_time()
-            self.pi_y.update_prev_time()
-            return
+        self.yaw_rate=self.pi_yaw.update(error.yaw_error)
         if not error.valid_error:
-            #ascend a bit to increase fov
             self.vx=0.0
             self.vy=0.0
-            self.vz=-0.05
+            self.vz=error.vz
             self.pi_x.update_prev_time()
             self.pi_y.update_prev_time()
+            self.publish_velocity()
             return
+        self.get_logger().info(f"Updating PI: {error.x}, {error.y}")
+        #converting from frame of x=left y=up to frd drone frame where x=forward y=right, to do so negate y
         self.vx=self.pi_y.update(error.y)
         self.vy=-self.pi_x.update(error.x)
-        #Aligning before descent
-        if error.align_before_descent:
-            xy_error=math.hypot(error.x, error.y)
-            self.vz=DESCENT_VZ if xy_error<=ALIGN_XY_TOLERANCE_M else 0.0
-        else:
-            self.vz=DESCENT_VZ
+        # Descent rate is tapered by the processor against an altitude-proportional
+        # alignment cone, so it already reaches zero when we are badly off-centre.
+        self.vz=error.vz
+        self.publish_velocity()
 
 def main(args=None):
     rclpy.init(args=args)

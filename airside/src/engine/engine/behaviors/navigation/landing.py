@@ -8,7 +8,7 @@ import py_trees
 import rclpy.node
 from rclpy.action import ActionClient
 from custom_interfaces.action import Landing as LandingAction
-
+from mavros_msgs.msg import State
 class Landing(py_trees.behaviour.Behaviour):
     """
     Land the drone.
@@ -24,6 +24,12 @@ class Landing(py_trees.behaviour.Behaviour):
 
         self._node = kwargs["node"]
         self._landing_action_client=ActionClient(self._node, LandingAction, "/landing")
+        self.state_subscriber=self._node.create_subscription(State, "/mavros/state", self.state_callback, 10)
+        self.state="GUIDED"
+        self._goal_handle=None
+
+    def state_callback(self, msg: State):
+        self.state=msg.mode
 
     def initialise(self) -> None:
         """
@@ -41,6 +47,7 @@ class Landing(py_trees.behaviour.Behaviour):
         if not goal_handle.accepted:
             self.success=False
             return
+        self._goal_handle=goal_handle
         self._get_result_future=goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
 
@@ -52,9 +59,16 @@ class Landing(py_trees.behaviour.Behaviour):
         """
         Called on every tick while RUNNING.
         """
+        if self.state != "GUIDED" and self.state != "LAND":
+            self._node.get_logger().info("Pilot override")
+            if self._goal_handle:
+                self._goal_handle.cancel_goal_async()
+            return py_trees.common.Status.SUCCESS
         if self.success is None:
             return py_trees.common.Status.RUNNING
         if not self.success:
             self._node.get_logger().info("Landing Failed")
+            if self._goal_handle:
+                self._goal_handle.cancel_goal_async()
             return py_trees.common.Status.FAILURE
         return py_trees.common.Status.SUCCESS

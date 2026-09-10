@@ -41,17 +41,12 @@ def generate_launch_description() -> LaunchDescription:
                 ],
             ),
             Node(
-                package="v4l2_camera",
-                executable="v4l2_camera_node",
-                name="v4l2_camera_node",
-                parameters=[
-                    {"device": "/dev/video0"},
-                    {"image_size": [1280, 720]},
-                    {"pixel_format": "YUYV"},
-                    {"output_encoding": "rgb8"},
-                ],
+                package="wrapper",
+                executable="camera",
+                name="camera_node",
+                output="screen",
                 remappings=[
-                    ("image_raw", "camera/image"),
+                    ("camera/image_raw", "camera/image"),
                 ],
             ),
             Node(

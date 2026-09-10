@@ -34,7 +34,8 @@ _TYPE_MASK = (
 
 class ReturnToLaunch(py_trees.behaviour.Behaviour):
     """
-    Return to the launch site.
+    Fly back to the launch coordinate written by Takeoff
+    (blackboard keys latitude, longitude, altitude).
     """
 
     def __init__(self) -> None:
