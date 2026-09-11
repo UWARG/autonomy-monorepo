@@ -189,6 +189,7 @@ RUN chmod +x /monorepo/camera/scripts/setup_arducam_v4l2.sh \
   && pip3 install --no-cache-dir "numpy>=1.17.3,<1.25" sortedcontainers \
   && pip3 install --no-cache-dir /monorepo/camera /monorepo/utils \
   && pip3 install --no-cache-dir "numpy>=1.17.3,<1.25"
+  && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
 WORKDIR /ros_ws
 

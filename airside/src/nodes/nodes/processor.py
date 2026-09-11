@@ -3,8 +3,6 @@ import math
 import os
 import sys
 
-from numpy.ma import true_divide
-
 # Import CUDA OpenCV *before* cv_bridge. If cv_bridge loads first it can bind the
 # wrong OpenCV, and the first initUndistortRectifyMap then SIGSEGVs on Jetson.
 import cv2
@@ -27,6 +25,16 @@ from std_msgs.msg import Float64
 
 from custom_interfaces.action import Landing, Takeoff
 from custom_interfaces.msg import Error
+try:
+    from accelerated_features.modules import xfeat
+    import torch
+except ImportError:
+    torch=None
+    xfeat=None
+
+
+FEATURE_METHOD_ORB = "orb"
+FEATURE_METHOD_XFEAT = "xfeat"
 from mavros_msgs.msg import ExtendedState
 from mavros_msgs.srv import SetMode
 
@@ -82,7 +90,6 @@ class Processor(Node):
         self.longitude=0.0
         self.rel_alt=None
         self.last_altitude=0
-        self.altitude_threshold=0.1
         self.last_image_altitude=7.5
         self.range=None
         # CPU OpenCV setup before any CUDA context — mixing the other way
@@ -93,16 +100,19 @@ class Processor(Node):
         self._bridge=CvBridge()
         self.get_logger().info("init: camera_intrinsics")
         self.camera_intrinsics()
-        self._use_cuda = False
-        self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-        self.get_logger().info("init: CUDA BFMatcher")
-        if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
-            self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
-            self._use_cuda = True
-            self.get_logger().info("Using CUDA BFMatcher")
-        else:
-            self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
-        self.get_logger().info("Processor initialized")
+        self.declare_parameter("feature_method", FEATURE_METHOD_ORB)
+        self._feature_method = (
+            self.get_parameter("feature_method")
+            .get_parameter_value()
+            .string_value.lower()
+        )
+        if self._feature_method not in (FEATURE_METHOD_ORB, FEATURE_METHOD_XFEAT):
+            self.get_logger().warn(
+                f"Unknown feature_method '{self._feature_method}', defaulting to orb"
+            )
+            self._feature_method = FEATURE_METHOD_ORB
+        self._init_feature_extractor()
+        self.get_logger().info(f"Processor initialized (feature_method={self._feature_method})")
         self.roll=None
         self.pitch=None
         self.yaw=None
@@ -125,11 +135,105 @@ class Processor(Node):
         )
         self.image_rate=0.1 #meters/image
         self.error_margin=0.02 #meters
-        self.landing_3d_points=[]
-        self.takeoff_3d_points=[]
         self.last_landing_altitude=1 #alt to go straight down
         self.min_inlier_ratio=0.4
         self.lowe_ratio=0.55
+
+    def _init_feature_extractor(self) -> None:
+        self._use_cuda = False
+        if self._feature_method == FEATURE_METHOD_ORB:
+            self.BFMatcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+            self.get_logger().info("init: CUDA BFMatcher")
+            if hasattr(cv2, "cuda") and cv2.cuda.getCudaEnabledDeviceCount() > 0:
+                self.BFMatcher = cv2.cuda.DescriptorMatcher_createBFMatcher(cv2.NORM_HAMMING)
+                self._use_cuda = True
+                self.get_logger().info("Using CUDA BFMatcher")
+            else:
+                self.get_logger().warn("CUDA unavailable, using CPU BFMatcher")
+            return
+
+        self.xfeat = xfeat.XFeat()
+        _,_,roi_w,roi_h=self.roi
+        with torch.inference_mode():  # warm up cuda kernel autotuning at frame size
+            self.xfeat.detectAndCompute(
+                torch.zeros(1, 1, roi_h, roi_w, device=self.xfeat.dev), top_k=10
+            )
+
+    def detect_and_compute(self, gray: np.ndarray):
+        if self._feature_method == FEATURE_METHOD_ORB:
+            return self._detect_and_compute_orb(gray)
+        return self._detect_and_compute_xfeat(gray)
+
+    def _detect_and_compute_orb(self, gray: np.ndarray):
+        kp, des = self.orb.detectAndCompute(gray, None)
+        if not kp or des is None:
+            return None, None
+        kp_pts = np.array([keypoint.pt for keypoint in kp])
+        return kp_pts, des
+
+    def _detect_and_compute_xfeat(self, gray: np.ndarray):
+        tensor = (
+            torch.from_numpy(gray)
+            .to(device=self.xfeat.dev, dtype=torch.float32)
+            .unsqueeze(0)
+            .unsqueeze(0)
+            / 255.0
+        )
+        with torch.inference_mode():
+            outputs = self.xfeat.detectAndCompute(tensor, top_k=1000)[0]
+        kp = outputs["keypoints"]
+        des = outputs["descriptors"]
+        if len(kp) <= 0 or len(des) <= 0:
+            return None, None
+        return kp, des
+
+    def match_feature_points(
+        self,
+        landing_kp,
+        landing_des,
+        takeoff_kp,
+        takeoff_des,
+    ):
+        if self._feature_method == FEATURE_METHOD_ORB:
+            return self._match_orb(landing_kp, landing_des, takeoff_kp, takeoff_des)
+        return self._match_xfeat(landing_kp, landing_des, takeoff_kp, takeoff_des)
+
+    def _match_orb(self, landing_kp, landing_des, takeoff_kp, takeoff_des):
+        if self._use_cuda:
+            gpu_landing_des = cv2.cuda.GpuMat()
+            gpu_takeoff_des = cv2.cuda.GpuMat()
+            gpu_landing_des.upload(landing_des)
+            gpu_takeoff_des.upload(takeoff_des)
+            matches = self.BFMatcher.knnMatch(gpu_landing_des, gpu_takeoff_des, 2)
+        else:
+            matches = self.BFMatcher.knnMatch(landing_des, takeoff_des, 2)
+        matches=[
+            pair[0] for pair in matches
+            if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
+        ]
+        matches=sorted(matches, key=lambda match: match.distance)
+        if len(matches) < 50:
+            return None, None
+        good_matches = matches[:50]
+        land_pts = np.array([landing_kp[match.queryIdx] for match in good_matches])
+        takeoff_pts = np.array([takeoff_kp[match.trainIdx] for match in good_matches])
+        return land_pts, takeoff_pts
+
+    def _match_xfeat(self, landing_kp, landing_des, takeoff_kp, takeoff_des):
+        with torch.inference_mode():
+            landing_idx, takeoff_idx = self.xfeat.match(
+                landing_des, takeoff_des, min_cossim=0.7
+            )
+            if len(landing_idx) < 50 or len(takeoff_idx) < 50:
+                return None, None
+            matched_landing_des = landing_des[landing_idx]
+            matched_takeoff_des = takeoff_des[takeoff_idx]
+            cosim = (matched_landing_des * matched_takeoff_des).sum(dim=1)
+            order = torch.argsort(cosim, descending=True)
+            selection = order[:50]
+            land_pts = landing_kp[landing_idx[selection]].cpu().numpy()
+            takeoff_pts = takeoff_kp[takeoff_idx[selection]].cpu().numpy()
+        return land_pts, takeoff_pts
 
     def range_callback(self, msg: Range):
         if not math.isfinite(msg.range) or msg.range <= 0.0:
@@ -285,9 +389,9 @@ class Processor(Node):
 
     def takeoff_callback(self,goal_handle:ServerGoalHandle):
         self.get_logger().info("Takeoff requested")
-        self.takeoff_goal_handle=goal_handle
         self.last_altitude=0
         self.imu_dict.clear()
+        self.takeoff_goal_handle=goal_handle
         result=Takeoff.Result()
         rate=self.create_rate(10)
         try:
@@ -340,7 +444,7 @@ class Processor(Node):
             yaw=self.yaw
             if agl-self.last_altitude>=self.image_rate-self.error_margin:
                 gray=self.undistort_image(image)
-                kp,des=self.generate_orb_descriptors(gray)
+                kp, des = self.detect_and_compute(gray)
                 if kp is None or des is None:
                     return
                 if len(kp)<MIN_TEACH_KEYPOINTS:
@@ -390,55 +494,34 @@ class Processor(Node):
                 return
             yaw_error=self.wrap_pi(takeoff_yaw-land_yaw)
             gray=self.undistort_image(image)
-            kp,des=self.generate_orb_descriptors(gray)
+            landing_kp,landing_des=self.detect_and_compute(gray)
             if not os.path.exists(os.path.join("/images", f"landing_{key:.2f}.png")):
                 cv2.imwrite(os.path.join("/images", f"landing_{key:.2f}.png"), gray)
                 self.get_logger().info(f"Landing image saved to /images/landing_{key:.2f}.png")
-            if kp is None or des is None:
+            if landing_kp is None or landing_des is None:
                 self.publish_invalid_error(yaw_error)
                 return
             if kp_takeoff is None or des_takeoff is None or takeoff_roll is None or takeoff_pitch is None:
                 self.publish_invalid_error(yaw_error)
                 return
-            if self._use_cuda:
-                gpu_landing_des=cv2.cuda.GpuMat()
-                gpu_takeoff_des=cv2.cuda.GpuMat()
-                gpu_landing_des.upload(des)
-                gpu_takeoff_des.upload(des_takeoff)
-                knn_matches=self.BFMatcher.knnMatch(gpu_landing_des, gpu_takeoff_des, 2)
-            else:
-                knn_matches=self.BFMatcher.knnMatch(des, des_takeoff, 2)
-            # Lowe ratio test. Ground texture (asphalt, grass, concrete aggregate)
-            # produces many near-identical descriptors, so a small Hamming distance
-            # alone does not mean the correspondence is right. Keep a match only when
-            # its best candidate is clearly better than its runner-up.
-            matches=[
-                pair[0] for pair in knn_matches
-                if len(pair)==2 and pair[0].distance<self.lowe_ratio*pair[1].distance
-            ]
-            if len(matches)<10:
-                self.get_logger().error(f"Not enough matches: {len(matches)}")
+            landing_points,takeoff_points=self.match_feature_points(
+                landing_kp,landing_des,kp_takeoff,des_takeoff
+            )
+            if landing_points is None or takeoff_points is None:
                 self.publish_invalid_error(yaw_error)
                 return
-            self.takeoff_3d_points=[]
-            self.landing_3d_points=[]
-            for match in matches:
-                x_land_px,y_land_px=kp[match.queryIdx]
-                x_takeoff_px,y_takeoff_px=kp_takeoff[match.trainIdx]
-                if x_land_px is None or y_land_px is None or x_takeoff_px is None or y_takeoff_px is None:
-                    continue
+            takeoff_3d_points=[]
+            landing_3d_points=[]
+            for (x_land_px,y_land_px),(x_takeoff_px,y_takeoff_px) in zip(landing_points,takeoff_points):
                 x_land_3d,y_land_3d=self.pixel_to_3d(x_land_px,y_land_px,land_roll,land_pitch,agl)
                 x_takeoff_3d,y_takeoff_3d=self.pixel_to_3d(x_takeoff_px,y_takeoff_px,takeoff_roll,takeoff_pitch,key)
-                self.takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
-                self.landing_3d_points.append([x_land_3d,y_land_3d])
-            if len(self.takeoff_3d_points)<10:
-                self.get_logger().error(f"Not enough takeoff points: {len(self.takeoff_3d_points)}")
-                self.publish_invalid_error(yaw_error)
-                return
+                takeoff_3d_points.append([x_takeoff_3d,y_takeoff_3d])
+                landing_3d_points.append([x_land_3d,y_land_3d])
+            
             #implement RANSAC 
             H,inliers=cv2.estimateAffinePartial2D( #vector points from takeoff to landing so the translation correction should be negative in the x and y direction
-                np.asarray(self.takeoff_3d_points,dtype=np.float32),
-                np.asarray(self.landing_3d_points,dtype=np.float32),
+                np.asarray(takeoff_3d_points,dtype=np.float32),
+                np.asarray(landing_3d_points,dtype=np.float32),
                 method=cv2.RANSAC,
                 ransacReprojThreshold=0.1,
                 maxIters=1000,
@@ -517,13 +600,6 @@ class Processor(Node):
         )
         cv2.imwrite(path, cv2.hconcat([teach_bgr, live_bgr]))
         self.get_logger().info(f"Landing overlay saved to {path}")
-
-    def generate_orb_descriptors(self, image: Image):
-        kp,des=self.orb.detectAndCompute(image, None)
-        if not kp:
-            return None, None
-        kp_pts=np.array([pt.pt for pt in kp])
-        return kp_pts,des
         
     def undistort_image(self, image: Image):
         image=self._bridge.imgmsg_to_cv2(image, "rgb8")

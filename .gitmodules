@@ -1,0 +1,3 @@
+[submodule "accelerated_features"]
+	path = accelerated_features
+	url = https://github.com/verlab/accelerated_features.git
