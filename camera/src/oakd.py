@@ -6,7 +6,6 @@ import logging
 import math
 
 import numpy as np
-import depthai as dai
 
 from .abstract_camera import AbstractCamera
 from .constants import CAMERA_HEIGHT, CAMERA_WIDTH
@@ -25,6 +24,8 @@ class OakD(AbstractCamera):
 
     def initialize_camera(self) -> bool:
         try:
+            import depthai as dai
+
             self._pipeline = dai.Pipeline()
 
             # RGB stream
