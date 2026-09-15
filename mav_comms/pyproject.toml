@@ -1,7 +1,7 @@
 [project]
 name = "mav_comms"
 version = "0.1.0"
-description = "Thin MAVLink wrapper for communicating with ArduPilot/PX4."
+description = "DEPRECATED PROJECT - Replaced by MAVROS - Thin MAVLink wrapper for communicating with ArduPilot/PX4."
 license = "MIT"
 requires-python = ">=3.9"
 dependencies = []

@@ -74,6 +74,6 @@ root README.
 
 - `Utils`: Shared enums and dataclasses used across all Airside modules. 
 
-- `Mav_comms`: Wrapper around pymavlink.
+- `Mav_comms`: DEPRECATED PROJECT - Replaced by MAVROS - Wrapper around pymavlink.
 
 - `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).

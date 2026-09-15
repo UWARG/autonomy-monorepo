@@ -1,5 +1,5 @@
 name = "mav_comms"
-description = "Thin MAVLink wrapper for communicating with ArduPilot/PX4."
+description = "DEPRECATED - Replaced by MAVROS - Thin MAVLink wrapper for communicating with ArduPilot/PX4."
 
 depends_on = ["utils"]
 
