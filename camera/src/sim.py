@@ -6,7 +6,7 @@ from .frame import CameraFrame
 
 
 class SimCamera(AbstractCamera):
-    """Simulated camera stub that produces blank frames."""
+    """Simulated camera stub"""
 
     WIDTH = CAMERA_WIDTH
     HEIGHT = CAMERA_HEIGHT

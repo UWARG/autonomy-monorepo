@@ -95,7 +95,6 @@ class AbstractCamera(abc.ABC):
                 if consecutive_capture_failures > self._startup_retries:
                     if not self._initialize_with_retries():
                         self.stop()
-                        break
                     consecutive_capture_failures = 0
             else:
                 consecutive_capture_failures = 0

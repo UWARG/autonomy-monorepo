@@ -6,11 +6,11 @@ import logging
 import math
 
 import numpy as np
+import depthai as dai
 
 from .abstract_camera import AbstractCamera
 from .constants import CAMERA_HEIGHT, CAMERA_WIDTH
 from .frame import CameraFrame
-
 
 class OakD(AbstractCamera):
 
@@ -25,21 +25,21 @@ class OakD(AbstractCamera):
 
     def initialize_camera(self) -> bool:
         try:
-            import depthai as dai
-
             self._pipeline = dai.Pipeline()
 
             # RGB stream
             cam = self._pipeline.create(dai.node.Camera).build()
             self._rgb_queue = cam.requestOutput(
-                (self.WIDTH, self.HEIGHT), dai.ImgFrame.Type.BGR888p
+                (self.WIDTH, self.HEIGHT), 
+                dai.ImgFrame.Type.BGR888p
             ).createOutputQueue(maxSize=4, blocking=False)
 
             # Stereo depth stream
             left = self._pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
             right = self._pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
             stereo = self._pipeline.create(dai.node.StereoDepth).build(
-                left.requestOutput((1280, 800)), right.requestOutput((1280, 800))
+                left.requestOutput((1280, 800)), 
+                right.requestOutput((1280, 800))
             )
             self._depth_queue = stereo.depth.createOutputQueue(maxSize=4, blocking=False)
 

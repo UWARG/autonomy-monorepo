@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Optional, cast
+from typing import Optional
 
 import cv2
 import numpy as np
@@ -24,7 +24,8 @@ class Arducam(AbstractCamera):
     def initialize_camera(self) -> bool:
         try:
             self.cap = self._open_camera()
-            # Grab a few frames so the UVC stream is actually running.
+
+            # Check UVC is running by taking a few photos
             self._drain_frames(5)
             return True
         except RuntimeError:
@@ -51,16 +52,11 @@ class Arducam(AbstractCamera):
             cap = cv2.VideoCapture(ARDU_DEVICE_INDEX, backend)
             if not cap.isOpened():
                 cap.release()
-                continue
+                raise RuntimeError(f"Failed to open Arducam at index {ARDU_DEVICE_INDEX}")
 
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-            fourcc_fn = cast(Any, getattr(cv2, "VideoWriter_fourcc", None))
-            if callable(fourcc_fn):
-                fourcc_raw = fourcc_fn(*"MJPG")
-                if isinstance(fourcc_raw, (int, float)):
-                    cap.set(cv2.CAP_PROP_FOURCC, float(fourcc_raw))
-            # Higher FPS can force shorter integration on some UVC bridges.
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
             cap.set(cv2.CAP_PROP_FPS, 60)
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
@@ -77,8 +73,6 @@ class Arducam(AbstractCamera):
                 int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             )
             return cap
-
-        raise RuntimeError(f"Failed to open Arducam at index {ARDU_DEVICE_INDEX}")
 
     def _drain_frames(self, count: int) -> None:
         if self.cap is None:

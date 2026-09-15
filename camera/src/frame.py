@@ -8,7 +8,7 @@ import math
 import numpy as np 
 
 @dataclass 
-class CameraFrame: 
+class CameraFrame:
     """Data Class for a Camera Frame"""
 
     rgb: np.ndarray
