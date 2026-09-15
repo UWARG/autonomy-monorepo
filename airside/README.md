@@ -1,3 +1,156 @@
+# Non-Optimal Precision Landing
+
+Visual teach-and-repeat precision landing for the **non-optimal / Jetson** profile.
+The idea is simple: while climbing away from the pad, remember what the ground
+looked like at each altitude; when coming back to land, match the live downward
+camera against that memory and steer until the vehicle is back over the launch
+point.
+
+The pipeline runs on ROS 2 (Humble), OpenCV, and MAVROS against ArduPilot. It has
+been flight-tested on an NVIDIA Jetson and validated in **SITL-Plus**, a custom
+software-in-the-loop environment that bridges PyBullet physics with ArduPilot
+SITL.
+
+## Mission sequence
+
+The Jetson behavior tree (`manager_jetson`) is a one-shot sequence:
+
+1. **Takeoff** (`precision_takeoff`) — sends the `/takeoff` action. While the
+   vehicle climbs, the processor builds the teach map and returns the launch
+   GPS fix on the blackboard for later RTL.
+2. **Fly around** — waits on RC channel 6 so a pilot (or script) can displace
+   the aircraft away from the pad before autonomous return begins.
+3. **Return to launch** — flies a global setpoint back to the stored launch
+   latitude / longitude / altitude so visual landing starts near the teach site
+   rather than from an arbitrary offset.
+4. **Landing** — sends the `/landing` action. The processor drives vision-based
+   setpoints until it hands the aircraft to ArduPilot `LAND` for touchdown.
+
+Launch entry points: `warg run airside run-jetson`,
+`docker compose --profile jetson up`, or
+`docker compose -f compose.jetson-sitl.yaml up` (shared network with SITL-Plus).
+
+`engine_jetson.launch.py` brings up MAVROS, the camera node, `manager_jetson`,
+`processor`, `controller`, and `rc_node`.
+
+## Teach phase (ascent)
+
+While a takeoff goal is active, `processor` runs a 10 Hz timer that:
+
+1. Reads the downward camera, IMU attitude, and rangefinder AGL (minus a small
+   camera-offset constant).
+2. Undistorts the frame with calibrated intrinsics, converts to grayscale, and
+   extracts up to 1000 **ORB** keypoints / descriptors (Oriented FAST and
+   Rotated BRIEF).
+3. Rejects frames with fewer than **150** keypoints. Sparse teach frames are
+   worse than missing altitudes: the repeat pass would select them by height,
+   fail to match, and stall. Rejected altitudes are retried on the next tick
+   instead of being stored.
+4. On acceptance, stores `(keypoints, descriptors, roll, pitch, yaw)` in an
+   altitude-keyed `SortedDict`, advances the last-captured altitude, and writes
+   `takeoff_<agl>.png` under `/images` (mounted to `airside/src/images/` on the
+   host).
+
+Capture spacing is altitude-adaptive from the rangefinder: denser near the
+ground (`~0.1 m` steps below 1 m AGL) and coarser higher up (`~0.25 m`). Takeoff
+completes once the map has been filled up to the configured top altitude
+(`last_image_altitude`, default 7.5 m).
+
+## Repeat phase (descent)
+
+When a landing goal is active and the teach map is non-empty:
+
+1. Look up the teach entry whose altitude is nearest-at-or-below current AGL
+   (`bisect_right` on the sorted map).
+2. Extract live ORB features and match them to the teach descriptors with a
+   Hamming **BFMatcher** (CUDA on Jetson when available, CPU otherwise) using
+   kNN (`k=2`).
+3. Apply **Lowe’s ratio test** (default ratio `0.55`). Ground texture often
+   produces near-identical descriptors, so a small Hamming distance alone is not
+   enough; a match is kept only when the best candidate is clearly better than
+   its runner-up. Fewer than 10 survivors → publish an invalid error and wait.
+4. Back-project matched pixels into a metric ground plane with
+   `pixel_to_3d(...)`, compensating for roll/pitch and using teach altitude for
+   teach points / live AGL for live points. The processor’s ground frame is
+   `+x = left`, `+y = forward`.
+5. Estimate a 2D **similarity transform** with
+   `cv2.estimateAffinePartial2D(..., method=RANSAC)` (rotation + uniform scale +
+   translation). Reject if RANSAC fails, the inlier ratio is below `0.4`, or the
+   recovered scale wanders outside `[0, 2]` (degenerate altitude mismatch).
+6. Publish a `custom_interfaces/Error` with lateral translation (`x`, `y`),
+   measured rotation, IMU yaw error vs the teach yaw, and a tapered descent
+   rate `vz`.
+
+Debug artifacts: `landing_<alt>.png` and a side-by-side
+`landing_overlay_<alt>.png` (teach | live with a correction arrow).
+
+## Alignment cone and descent authority
+
+Descent is not hard-gated by a fixed XY tolerance. Instead an
+**altitude-proportional alignment cone** sets
+
+```text
+align_tolerance = max(0.05 m, 0.15 * AGL)
+taper           = clamp(2 - xy_error / align_tolerance, 0, 1)
+vz              = 0.1 m/s * taper
+```
+
+Near the pad the vehicle must be tightly centered before much downward speed is
+allowed; higher up, more lateral error is tolerated and descent still progresses.
+When `xy_error` exceeds roughly `2 × align_tolerance`, `vz` reaches zero and the
+controller holds altitude while correcting laterally / in yaw.
+
+Below ~1 m AGL (or below the bottom of the teach map), vision hands off to
+ArduPilot **`LAND`** via MAVROS `set_mode`. The processor then watches
+`/mavros/extended_state` and declares success after several consecutive
+on-ground samples so a single spurious reading cannot end the action early.
+
+## Stale-vision recovery
+
+If matching has been unavailable for more than **2 s**, holding position cannot
+recover a fix (the view never changes). The processor then:
+
+- **Commits** a blind descent if the last valid fix was inside the full-descent
+  core of the cone and AGL ≤ 1 m, or
+- **Climbs** slowly (`vz = -0.1` in the processor’s sign convention) to widen the
+  camera footprint and re-acquire, unless already above the top of the teach map
+  (in which case climbing cannot help).
+
+## Controller
+
+`controller` subscribes to `/error` and publishes body-frame velocity setpoints
+on `/mavros/setpoint_raw/local` (`PositionTarget`, FRAME_BODY_NED) at the vision
+rate:
+
+- Independent PI loops for lateral X/Y and yaw rate (anti-windup, output clamps).
+- Lateral axes are remapped from the processor ground frame into the drone body
+  frame expected by MAVROS.
+- `vz` comes straight from the processor’s tapered descent command.
+- Invalid errors zero lateral demand but still apply `vz` / yaw (used by
+  stale-vision climb / commit).
+- `landing_complete` zeros all setpoints, resets integrators, and stops
+  commanding so GUIDED setpoints do not fight ArduPilot `LAND`.
+
+## Validation
+
+- **SITL-Plus** (`../SITL-Plus`): PyBullet physics + ArduPilot SITL, with camera /
+  rangefinder streaming into the airside stack over the shared Docker network
+  (`compose.jetson-sitl.yaml`, `FCU_URL=tcp://sitl-plus:5761`).
+- **Hardware**: NVIDIA Jetson deployment with CUDA matcher when available; camera
+  and rangefinder via the Jetson launch graph.
+
+| Piece | Where |
+|---|---|
+| Jetson / precision-landing tree | `src/engine/engine/manager_jetson.py` |
+| Jetson launch graph | `src/engine/launch/engine_jetson.launch.py` |
+| Vision teach/repeat processor | `src/nodes/nodes/processor.py` |
+| Descent PI controller | `src/nodes/nodes/controller.py` |
+| Precision takeoff behavior | `src/engine/engine/behaviors/navigation/precision_takeoff.py` |
+| Landing behavior | `src/engine/engine/behaviors/navigation/landing.py` |
+| Teach / overlay images | `src/images/` (container `/images`) |
+| Jetson compose profile | `docker compose --profile jetson up` / `warg run airside run-jetson` |
+| Shared-network SITL | `compose.jetson-sitl.yaml` |
+
 # Airside
 
 `airside` is a ROS 2 Humble workspace for running the overall auto airside architecture.
