@@ -1,11 +1,8 @@
 import type { PositionMessage, TargetMessage } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 
-/**
- * A drone position stamped with client receipt time (ms epoch). The airside
- * PositionPayload carries no timestamp, so App records arrival time; the trail
- * is windowed on that — "positions received in the last N seconds" — rather
- * than an unbounded count of whatever rate happens to arrive.
- */
 export interface TrailSample {
   lat: number;
   lon: number;
@@ -14,6 +11,8 @@ export interface TrailSample {
 
 /** Seconds of history the trail represents. */
 const TRAIL_WINDOW_S = 20;
+
+const TARGET_STALE_MS = 3000;
 
 const PLOT_HALF_RANGE_M = 60;
 
@@ -55,23 +54,128 @@ function enuOffsetM(
 const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;
 
-export default function TargetWidget({
-  position,
-  target,
-  trail = [],
-}: {
-  position?: PositionMessage;
-  target?: TargetMessage;
-  trail?: TrailSample[];
-}) {
-  const haveDrone = !!position;
-  const haveTarget = !!(position && target);
+interface NavSatFix {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+}
 
-  const distance = haveTarget
-    ? haversineM(position!.lat, position!.lon, target!.lat, target!.lon)
-    : null;
+interface RawTarget {
+  colour: string;
+  location: { lat: number; lon: number; alt: number };
+}
+
+/**
+ * Dot colour per detected colour. Target.msg carries no target ID, so
+ * targets are keyed and coloured by this field — two simultaneous targets
+ * of the same colour aren't distinguishable and will collide (the newer
+ * one wins).
+ */
+const TARGET_DOT_COLOURS: Record<string, string> = {
+  RED: '#D9483F',
+  RED2: '#D9483F',
+  GREEN: '#1FA463',
+  BLUE: '#4FA3E0',
+  YELLOW: '#D4A017',
+  WHITE: '#E8ECF3',
+  BLACK: '#1C2230',
+};
+const DEFAULT_TARGET_COLOUR = '#1FA463';
+
+export default function TargetWidget() {
+  const [position, setPosition] = useState<PositionMessage>();
+  const [targets, setTargets] = useState<Map<string, TargetMessage>>(new Map());
+  const [trail, setTrail] = useState<TrailSample[]>([]);
+  const lastSeenRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const positionTopic = new ROSLIB.Topic<NavSatFix>({
+      ros,
+      name: 'mavros/global_position/global',
+      messageType: 'sensor_msgs/NavSatFix',
+    });
+
+    const onPosition = (message: NavSatFix) => {
+      setPosition({ lat: message.latitude, lon: message.longitude, alt: message.altitude });
+
+      const t = Date.now();
+      setTrail((prev) => [
+        ...prev.filter((s) => s.t >= t - TRAIL_WINDOW_S * 1000),
+        { lat: message.latitude, lon: message.longitude, t },
+      ]);
+    };
+
+    positionTopic.subscribe(onPosition);
+    return () => positionTopic.unsubscribe(onPosition);
+  }, []);
+
+  useEffect(() => {
+    const targetTopic = new ROSLIB.Topic<RawTarget>({
+      ros,
+      name: '/capture/target_location',
+      messageType: 'airside_interfaces/Target',
+    });
+
+    const onTarget = (message: RawTarget) => {
+      lastSeenRef.current.set(message.colour, Date.now());
+      setTargets((prev) => {
+        const next = new Map(prev);
+        next.set(message.colour, {
+          lat: message.location.lat,
+          lon: message.location.lon,
+          label: message.colour,
+          tracking: true,
+        });
+        return next;
+      });
+    };
+
+    targetTopic.subscribe(onTarget);
+
+    const staleCheck = setInterval(() => {
+      const now = Date.now();
+      setTargets((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [colour, lastSeen] of lastSeenRef.current) {
+          const t = next.get(colour);
+          if (t?.tracking && now - lastSeen > TARGET_STALE_MS) {
+            next.set(colour, { ...t, tracking: false });
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 500);
+
+    return () => {
+      targetTopic.unsubscribe(onTarget);
+      clearInterval(staleCheck);
+    };
+  }, []);
+
+  const haveDrone = !!position;
+  const targetList = Array.from(targets.values());
+
+  // The header pill and distance/bearing footer summarize the whole set:
+  // the nearest target drives the numeric readout, while every target still
+  // gets its own dot on the map.
+  let nearest: TargetMessage | null = null;
+  let nearestDist = Infinity;
+  if (position) {
+    for (const t of targetList) {
+      const d = haversineM(position.lat, position.lon, t.lat, t.lon);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearest = t;
+      }
+    }
+  }
+  const haveTarget = !!(position && nearest);
+
+  const distance = haveTarget ? nearestDist : null;
   const bearing = haveTarget
-    ? bearingDeg(position!.lat, position!.lon, target!.lat, target!.lon)
+    ? bearingDeg(position!.lat, position!.lon, nearest!.lat, nearest!.lon)
     : null;
 
   const newestT = trail.length ? trail[trail.length - 1].t : 0;
@@ -85,19 +189,15 @@ export default function TargetWidget({
     y: CENTER - north * scale, // north is up
   });
 
-  let targetPt: { x: number; y: number } | null = null;
-  let targetClamped = false;
-  if (haveTarget && position && target) {
-    const o = enuOffsetM(position.lat, position.lon, target.lat, target.lon);
-    const range = Math.hypot(o.east, o.north);
-    if (range > PLOT_HALF_RANGE_M) {
-      const k = PLOT_HALF_RANGE_M / range;
-      targetPt = project(o.east * k, o.north * k);
-      targetClamped = true;
-    } else {
-      targetPt = project(o.east, o.north);
-    }
-  }
+  const targetDots = position
+    ? targetList.map((t) => {
+        const o = enuOffsetM(position.lat, position.lon, t.lat, t.lon);
+        const range = Math.hypot(o.east, o.north);
+        const clamped = range > PLOT_HALF_RANGE_M;
+        const pt = clamped ? project(o.east * (PLOT_HALF_RANGE_M / range), o.north * (PLOT_HALF_RANGE_M / range)) : project(o.east, o.north);
+        return { colour: t.label ?? 'TARGET', pt, clamped, tracking: t.tracking };
+      })
+    : [];
 
   const trailPts = position
     ? recentTrail.map((p) => {
@@ -106,11 +206,14 @@ export default function TargetWidget({
       })
     : [];
 
-  const trackingPill = target?.tracking
-    ? { className: 'pill-accent', label: `${target.label ?? 'TARGET'} \u00B7 TRACKING` }
-    : target
-      ? { className: 'pill bg-edge text-ink-3', label: `${target.label ?? 'TARGET'} \u00B7 IDLE` }
-      : { className: 'pill bg-edge text-ink-3', label: 'NO TARGET' };
+  const trackingCount = targetList.filter((t) => t.tracking).length;
+  const targetCountLabel = `${targetList.length} TARGET${targetList.length > 1 ? 'S' : ''}`;
+  const trackingPill =
+    targetList.length === 0
+      ? { className: 'pill bg-edge text-ink-3', label: 'NO TARGET' }
+      : trackingCount > 0
+        ? { className: 'pill-accent', label: `${targetCountLabel} \u00B7 TRACKING` }
+        : { className: 'pill bg-edge text-ink-3', label: `${targetCountLabel} \u00B7 IDLE` };
 
   return (
     <section
@@ -173,32 +276,31 @@ export default function TargetWidget({
                   opacity="0.7"
                 />
               )}
-              {/* line to target — dashed when the target is clamped to the edge */}
-              {targetPt && (
-                <line
-                  x1={CENTER}
-                  y1={CENTER}
-                  x2={targetPt.x}
-                  y2={targetPt.y}
-                  stroke="var(--tgt-target)"
-                  strokeWidth="1.5"
-                  strokeDasharray={targetClamped ? '2 2' : undefined}
-                />
-              )}
-              {/* target dot — hollow when clamped (true position is beyond range) */}
-              {targetPt &&
-                (targetClamped ? (
+              {/* target dots — hollow when clamped (true position is beyond range) */}
+              {targetDots.map((d) => {
+                const colour = TARGET_DOT_COLOURS[d.colour] ?? DEFAULT_TARGET_COLOUR;
+                return d.clamped ? (
                   <circle
-                    cx={targetPt.x}
-                    cy={targetPt.y}
+                    key={d.colour}
+                    cx={d.pt.x}
+                    cy={d.pt.y}
                     r="4"
                     fill="none"
-                    stroke="var(--tgt-target)"
+                    stroke={colour}
                     strokeWidth="1.5"
                   />
                 ) : (
-                  <circle cx={targetPt.x} cy={targetPt.y} r="4" fill="var(--tgt-target)" />
-                ))}
+                  <circle
+                    key={d.colour}
+                    cx={d.pt.x}
+                    cy={d.pt.y}
+                    r="4"
+                    fill={colour}
+                    stroke="var(--tgt-ink3)"
+                    strokeWidth="0.5"
+                  />
+                );
+              })}
               {/* drone dot (centre) */}
               <circle cx={CENTER} cy={CENTER} r="4.5" fill="var(--tgt-drone)" />
               <circle cx={CENTER} cy={CENTER} r="8" fill="none" stroke="var(--tgt-drone)" strokeWidth="1" opacity="0.4" />
