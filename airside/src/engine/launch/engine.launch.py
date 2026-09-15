@@ -25,7 +25,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "fcu_url",
                 default_value=EnvironmentVariable(
-                    "FCU_URL", default_value="serial:///dev/serial0:115200"
+                    "FCU_URL", default_value="tcp://127.0.0.1:25575" #serial:///dev/serial0:115200
                 ),
                 description="MAVROS connection URL to ArduPilot",
             ),
