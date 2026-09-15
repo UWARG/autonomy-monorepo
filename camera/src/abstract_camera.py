@@ -32,7 +32,11 @@ class AbstractCamera(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def capture_frame(self) -> CameraFrame | None: 
-        """Camera specific frame capture logic, returns a CameraFrame or None if capture failed."""
+    def capture_frame(self) -> CameraFrame | None:
+        """Camera specific frame capture logic, returns a CameraFrame or None if capture failed.
+
+        Implementations must return the colour image in RGB channel order (the
+        CameraFrame.rgb field), converting from the camera's native order if needed.
+        """
         pass
 
