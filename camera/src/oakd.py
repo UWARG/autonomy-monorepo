@@ -8,16 +8,17 @@ import math
 import numpy as np
 
 from .abstract_camera import AbstractCamera
-from .constants import CAMERA_HEIGHT, CAMERA_WIDTH
+from .constants import OAKD_DEFAULT_HEIGHT, OAKD_DEFAULT_WIDTH
 from .frame import CameraFrame
 
 class OakD(AbstractCamera):
 
-    WIDTH = CAMERA_WIDTH
-    HEIGHT = CAMERA_HEIGHT
-
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        width: int = OAKD_DEFAULT_WIDTH,
+        height: int = OAKD_DEFAULT_HEIGHT,
+    ) -> None:
+        super().__init__(width=width, height=height)
         self._pipeline = None
         self._rgb_queue = None
         self._depth_queue = None
@@ -31,7 +32,7 @@ class OakD(AbstractCamera):
             # RGB stream
             cam = self._pipeline.create(dai.node.Camera).build()
             self._rgb_queue = cam.requestOutput(
-                (self.WIDTH, self.HEIGHT), 
+                (self._width, self._height),
                 dai.ImgFrame.Type.BGR888p
             ).createOutputQueue(maxSize=4, blocking=False)
 
@@ -65,7 +66,6 @@ class OakD(AbstractCamera):
             return CameraFrame(
                 rgb=rgb_frame,
                 depth=depth_frame,
-                rgb_down=None,
                 centre_depth=centre_depth,
             )
 

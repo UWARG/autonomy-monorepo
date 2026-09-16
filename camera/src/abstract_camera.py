@@ -17,14 +17,22 @@ class AbstractCamera(abc.ABC):
 
     def __init__(
         self,
+        width: int,
+        height: int,
         frame_interval_s: float = 0.0,
         startup_retries: int = 1,
     ) -> None:
+        if width <= 0:
+            raise ValueError("width must be > 0")
+        if height <= 0:
+            raise ValueError("height must be > 0")
         if frame_interval_s < 0:
             raise ValueError("frame_interval_s must be >= 0")
         if startup_retries < 0:
             raise ValueError("startup_retries must be >= 0")
 
+        self._width = width
+        self._height = height
         self._frame_interval_s = frame_interval_s
         self._startup_retries = startup_retries
         self._running = False
