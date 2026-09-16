@@ -5,8 +5,9 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from cli import _materialize_dependency_graph, _unload_paths, app
+from doctor import Check, Section, CheckStatus
 from errors import GitError
-from github_adapter import GitHubRepository
+from github_adapter import GitHubError, GitHubRepository
 from models import Project
 
 runner = CliRunner()
@@ -32,57 +33,77 @@ def test_info_shows_commands(fixture_repo: Path, monkeypatch) -> None:
     assert "test:unit" in result.stdout
 
 
-def test_doctor_prints_repository_access_diagnostics(
-    fixture_repo: Path, monkeypatch
-) -> None:
+def _doctor_sections() -> list[Section]:
+    return [
+        Section(
+            "Tools",
+            [
+                Check(
+                    CheckStatus.OK, "git version 2.44.0", transcript=["$ git --version"]
+                ),
+                Check(
+                    CheckStatus.WARN,
+                    "Docker is not installed — needed for airside.",
+                    fix="Install Docker Desktop: https://docs.docker.com/get-docker/",
+                ),
+            ],
+        ),
+        Section(
+            "GitHub access",
+            [Check(CheckStatus.OK, "Authenticated to GitHub over SSH as octocat.")],
+        ),
+    ]
+
+
+def test_doctor_reports_environment_checks(fixture_repo: Path, monkeypatch) -> None:
     monkeypatch.chdir(fixture_repo)
     roots = []
 
-    class FakeGit:
-        def __init__(self, root: Path | None):
-            self.root = root
-            roots.append(root)
+    def fake_run_doctor(root: Path | None) -> list[Section]:
+        roots.append(root)
+        return _doctor_sections()
 
-        def repository_access_diagnostics(self) -> list[str]:
-            return [
-                "remote.origin.url: git@github.com:UWARG/autonomy-monorepo.git",
-                "git ls-remote --exit-code origin HEAD: ok",
-            ]
-
-    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    monkeypatch.setattr("cli.run_doctor", fake_run_doctor)
 
     result = runner.invoke(app, ["doctor"])
 
     assert result.exit_code == 0
     assert roots == [fixture_repo]
-    assert "Git repository access" in result.stdout
-    assert "remote.origin.url" in result.stdout
-    assert "git ls-remote --exit-code origin HEAD: ok" in result.stdout
+    assert "Tools" in result.stdout
+    assert "git version 2.44.0" in result.stdout
+    assert "Docker is not installed" in result.stdout
+    assert "fix: Install Docker Desktop" in result.stdout
+    assert "Authenticated to GitHub over SSH as octocat." in result.stdout
+    assert "No blocking problems found." in result.stdout
+    assert "$ git --version" not in result.stdout
 
 
-def test_doctor_runs_outside_git_repo(tmp_path: Path, monkeypatch) -> None:
+def test_doctor_verbose_shows_command_output(fixture_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(fixture_repo)
+    monkeypatch.setattr("cli.run_doctor", lambda root: _doctor_sections())
+
+    result = runner.invoke(app, ["doctor", "--verbose"])
+
+    assert result.exit_code == 0
+    assert "$ git --version" in result.stdout
+
+
+def test_doctor_fails_when_a_check_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    roots = []
-
-    class FakeGit:
-        def __init__(self, root: Path | None):
-            self.root = root
-            roots.append(root)
-
-        def repository_access_diagnostics(self) -> list[str]:
-            return [
-                "Git repository: not found",
-                "ssh -T -o BatchMode=yes git@github.com: ok",
-            ]
-
-    monkeypatch.setattr("cli.GitAdapter", FakeGit)
+    sections = [
+        Section(
+            "Tools",
+            [Check(CheckStatus.FAIL, "uv is not installed.", fix="install uv")],
+        )
+    ]
+    monkeypatch.setattr("cli.run_doctor", lambda root: sections)
 
     result = runner.invoke(app, ["doctor"])
 
-    assert result.exit_code == 0
-    assert roots == [None]
-    assert "Git repository: not found" in result.stdout
-    assert "ssh -T -o BatchMode=yes git@github.com: ok" in result.stdout
+    assert result.exit_code == 1
+    assert "uv is not installed." in result.stdout
+    assert "fix: install uv" in result.stdout
+    assert "Some checks failed." in result.stdout
 
 
 def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
@@ -104,6 +125,7 @@ def test_clone_uses_sparse_partial_clone(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -135,6 +157,7 @@ def test_clone_warns_when_repository_uses_https(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -174,6 +197,7 @@ def test_clone_falls_back_to_https_when_github_ssh_clone_fails(monkeypatch) -> N
                 raise GitError("SSH clone failed")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -210,6 +234,7 @@ def test_clone_does_not_fallback_for_non_github_ssh_urls(monkeypatch) -> None:
             raise GitError("SSH clone failed")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -247,6 +272,7 @@ def test_clone_full_uses_normal_clone(monkeypatch) -> None:
             raise AssertionError("unexpected sparse clone")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -288,6 +314,7 @@ def test_clone_full_falls_back_to_https_when_github_ssh_clone_fails(
             raise AssertionError("unexpected sparse clone")
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
 
     result = runner.invoke(
@@ -327,6 +354,7 @@ def test_clone_picks_repository_when_missing(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     monkeypatch.setattr("cli.GitAdapter", FakeGit)
     monkeypatch.setattr(
         "cli._pick_repository",
@@ -358,6 +386,7 @@ def test_clone_resolves_uwarg_repository_name(monkeypatch) -> None:
             calls.append((repository, destination))
 
             return Path(destination or "autonomy-monorepo")
+
     class FakeGitHub:
         @classmethod
         def list_org_repositories(
@@ -640,13 +669,16 @@ def test_up_project_picker_uses_root_registry_for_sparse_checkout(
     tmp_path: Path, monkeypatch
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text("""
+    (tmp_path / "projects.toml").write_text(
+        """
 [projects.camera]
 path = "camera"
 
 [projects.gesture_control]
 path = "gesture_control"
-""".strip() + "\n")
+""".strip()
+        + "\n"
+    )
     monkeypatch.chdir(tmp_path)
 
     selected_choices = []
@@ -813,7 +845,8 @@ def test_up_materializes_requested_project_before_reading_dependencies(
     tmp_path: Path,
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "projects.toml").write_text("""
+    (tmp_path / "projects.toml").write_text(
+        """
 [projects.camera]
 path = "camera"
 
@@ -822,7 +855,9 @@ path = "gesture_control"
 
 [projects.mavlink_comm]
 path = "mavlink_comm"
-""".strip() + "\n")
+""".strip()
+        + "\n"
+    )
     calls = []
 
     class FakeGit:
@@ -939,3 +974,225 @@ extra_paths = ["shared/protos"]
     assert "airside/only" in paths
     # shared extra path is retained because groundside still declares it
     assert "shared/protos" not in paths
+
+
+class FakeBootcampGit:
+    instances: list[FakeBootcampGit] = []
+
+    def __init__(self, root=None):
+        self.root = root
+        self.remotes: dict[str, str] = {}
+        self.added: list[tuple[str, str]] = []
+        FakeBootcampGit.instances.append(self)
+
+    def remote_url(self, name: str) -> str | None:
+        return self.remotes.get(name)
+
+    def add_remote(self, name: str, url: str) -> None:
+        self.remotes[name] = url
+        self.added.append((name, url))
+
+    def add_remote_if_absent(self, name: str, url: str) -> tuple[bool, str]:
+        current = self.remote_url(name)
+        if current is not None:
+            return False, current
+        self.add_remote(name, url)
+        return True, url
+
+    def materialize_paths(self, paths):
+        return set(paths)
+
+    @classmethod
+    def clone_sparse(cls, repository: str, destination: str | None) -> Path:
+        cls.clones.append((repository, destination))
+        clone_dir = Path(destination or "autonomy-bootcamp")
+        clone_dir.mkdir(parents=True, exist_ok=True)
+        (clone_dir / ".git").mkdir(exist_ok=True)
+        return clone_dir
+
+    @classmethod
+    def clone(cls, repository: str, destination: str | None) -> None:
+        raise AssertionError("bootcamp must always clone sparsely")
+
+
+def _fake_bootcamp_git(monkeypatch) -> type[FakeBootcampGit]:
+    FakeBootcampGit.instances = []
+    FakeBootcampGit.clones = []
+    monkeypatch.setattr("cli.GitAdapter", FakeBootcampGit)
+    return FakeBootcampGit
+
+
+FORK = GitHubRepository(
+    name="autonomy-bootcamp",
+    ssh_url="git@github.com:student/autonomy-bootcamp.git",
+    url="https://github.com/student/autonomy-bootcamp",
+)
+
+
+def test_bootcamp_forks_clones_sparsely_and_sets_remotes(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    git = _fake_bootcamp_git(monkeypatch)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 0
+    assert git.clones == [("git@github.com:student/autonomy-bootcamp.git", None)]
+    assert git.instances[-1].remotes == {
+        "origin": "git@github.com:student/autonomy-bootcamp.git",
+        "upstream": "git@github.com:UWARG/autonomy-bootcamp.git",
+    }
+
+
+def test_bootcamp_prints_cd_and_readme_path(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    _fake_bootcamp_git(monkeypatch)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 0
+    clone_dir = tmp_path.resolve() / "autonomy-bootcamp"
+    assert f"cd {clone_dir}" in result.stdout
+    assert str(clone_dir / "README.md") in result.stdout
+
+
+def test_bootcamp_reuses_existing_clone_without_recloning(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    existing = tmp_path / "autonomy-bootcamp"
+    (existing / ".git").mkdir(parents=True)
+    git = _fake_bootcamp_git(monkeypatch)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 0
+    assert git.clones == []
+    assert "Reusing the existing clone" in result.stdout
+
+
+def test_bootcamp_stops_when_origin_is_not_the_fork(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    git = _fake_bootcamp_git(monkeypatch)
+    original_init = git.__init__
+
+    def init_with_upstream_origin(self, root=None):
+        original_init(self, root)
+        self.remotes["origin"] = "git@github.com:UWARG/autonomy-bootcamp.git"
+        self.added.clear()
+
+    monkeypatch.setattr(FakeBootcampGit, "__init__", init_with_upstream_origin)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 1
+    output = " ".join(result.stdout.split())
+    assert "git remote set-url origin" in output
+    assert git.instances[-1].remotes == {
+        "origin": "git@github.com:UWARG/autonomy-bootcamp.git"
+    }
+
+
+def test_bootcamp_warns_but_continues_on_a_foreign_upstream(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    git = _fake_bootcamp_git(monkeypatch)
+    original_init = git.__init__
+
+    def init_with_upstream(self, root=None):
+        original_init(self, root)
+        self.remotes["upstream"] = "git@github.com:someone-else/other.git"
+        self.added.clear()
+
+    monkeypatch.setattr(FakeBootcampGit, "__init__", init_with_upstream)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 0
+    assert "already points at" in " ".join(result.stdout.split())
+    assert git.instances[-1].remotes["upstream"] == (
+        "git@github.com:someone-else/other.git"
+    )
+
+
+def test_bootcamp_accepts_an_https_origin_for_the_same_fork(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    git = _fake_bootcamp_git(monkeypatch)
+    original_init = git.__init__
+
+    def init_with_https_origin(self, root=None):
+        original_init(self, root)
+        self.remotes["origin"] = "https://github.com/student/autonomy-bootcamp.git"
+        self.added.clear()
+
+    monkeypatch.setattr(FakeBootcampGit, "__init__", init_with_https_origin)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 0
+    assert "already points at" not in " ".join(result.stdout.split())
+    assert git.instances[-1].remotes["upstream"] == (
+        "https://github.com/UWARG/autonomy-bootcamp.git"
+    )
+
+
+def test_bootcamp_refuses_to_touch_a_non_repository_directory(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "autonomy-bootcamp").mkdir()
+    git = _fake_bootcamp_git(monkeypatch)
+    monkeypatch.setattr(
+        "cli.GitHubAdapter.fork_repository", classmethod(lambda cls, upstream: FORK)
+    )
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 1
+    assert git.clones == []
+    assert "not a Git repository" in " ".join(result.stdout.split())
+
+
+def test_bootcamp_prints_manual_fork_steps_when_forking_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    git = _fake_bootcamp_git(monkeypatch)
+
+    def fail(cls, upstream: str):
+        raise GitHubError("gh is not installed.")
+
+    monkeypatch.setattr("cli.GitHubAdapter.fork_repository", classmethod(fail))
+
+    result = runner.invoke(app, ["bootcamp"])
+
+    assert result.exit_code == 1
+    assert git.clones == []
+    output = " ".join(result.stdout.split())
+    assert "gh repo fork UWARG/autonomy-bootcamp --clone=false" in output
+    assert "https://github.com/UWARG/autonomy-bootcamp" in output
+    assert "Click 'Fork'" in output

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
@@ -83,48 +82,25 @@ class GitAdapter:
         self.set_sparse_paths(desired)
         return before - set(desired)
 
+    def remote_url(self, name: str) -> str | None:
+        return self._config_value(f"remote.{name}.url")
+
+    def add_remote(self, name: str, url: str) -> None:
+        self._run("remote", "add", name, url)
+
+    def add_remote_if_absent(self, name: str, url: str) -> tuple[bool, str]:
+        current = self.remote_url(name)
+        if current is not None:
+            return False, current
+        self.add_remote(name, url)
+        return True, url
+
     def changed_files(self, base: str, *, merge_base: bool) -> list[Path]:
         separator = "..." if merge_base else ".."
         result = self._run("diff", "--name-only", f"{base}{separator}HEAD")
         return [
             Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
-
-    def repository_access_diagnostics(self) -> list[str]:
-        lines = []
-        if self.root is None:
-            lines.append("Git repository: not found")
-
-        else:
-            remote_url = self._config_value("remote.origin.url") or "(not set)"
-            promisor = self._config_value("remote.origin.promisor") or "(not set)"
-            partial_filter = (
-                self._config_value("remote.origin.partialclonefilter") or "(not set)"
-            )
-            core_ssh_command = self._config_value("core.sshCommand") or "(not set)"
-            lines += [
-                f"Git repository: {self.root}",
-                f"remote.origin.url: {remote_url}",
-                f"remote.origin.promisor: {promisor}",
-                f"remote.origin.partialclonefilter: {partial_filter}",
-                f"core.sshCommand: {core_ssh_command}",
-            ]
-
-        lines += [
-            f"GIT_SSH_COMMAND: {_env_value('GIT_SSH_COMMAND')}",
-            f"SSH_AUTH_SOCK: {_env_value('SSH_AUTH_SOCK')}",
-        ]
-
-        lines.append(
-            self._probe(
-                "ssh -T -o BatchMode=yes git@github.com",
-                ["ssh", "-T", "-o", "BatchMode=yes", "git@github.com"],
-                cwd=None,
-                success_text="successfully authenticated",
-            )
-        )
-
-        return lines
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
@@ -140,48 +116,3 @@ class GitAdapter:
             message = result.stderr.strip() or result.stdout.strip()
             raise GitError(f"{command} failed: {message}")
         return result
-
-    def _config_value(self, key: str) -> str | None:
-        result = self._run("config", "--get", key, check=False)
-        if result.returncode != 0:
-            return None
-        value = result.stdout.strip()
-        return value or None
-
-    def _probe(
-        self,
-        label: str,
-        command: list[str],
-        *,
-        cwd: Path | None,
-        success_text: str | None = None,
-    ) -> str:
-        try:
-            result = subprocess.run(
-                command,
-                cwd=cwd,
-                check=False,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=10,
-            )
-        except FileNotFoundError:
-            return f"{label}: command not found"
-        except subprocess.TimeoutExpired:
-            return f"{label}: timed out after 10 seconds"
-
-        output = _single_line(result.stderr.strip() or result.stdout.strip())
-        if result.returncode == 0 or (success_text and success_text in output):
-            suffix = f" ({output})" if output else ""
-            return f"{label}: ok{suffix}"
-        suffix = f": {output}" if output else ""
-        return f"{label}: failed with exit code {result.returncode}{suffix}"
-
-
-def _single_line(value: str) -> str:
-    return " | ".join(line.strip() for line in value.splitlines() if line.strip())
-
-
-def _env_value(name: str) -> str:
-    return os.environ.get(name) or "(not set)"
