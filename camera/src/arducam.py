@@ -52,7 +52,7 @@ class Arducam(AbstractCamera):
             cap = cv2.VideoCapture(ARDU_DEVICE_INDEX, backend)
             if not cap.isOpened():
                 cap.release()
-                raise RuntimeError(f"Failed to open Arducam at index {ARDU_DEVICE_INDEX}")
+                continue
 
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
@@ -73,6 +73,8 @@ class Arducam(AbstractCamera):
                 int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             )
             return cap
+
+        raise RuntimeError(f"Failed to open Arducam at index {ARDU_DEVICE_INDEX}")
 
     def _drain_frames(self, count: int) -> None:
         if self.cap is None:
