@@ -1,0 +1,399 @@
+<title>ArduPilot Obstacle Avoidance — SITL Replay</title>
+<style>
+  :root{
+    --ground:#0d131f; --panel:#131b29; --panel-2:#1a2434; --raise:#212d41;
+    --grid:#1f2c42; --line:#2c3c58;
+    --ink:#e9eff8; --muted:#8a99b1; --muted-2:#5d6d87;
+    --accent:#35d0e0; --accent-soft:rgba(53,208,224,.14);
+    --pass:#4bd88a; --fail:#ff5f52; --warn:#f2b545; --hazard:#ff5f52;
+    --mono:ui-monospace,'Cascadia Code','SF Mono',Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 56px}
+
+  header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px;
+    padding-bottom:16px;border-bottom:1px solid var(--line);margin-bottom:22px}
+  header.top h1{font-size:20px;font-weight:650;letter-spacing:-.01em;margin:0}
+  header.top .sub{color:var(--muted);font-size:13.5px;margin:0}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+
+  .console{display:grid;grid-template-columns:1.55fr 1fr;gap:18px;align-items:start}
+  @media(max-width:860px){.console{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden}
+  .card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:11px 15px;border-bottom:1px solid var(--line);background:var(--panel-2)}
+  .card-h .label{font-family:var(--mono);font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--muted)}
+
+  /* map */
+  .mapwrap{position:relative;width:100%;aspect-ratio:30/40;background:
+    radial-gradient(120% 90% at 50% 12%,#101a2b 0%,var(--ground) 78%)}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .verdict{position:absolute;top:12px;left:12px;display:flex;align-items:center;
+    gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;
+    padding:5px 10px;border-radius:6px;background:rgba(9,14,23,.7);
+    border:1px solid var(--line);backdrop-filter:blur(3px)}
+  .dot{width:8px;height:8px;border-radius:50%;box-shadow:0 0 8px currentColor}
+  .v-pass{color:var(--pass)} .v-fail{color:var(--fail)}
+
+  /* transport */
+  .transport{display:flex;align-items:center;gap:12px;padding:12px 15px;
+    border-top:1px solid var(--line);background:var(--panel-2)}
+  button.play{width:40px;height:40px;flex:0 0 auto;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--raise);color:var(--ink);
+    display:grid;place-items:center;transition:border-color .15s,background .15s}
+  button.play:hover{border-color:var(--accent);background:#26374f}
+  button.play svg{width:16px;height:16px;fill:currentColor}
+  .scrub{flex:1;appearance:none;height:5px;border-radius:4px;cursor:pointer;
+    background:linear-gradient(var(--accent),var(--accent)) no-repeat,var(--line);
+    background-size:var(--p,0%) 100%}
+  .scrub::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--accent);border:2px solid #0c1522;box-shadow:0 0 6px var(--accent-soft)}
+  .scrub::-moz-range-thumb{width:15px;height:15px;border:2px solid #0c1522;border-radius:50%;
+    background:var(--accent)}
+  .speeds{display:flex;gap:4px}
+  .speeds button{font-family:var(--mono);font-size:11.5px;color:var(--muted);cursor:pointer;
+    background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+  .speeds button.on{color:var(--ground);background:var(--accent);border-color:var(--accent);font-weight:700}
+
+  /* telemetry strip */
+  .telem{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line)}
+  .telem .cell{background:var(--panel);padding:10px 12px}
+  .telem .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted-2)}
+  .telem .val{font-family:var(--mono);font-size:17px;font-variant-numeric:tabular-nums;
+    margin-top:3px;color:var(--ink)}
+  .telem .val small{font-size:11px;color:var(--muted)}
+  @media(max-width:520px){.telem{grid-template-columns:repeat(3,1fr)}}
+
+  /* scenario list */
+  .runs{display:flex;flex-direction:column}
+  .run{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;
+    text-align:left;width:100%;cursor:pointer;padding:12px 15px;background:transparent;
+    border:0;border-bottom:1px solid var(--line);color:inherit;transition:background .12s}
+  .run:hover{background:var(--panel-2)}
+  .run.on{background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}
+  .run.on::before{content:"";position:absolute;left:0;width:3px;height:100%;background:var(--accent)}
+  .run{position:relative}
+  .run .idx{font-family:var(--mono);font-size:11px;color:var(--muted-2);width:20px}
+  .run .name{font-family:var(--mono);font-size:13px;color:var(--ink)}
+  .run .path{font-size:12px;color:var(--muted);margin-top:1px}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    padding:3px 7px;border-radius:20px;white-space:nowrap}
+  .pill.pass{color:var(--pass);background:rgba(75,216,138,.12);border:1px solid rgba(75,216,138,.3)}
+  .pill.fail{color:var(--fail);background:rgba(255,95,82,.12);border:1px solid rgba(255,95,82,.3)}
+
+  .takeaway{padding:15px}
+  .takeaway .t-title{font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .takeaway .t-body{font-size:14px;color:#d3ddec}
+  .takeaway .t-body b{color:var(--ink)}
+  .stat-row{display:flex;gap:18px;margin-top:13px;padding-top:13px;border-top:1px solid var(--line)}
+  .stat-row .s .k{font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--muted-2)}
+  .stat-row .s .v{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums;margin-top:2px}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:20px;padding-top:16px;
+    border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:7px}
+  .swatch{width:13px;height:13px;border-radius:3px;flex:0 0 auto}
+  .foot{margin-top:22px;color:var(--muted-2);font-size:12px;font-family:var(--mono)}
+  .foot code{color:var(--muted);background:var(--panel-2);padding:1px 5px;border-radius:4px}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Issue 96 · ArduPilot SITL</p>
+      <h1>Obstacle-Avoidance Replay</h1>
+    </div>
+    <p class="sub">Logged trajectories from ArduCopter&nbsp;4.5 — a synthetic wall streamed to the flight controller as <b style="color:var(--ink);font-weight:600">OBSTACLE_DISTANCE</b>, top-down.</p>
+  </header>
+
+  <div class="console">
+    <!-- LEFT: map + controls -->
+    <div class="card">
+      <div class="card-h">
+        <span class="label">Tactical view · North up</span>
+        <span class="label" id="clock">T+ 0.0s</span>
+      </div>
+      <div class="mapwrap">
+        <canvas id="map"></canvas>
+        <div class="verdict" id="verdict"><span class="dot"></span><span id="v-text">—</span></div>
+      </div>
+      <div class="transport">
+        <button class="play" id="play" aria-label="Play or pause">
+          <svg id="play-ico" viewBox="0 0 16 16"><path d="M4 2.5v11l9-5.5z"/></svg>
+        </button>
+        <input class="scrub" id="scrub" type="range" min="0" max="1000" value="0" aria-label="Scrub timeline">
+        <div class="speeds" id="speeds">
+          <button data-s="1">1×</button>
+          <button data-s="2" class="on">2×</button>
+          <button data-s="4">4×</button>
+        </div>
+      </div>
+      <div class="telem" id="telem">
+        <div class="cell"><div class="k">North</div><div class="val" id="t-n">0.0<small> m</small></div></div>
+        <div class="cell"><div class="k">East</div><div class="val" id="t-e">0.0<small> m</small></div></div>
+        <div class="cell"><div class="k">Alt</div><div class="val" id="t-a">0.0<small> m</small></div></div>
+        <div class="cell"><div class="k">Wall dist</div><div class="val" id="t-d">—</div></div>
+        <div class="cell"><div class="k">Obstacle feed</div><div class="val" id="t-f" style="font-size:13px">—</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: runs + takeaway -->
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div class="card">
+        <div class="card-h"><span class="label">Runs · click to replay</span></div>
+        <div class="runs" id="runs"></div>
+      </div>
+      <div class="card">
+        <div class="takeaway">
+          <div class="t-title">What this run shows</div>
+          <div class="t-body" id="takeaway">—</div>
+          <div class="stat-row">
+            <div class="s"><div class="k">Min clearance</div><div class="v" id="s-min">—</div></div>
+            <div class="s"><div class="k">Outcome</div><div class="v" id="s-out">—</div></div>
+            <div class="s"><div class="k">Command mode</div><div class="v" id="s-mode">—</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--accent)"></i>Aircraft + trail</span>
+    <span><i class="swatch" style="background:var(--hazard)"></i>Wall (12&nbsp;m)</span>
+    <span><i class="swatch" style="background:rgba(255,95,82,.22);border:1px dashed var(--hazard)"></i>Avoid margin (3&nbsp;m)</span>
+    <span><i class="swatch" style="background:#6c7c96"></i>Home / goal</span>
+  </div>
+
+  <p class="foot">Reproduce: <code>airside/scripts/avoidance/run_all.sh</code> → logs in <code>logs/*.jsonl</code>. Sampling ≈2&nbsp;Hz; clearance is true distance to the wall segment.</p>
+</div>
+
+<script>
+// ---- world constants (metres) ----
+const WALL_N = 20, WALL_HALF = 6, MARGIN = 3, GOAL_N = 40, SAMPLE_DT = 0.5;
+const E_MIN=-15, E_MAX=15, N_MIN=-3, N_MAX=43;
+
+// ---- logged trajectories: [t, north, east, alt] ----
+const DATA = {
+"clear_guided":[[0.01,0.01,-0.01,9.34],[0.53,0.07,-0.01,9.74],[1.05,0.6,0,9.82],[1.56,1.78,0,9.82],[2.06,3.59,0,9.82],[2.59,6.01,0,9.84],[3.11,9.02,0.01,9.86],[3.64,13.37,0.01,9.89],[4.15,17.23,0.01,9.92],[4.65,21,0.01,9.93],[5.15,24.56,0.01,9.94],[5.66,27.87,0.02,9.96],[6.16,30.89,0.02,9.97],[6.67,33.58,0.03,9.98],[7.17,35.87,0.03,9.98],[7.68,37.74,0.03,9.99],[8.18,39.18,0.03,9.99]],
+"wall_guided":[[0,0.01,-0.01,9.33],[0.51,0.04,-0.01,9.69],[1.01,0.46,-0.01,9.81],[1.51,1.53,-0.01,9.81],[2.01,3.23,0,9.82],[2.51,5.54,0,9.83],[3.02,8.45,0.01,9.85],[3.52,11.94,0.01,9.88],[4.03,15.79,0.01,9.9],[4.53,19.62,0.01,9.92],[5.03,23.25,0.01,9.94],[5.53,27.31,0.01,9.95],[6.03,30.39,0.02,9.97],[6.54,32.61,0.03,9.97],[7.04,35.5,0.03,9.98],[7.54,37.44,0.03,9.99],[8.04,38.96,0.03,9.99]],
+"wall_guided_wpnav":[[0,0.01,0,9.81],[0.51,0,0,10.01],[1.04,0,0,10.14],[1.54,0.05,0,10.2],[2.06,0.34,-0.01,10.22],[2.59,1.17,-0.01,10.23],[3.12,2.61,-0.01,10.24],[3.62,4.45,-0.01,10.24],[4.14,6.62,-0.08,10.23],[4.65,8.38,-0.64,10.21],[5.16,10.01,-1.71,10.21],[5.68,11.63,-3.12,10.2],[6.2,13.14,-4.59,10.19],[6.72,14.77,-6.14,10.18],[7.23,16.41,-7.66,10.17],[7.75,18.56,-9.57,10.16],[8.26,20.38,-11.01,10.15],[8.77,22.47,-11.98,10.14],[9.29,24.62,-12.48,10.13],[9.8,26.4,-12.65,10.12],[10.31,27.68,-12.53,10.12],[10.82,28.58,-12.15,10.12],[11.33,29.35,-11.46,10.11],[11.85,30.4,-10.24,10.1],[12.36,31.43,-9,10.09],[12.87,32.64,-7.62,10.07],[13.38,33.96,-6.18,10.06],[13.89,35.35,-4.72,10.04],[14.4,36.7,-3.33,10.03],[14.91,37.92,-2.08,10.02],[15.42,39.07,-0.89,10.01]],
+"wall_guided_vel":[[0,0.01,-0.01,9.2],[0.5,0.07,-0.01,9.66],[1.01,0.54,-0.01,9.76],[1.51,1.35,-0.01,9.74],[2.01,2.3,-0.01,9.71],[2.51,3.3,-0.01,9.7],[3.01,4.31,-0.01,9.7],[3.51,5.32,-0.01,9.71],[4.01,6.34,-0.01,9.71],[4.51,7.36,-0.01,9.71],[5.01,8.38,-0.01,9.71],[5.51,9.39,-0.01,9.71],[6.01,10.4,-0.01,9.71],[6.51,11.41,-0.02,9.71],[7.01,12.42,-0.02,9.71],[7.51,13.41,-0.02,9.71],[8.01,14.41,-0.02,9.71],[8.51,15.41,-0.02,9.71],[9.01,16.41,-0.01,9.71],[9.51,17.41,-0.01,9.72],[10.01,18.3,-0.01,9.72],[10.51,18.94,-0.01,9.72],[11.01,19.23,-0.01,9.72],[11.51,19.16,0.08,9.73],[12.01,18.89,0.25,9.73],[12.51,18.57,0.36,9.73],[13.01,18.24,0.26,9.72],[13.51,17.87,0.12,9.72],[14.01,17.51,-0.09,9.72],[14.51,17.16,-0.32,9.72],[15.01,16.83,-0.56,9.72],[15.51,16.53,-0.77,9.73],[16.01,16.25,-0.98,9.73],[16.51,15.98,-1.17,9.73],[17.01,15.73,-1.37,9.73],[17.51,15.5,-1.55,9.73],[18.01,15.29,-1.74,9.73],[18.51,15.09,-1.93,9.73],[19.01,14.91,-2.12,9.73],[19.51,14.76,-2.3,9.73],[20.01,14.93,-2.42,9.73],[20.51,15.6,-2.47,9.73],[21.01,16.49,-2.49,9.73],[21.51,17.6,-2.51,9.73],[22.01,18.38,-2.5,9.73],[22.51,18.89,-2.49,9.73],[23.01,19.09,-2.46,9.73],[23.51,18.95,-2.33,9.73],[24.01,18.59,-2.16,9.73],[24.51,18.11,-2.08,9.73],[25.01,17.72,-2.19,9.73],[25.51,17.29,-2.34,9.73],[26.01,16.85,-2.52,9.73],[26.51,16.42,-2.69,9.73],[27.01,16.01,-2.86,9.73],[27.51,15.61,-3.02,9.73],[28.01,15.24,-3.17,9.73],[28.51,14.88,-3.32,9.73],[29.01,14.58,-3.45,9.73],[29.51,14.72,-3.52,9.73],[30.01,15.39,-3.55,9.73],[30.51,16.27,-3.56,9.73],[31.01,17.2,-3.58,9.73],[31.51,18.02,-3.55,9.73],[32.01,18.59,-3.51,9.73],[32.51,18.87,-3.46,9.73],[33.01,18.86,-3.4,9.73],[33.51,18.52,-3.26,9.73],[34.01,17.92,-3.14,9.73],[34.51,17.41,-3.12,9.73],[35.01,16.99,-3.2,9.73],[35.51,16.61,-3.31,9.73],[36.01,16.25,-3.41,9.73],[36.51,15.92,-3.51,9.73],[37.01,15.6,-3.6,9.73],[37.51,15.3,-3.68,9.73],[38.01,15.03,-3.76,9.73],[38.51,14.77,-3.84,9.73],[39.01,14.8,-3.9,9.73],[39.51,15.38,-3.92,9.73],[40.01,16.23,-3.93,9.73],[40.51,17.14,-3.93,9.73],[41.01,17.95,-3.93,9.73],[41.51,18.54,-3.89,9.73],[42.01,18.85,-3.84,9.73],[42.51,18.84,-3.77,9.73],[43.01,18.55,-3.63,9.73],[43.51,18.02,-3.49,9.73],[44.01,17.57,-3.49,9.73],[44.51,17.17,-3.58,9.73],[45.01,16.79,-3.68,9.73],[45.51,16.42,-3.79,9.73],[46.01,16.06,-3.89,9.73],[46.51,15.73,-3.98,9.73],[47.01,15.42,-4.06,9.73]],
+"wall_auto":[[0,-0.01,0.01,-0.03],[0.51,-0.01,0.01,-0.03],[1.01,0,0,-0.03],[1.51,0,0,-0.03],[2.01,0,0,-0.02],[2.51,0,0,0.1],[3.01,0,0,0.63],[3.51,0,-0.01,1.32],[4.01,0.01,-0.01,2.26],[4.51,0.01,-0.01,3.45],[5.01,0.01,-0.02,4.73],[5.51,0.01,-0.02,5.9],[6.01,0.02,-0.02,6.92],[6.51,0.02,-0.02,7.78],[7.01,0.01,-0.02,8.51],[7.51,0.01,-0.02,9.1],[8.01,0.01,-0.01,9.56],[8.51,0.01,-0.01,9.87],[9.01,0.01,-0.01,10.03],[9.51,0.01,-0.01,10.09],[10.01,0.09,-0.01,10.13],[10.51,0.42,-0.01,10.14],[11.01,1.35,-0.01,10.15],[11.51,2.88,-0.02,10.16],[12.01,4.72,-0.01,10.16],[12.51,6.52,0.05,10.15],[13.01,8.25,0.56,10.14],[13.51,9.81,1.65,10.14],[14.01,11.38,3.09,10.14],[14.51,12.89,4.55,10.13],[15.01,14.51,6.08,10.12],[15.51,16.14,7.58,10.11],[16.01,17.91,9.16,10.1],[16.51,19.69,10.67,10.09],[17.01,21.67,11.81,10.08],[17.51,23.81,12.41,10.07],[18.01,25.66,12.66,10.07],[18.51,27.04,12.63,10.06],[19.01,28.01,12.34,10.07],[19.51,28.82,11.76,10.06],[20.01,29.67,10.87,10.06],[20.51,30.68,9.72,10.05],[21.01,31.86,8.39,10.04],[21.51,33.19,6.95,10.02],[22.01,34.6,5.49,10.01],[22.51,36.02,4.05,10],[23.01,37.61,2.46,9.98],[23.51,38.72,1.36,9.97]]
+};
+
+const META = [
+  {key:"clear_guided", name:"clear_guided", path:"GUIDED goto · no obstacle", verdict:"PASS",
+   min:null, goal:true,
+   mode:"GUIDED pos", out:"Goal reached",
+   takeaway:"Baseline sanity run. No obstacle, no feed content — the aircraft flies straight from home to the goal 40&nbsp;m north. Everything below is measured against this."},
+  {key:"wall_guided", name:"wall_guided", path:"GUIDED goto · through wall", verdict:"FAIL",
+   min:0.38, goal:true,
+   mode:"GUIDED pos", out:"Breached wall",
+   takeaway:"A plain <b>SET_POSITION_TARGET</b> goto. The feed is flowing and the FC sees the wall — but position targets <b>bypass BendyRuler</b>, so the aircraft flew straight through it. This is the gap to know about."},
+  {key:"wall_guided_wpnav", name:"wall_guided_wpnav", path:"GUIDED + GUID_OPTIONS=64", verdict:"PASS",
+   min:3.84, goal:true,
+   mode:"GUIDED+WPNav", out:"Detoured, reached goal",
+   takeaway:"Same goto, but <b>GUID_OPTIONS=64</b> routes position targets through WPNav — which carries the avoidance wrapper. Now BendyRuler <b>detours left</b> around the wall and still reaches the goal. One parameter fixes the previous run."},
+  {key:"wall_guided_vel", name:"wall_guided_vel", path:"GUIDED velocity stream · 2 m/s", verdict:"PASS",
+   min:0.77, goal:false,
+   mode:"GUIDED vel", out:"Stopped short",
+   takeaway:"Velocity streaming — the pattern the <b>drone-follow stack</b> uses. Simple avoidance <b>stops</b> the aircraft before the wall (it never crosses) but doesn't steer around it, and at 2&nbsp;m/s it coasted to just 0.77&nbsp;m — inside the 2&nbsp;m margin. Margins need tuning at flight speed."},
+  {key:"wall_auto", name:"wall_auto", path:"AUTO waypoint mission", verdict:"PASS",
+   min:3.79, goal:true,
+   mode:"AUTO mission", out:"Detoured, continued",
+   takeaway:"An AUTO waypoint mission straight through the wall. BendyRuler <b>detours right</b> around it and the mission continues to the waypoint — avoidance works cleanly in AUTO out of the box."},
+];
+
+// ---- distance from a point to the wall segment (metres) ----
+function wallDist(n,e){
+  const de = Math.max(Math.abs(e)-WALL_HALF, 0);
+  const dn = WALL_N - n;
+  return Math.hypot(dn, de);
+}
+
+// ---- canvas setup ----
+const cv = document.getElementById('map'), ctx = cv.getContext('2d');
+let W=0,H=0,dpr=1, tx, ty, sc;
+function resize(){
+  const r = cv.getBoundingClientRect();
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  W=r.width; H=r.height;
+  cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const pad=26;
+  sc = Math.min((W-2*pad)/(E_MAX-E_MIN), (H-2*pad)/(N_MAX-N_MIN));
+  tx = W/2; ty = H/2;
+  draw();
+}
+const WX = e => tx + e*sc;               // east -> screen x (0 centred)
+const WY = n => ty - (n-((N_MIN+N_MAX)/2))*sc; // north -> screen y (up)
+
+// ---- state ----
+let cur=0, playing=false, speed=2, tsec=0, lastRAF=0;
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function frames(){ return DATA[META[cur].key]; }
+function duration(){ return (frames().length-1)*SAMPLE_DT; }
+
+function sampleAt(t){
+  const f=frames(); const x=Math.min(Math.max(t,0), duration());
+  const i=Math.min(Math.floor(x/SAMPLE_DT), f.length-2);
+  const fr=(x - i*SAMPLE_DT)/SAMPLE_DT;
+  const a=f[i], b=f[i+1];
+  return {
+    n:a[1]+(b[1]-a[1])*fr, e:a[2]+(b[2]-a[2])*fr, a:a[3]+(b[3]-a[3])*fr,
+    pn:a[1], pe:a[2], i
+  };
+}
+
+// ---- drawing ----
+function draw(){
+  if(!W) return;
+  const m = META[cur];
+  ctx.clearRect(0,0,W,H);
+
+  // grid
+  ctx.lineWidth=1;
+  ctx.strokeStyle='#1c2942'; ctx.fillStyle='#3d4d68';
+  ctx.font='10px ui-monospace,Consolas,monospace'; ctx.textAlign='center';
+  for(let e=E_MIN;e<=E_MAX;e+=5){ ctx.beginPath();ctx.moveTo(WX(e),WY(N_MIN));ctx.lineTo(WX(e),WY(N_MAX));ctx.stroke(); }
+  for(let n=0;n<=40;n+=5){ ctx.beginPath();ctx.moveTo(WX(E_MIN),WY(n));ctx.lineTo(WX(E_MAX),WY(n));ctx.stroke();
+    ctx.textAlign='left'; ctx.fillText(n+'m', WX(E_MIN)+4, WY(n)-3); ctx.textAlign='center'; }
+
+  const hasWall = m.key!=='clear_guided';
+  if(hasWall){
+    // avoid margin (buffer)
+    ctx.fillStyle='rgba(255,95,82,.07)';
+    ctx.strokeStyle='rgba(255,95,82,.4)'; ctx.setLineDash([5,4]); ctx.lineWidth=1;
+    const x0=WX(-WALL_HALF-MARGIN), x1=WX(WALL_HALF+MARGIN), y0=WY(WALL_N+MARGIN), y1=WY(WALL_N-MARGIN);
+    ctx.beginPath(); ctx.rect(x0,y0,x1-x0,y1-y0); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+    // wall
+    ctx.strokeStyle='#ff5f52'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.shadowColor='rgba(255,95,82,.7)'; ctx.shadowBlur=12;
+    ctx.beginPath(); ctx.moveTo(WX(-WALL_HALF),WY(WALL_N)); ctx.lineTo(WX(WALL_HALF),WY(WALL_N)); ctx.stroke();
+    ctx.shadowBlur=0; ctx.lineCap='butt';
+  }
+
+  // home
+  marker(0,0,'#6c7c96','H');
+  if(m.goal) marker(0,GOAL_N,'#9fb0c9','G',true);
+
+  const s = sampleAt(tsec);
+
+  // faint full path
+  const f=frames();
+  ctx.strokeStyle='rgba(53,208,224,.16)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(WX(f[0][2]),WY(f[0][1]));
+  for(let k=1;k<f.length;k++) ctx.lineTo(WX(f[k][2]),WY(f[k][1]));
+  ctx.stroke();
+
+  // solid trail up to now
+  ctx.strokeStyle='#35d0e0'; ctx.lineWidth=2.4; ctx.lineJoin='round';
+  ctx.shadowColor='rgba(53,208,224,.5)'; ctx.shadowBlur=6;
+  ctx.beginPath(); ctx.moveTo(WX(f[0][2]),WY(f[0][1]));
+  for(let k=1;k<=s.i;k++) ctx.lineTo(WX(f[k][2]),WY(f[k][1]));
+  ctx.lineTo(WX(s.e),WY(s.n)); ctx.stroke(); ctx.shadowBlur=0;
+
+  // aircraft (chevron along heading)
+  const hn=s.n-s.pn, he=s.e-s.pe; let ang=Math.atan2(he,hn);
+  if(Math.hypot(hn,he)<1e-3) ang=0;
+  const px=WX(s.e), py=WY(s.n);
+  const d = wallDist(s.n,s.e), near = hasWall && d<1;
+  ctx.save(); ctx.translate(px,py); ctx.rotate(ang);
+  ctx.fillStyle = near ? '#ff5f52' : '#eafcff';
+  ctx.shadowColor = near ? 'rgba(255,95,82,.9)' : 'rgba(53,208,224,.9)'; ctx.shadowBlur=12;
+  ctx.beginPath(); ctx.moveTo(0,-9); ctx.lineTo(6,7); ctx.lineTo(0,3.5); ctx.lineTo(-6,7); ctx.closePath(); ctx.fill();
+  ctx.restore(); ctx.shadowBlur=0;
+
+  // live telemetry
+  document.getElementById('t-n').innerHTML = s.n.toFixed(1)+'<small> m</small>';
+  document.getElementById('t-e').innerHTML = s.e.toFixed(1)+'<small> m</small>';
+  document.getElementById('t-a').innerHTML = s.a.toFixed(1)+'<small> m</small>';
+  const dEl=document.getElementById('t-d');
+  if(hasWall){ dEl.innerHTML = d.toFixed(2)+'<small> m</small>';
+    dEl.style.color = d<1?'#ff5f52':d<3?'#f2b545':'#4bd88a'; }
+  else { dEl.textContent='— '; dEl.style.color='var(--muted-2)'; }
+  document.getElementById('clock').textContent = 'T+ '+tsec.toFixed(1)+'s';
+}
+
+function marker(n,e,col,label,ring){
+  const x=WX(e),y=WY(n);
+  ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  if(ring){ ctx.arc(x,y,7,0,7); ctx.stroke(); ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill(); }
+  else { ctx.arc(x,y,4,0,7); ctx.fill(); }
+  ctx.fillStyle=col; ctx.font='10px ui-monospace,Consolas,monospace'; ctx.textAlign='center';
+  ctx.fillText(label, x, y-11);
+}
+
+// ---- transport ----
+const scrub=document.getElementById('scrub'), playBtn=document.getElementById('play'),
+      playIco=document.getElementById('play-ico');
+const ICO_PLAY='M4 2.5v11l9-5.5z', ICO_PAUSE='M4 2.5h3v11H4zM9 2.5h3v11H9z';
+
+function setPlaying(p){
+  playing=p; playIco.setAttribute('d', p?ICO_PAUSE:ICO_PLAY);
+  if(p){ lastRAF=performance.now(); requestAnimationFrame(loop); }
+}
+function loop(now){
+  if(!playing) return;
+  const dt=(now-lastRAF)/1000; lastRAF=now;
+  tsec += dt*speed;
+  if(tsec>=duration()){ tsec=duration(); setPlaying(false); syncScrub(); draw(); return; }
+  syncScrub(); draw(); requestAnimationFrame(loop);
+}
+function syncScrub(){ const p=tsec/duration(); scrub.value=Math.round(p*1000);
+  scrub.style.setProperty('--p',(p*100)+'%'); }
+
+playBtn.onclick=()=>{ if(tsec>=duration()) tsec=0; setPlaying(!playing); };
+scrub.oninput=()=>{ setPlaying(false); tsec=(scrub.value/1000)*duration();
+  scrub.style.setProperty('--p',(scrub.value/10)+'%'); draw(); };
+document.querySelectorAll('#speeds button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#speeds button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); speed=+b.dataset.s;
+});
+
+// ---- run selection ----
+function loadRun(i, autoplay){
+  cur=i; tsec=0; syncScrub();
+  document.querySelectorAll('.run').forEach((r,k)=>r.classList.toggle('on',k===i));
+  const m=META[i];
+  const vEl=document.getElementById('verdict'), vT=document.getElementById('v-text');
+  vEl.className='verdict '+(m.verdict==='PASS'?'v-pass':'v-fail');
+  vT.textContent=m.verdict==='PASS'?'PASS · no contact':'FAIL · wall contact';
+  document.getElementById('takeaway').innerHTML=m.takeaway;
+  document.getElementById('s-min').textContent = m.min==null?'—':m.min.toFixed(2)+' m';
+  document.getElementById('s-min').style.color = m.min==null?'var(--muted)':m.min<1?'#ff5f52':m.min<3?'#f2b545':'#4bd88a';
+  document.getElementById('s-out').textContent=m.out;
+  document.getElementById('s-out').style.color = m.verdict==='PASS'?'#4bd88a':'#ff5f52';
+  document.getElementById('s-mode').textContent=m.mode;
+  const fEl=document.getElementById('t-f');
+  if(m.key==='clear_guided'){ fEl.textContent='clear'; fEl.style.color='var(--muted)'; }
+  else { fEl.textContent='ON · 10 Hz'; fEl.style.color='var(--accent)'; }
+  draw();
+  if(autoplay && !reduce) setPlaying(true); else setPlaying(false);
+}
+
+// build run list
+const runsEl=document.getElementById('runs');
+META.forEach((m,i)=>{
+  const b=document.createElement('button'); b.className='run';
+  b.innerHTML=`<span class="idx">${i+1}</span>
+    <span><span class="name">${m.name}</span><div class="path">${m.path}</div></span>
+    <span class="pill ${m.verdict==='PASS'?'pass':'fail'}">${m.verdict}</span>`;
+  b.onclick=()=>loadRun(i,true);
+  runsEl.appendChild(b);
+});
+
+window.addEventListener('resize', resize);
+resize(); loadRun(1,false);   // open on the "flew through the wall" run, paused
