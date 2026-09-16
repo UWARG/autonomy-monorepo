@@ -2,11 +2,9 @@
 
 import src.arducam as arducam_module
 
-arducam_module.ARDU_DEVICE_INDEX = 1  # laptop testing only: index 0 is the built-in webcam
+arducam_module.ARDU_DEVICE_INDEX = 1
 
-from src.arducam import Arducam
-
-cam = Arducam()
+cam = arducam_module.Arducam()
 print("initialize_camera():", cam.initialize_camera())
 
 frame = cam.capture_frame()
