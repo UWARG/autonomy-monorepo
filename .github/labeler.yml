@@ -29,10 +29,6 @@
   - changed-files:
       - any-glob-to-any-file: "utils/**"
 
-"mav_comms":
-  - changed-files:
-      - any-glob-to-any-file: "mav_comms/**"
-
 "IMS":
   - changed-files:
       - any-glob-to-any-file: "ims/**"

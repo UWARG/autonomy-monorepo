@@ -72,8 +72,6 @@ root README.
 
 -  `Camera`: A Hardware Abstraction Layer for cameras. Normalizes frames from ArduCam, Oak-D, and simulation. 
 
-- `Utils`: Shared enums and dataclasses used across all Airside modules. 
-
-- `Mav_comms`: DEPRECATED PROJECT - Replaced by MAVROS - Wrapper around pymavlink.
+- `Utils`: Shared enums and dataclasses used across all Airside modules.
 
 - `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
