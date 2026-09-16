@@ -110,6 +110,56 @@ lint = "uv run ruff check ."
 time, keeping already-materialized projects in sync with their current setup
 commands.
 
+## Startup commands
+
+On a Raspberry Pi or any other Linux machine with systemd, a project can run
+its commands as background services that start at boot. List them under
+`[startup]` in `warg.toml`:
+
+```toml
+[commands]
+run = "uv run python -m gesture_control"
+
+[startup]
+commands = ["run"]
+restart = "on-failure"  # optional: "on-failure" (default), "always", or "no"
+```
+
+Each entry must name a command from `[commands]`. If a service needs different
+flags than you use during development, give it its own command, such as
+`"run:drone" = "uv run python -m gesture_control --headless"`.
+
+Set up the machine once, from inside the clone:
+
+```bash
+warg up gesture_control
+warg startup install
+```
+
+`install` creates a systemd user service for each startup command in the
+checked-out projects (dependencies included), starts them, and enables them at
+boot. It also installs a `warg-startup` service that rereads every `warg.toml`
+at boot. After that, adding, changing, or removing a `[startup]` entry takes
+effect on the next reboot. To apply a change right away, run
+`warg startup sync`.
+
+```bash
+warg startup list        # startup commands and whether each service is running
+warg startup sync        # apply warg.toml changes now
+warg startup uninstall   # stop and remove every warg startup service
+journalctl --user -u warg-gesture_control-run -f   # follow a service's logs
+```
+
+Each service runs `warg run <project> <command>` as the user who ran `install`,
+with the `PATH` from that shell. If a command exits with an error, systemd
+restarts it after 5 seconds. Services start at boot without anyone logging in
+only when lingering is enabled for that user. `install` tries to enable it and,
+if it can't, prints the command to run:
+
+```bash
+sudo loginctl enable-linger $USER
+```
+
 ## Development
 
 From the monorepo root directory:

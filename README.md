@@ -59,6 +59,17 @@ Commands are project-defined, similar to `scripts` in `package.json`. Keep
 project-specific setup and workflows in the project manifest rather than in the
 root README.
 
+To run a command as a background service at boot on a Raspberry Pi or other
+Linux machine, list it under `[startup]` and run `warg startup install` once on
+that machine:
+
+```toml
+[startup]
+commands = ["run"]
+```
+
+See [warg_cli/README.md](warg_cli/README.md#startup-commands) for details.
+
 ## Projects
 
 - `warg_cli`: developer CLI for materializing projects, inspecting manifests,
