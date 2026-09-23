@@ -10,16 +10,29 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import threading
 import time
+import traceback
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
 from arm_readiness import (
     ArmReadinessSnapshot,
     StableArmReadinessGate,
     missing_arm_preconditions,
 )
-from pymavlink import mavutil
+from harness_runtime import (
+    ScenarioTimer,
+    SummaryEmitter,
+    WorkerFailureError,
+    WorkerSupervisor,
+    has_callable_attribute,
+    is_flight_controller_heartbeat,
+)
 
 from obstacle_avoidance import (
     BendyRuler2D,
@@ -31,6 +44,13 @@ from obstacle_avoidance import (
     SectorScan,
     sector_scan_to_snapshot,
 )
+
+# OBSTACLE_DISTANCE (message ID 330) is a MAVLink 2 message. This must be set
+# before importing pymavlink so that the generated sender exposes the method.
+os.environ["MAVLINK20"] = "1"
+
+import pymavlink
+from pymavlink import mavutil
 
 SEND_HZ = 10.0
 SECTORS = 72
@@ -47,6 +67,8 @@ MIN_CLEARANCE_M = 1.0  # hard verdict floor (OA_MARGIN_MAX is 3 m)
 GOAL_TOLERANCE_M = 2.0
 CUSTOM_PLANNER_SPEED_MPS = 2.0
 CUSTOM_OBSTACLE_RADIUS_M = 0.75
+FAST_WORKER_STALE_S = 2.0
+IO_WORKER_STALE_S = 3.0
 
 
 @dataclass
@@ -69,6 +91,9 @@ class Telemetry:
     mission_requests: list[int] = field(default_factory=list)
     mission_acked: bool = False
     distance_sensor_rx: int = 0
+    obstacle_tx_count: int = 0
+    parameter_count: int | None = None
+    parameters: dict[str, dict[str, float | int]] = field(default_factory=dict)
     statustexts: list[str] = field(default_factory=list)
 
 
@@ -109,6 +134,7 @@ class Demo:
         self.wall = scenario.startswith("wall")
         self.telem = Telemetry()
         self.stop = threading.Event()
+        self.supervisor = WorkerSupervisor(self.stop)
         self.scan_lock = threading.Lock()
         self.latest_scan: tuple[SectorScan, Point2D, float] | None = None
         self.planner_lock = threading.Lock()
@@ -117,18 +143,32 @@ class Demo:
         self.planner_waypoint: tuple[float, float] | None = None
         self.planner_path_found_count = 0
         self.planner_hold_count = 0
+        self._monitor_metrics: dict[str, Any] = {
+            "min_wall_dist_m": None,
+            "breached": None,
+            "max_north_m": None,
+            "goal_reached_at_s": None,
+        }
         self.conn = mavutil.mavlink_connection(
             url,
             source_system=255,
             source_component=mavutil.mavlink.MAV_COMP_ID_ONBOARD_COMPUTER,
         )
         print(f"[demo] waiting for heartbeat on {url} ...", flush=True)
-        self.conn.wait_heartbeat(timeout=120)
+        self._wait_for_flight_controller_heartbeat(timeout_s=120.0)
         print(
             f"[demo] heartbeat from sys {self.conn.target_system} "
             f"comp {self.conn.target_component}",
             flush=True,
         )
+        if not has_callable_attribute(self.conn.mav, "obstacle_distance_send"):
+            raise RuntimeError(
+                "MAVLink 2 obstacle sender unavailable; "
+                f"protocol={getattr(mavutil.mavlink, 'WIRE_PROTOCOL_VERSION', 'unknown')}; "
+                f"dialect={getattr(mavutil, 'current_dialect', 'unknown')}; "
+                f"pymavlink={getattr(pymavlink, '__version__', 'unknown')}; "
+                f"target={self.conn.target_system}/{self.conn.target_component}"
+            )
         # Request 10 Hz telemetry.
         self.conn.mav.request_data_stream_send(
             self.conn.target_system,
@@ -138,11 +178,69 @@ class Demo:
             1,
         )
 
+    def _wait_for_flight_controller_heartbeat(self, timeout_s: float) -> None:
+        deadline_s = time.monotonic() + timeout_s
+        last_rejected: tuple[int, int, int] | None = None
+        while time.monotonic() < deadline_s:
+            msg = self.conn.recv_match(
+                type="HEARTBEAT",
+                blocking=True,
+                timeout=min(1.0, max(0.0, deadline_s - time.monotonic())),
+            )
+            if msg is None:
+                continue
+            source_system = int(msg.get_srcSystem())
+            source_component = int(msg.get_srcComponent())
+            autopilot = int(msg.autopilot)
+            if not is_flight_controller_heartbeat(
+                source_system,
+                autopilot,
+                mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA,
+            ):
+                last_rejected = (source_system, source_component, autopilot)
+                print(
+                    "[demo] ignoring non-FC heartbeat "
+                    f"sys={source_system} comp={source_component} "
+                    f"autopilot={autopilot}",
+                    flush=True,
+                )
+                continue
+            self.conn.target_system = source_system
+            self.conn.target_component = source_component
+            return
+        raise TimeoutError(
+            "flight-controller heartbeat timeout; "
+            f"last_rejected={last_rejected}"
+        )
+
+    def start_worker(
+        self,
+        name: str,
+        target: Callable[[], None],
+        *,
+        stale_after_s: float,
+    ) -> None:
+        self.supervisor.start(
+            name,
+            target,
+            stale_after_s=stale_after_s,
+        )
+
+    def _check_workers(self) -> None:
+        self.supervisor.check_health()
+
+    def _sleep_checked(self, duration_s: float) -> None:
+        deadline_s = time.monotonic() + duration_s
+        while time.monotonic() < deadline_s:
+            self._check_workers()
+            time.sleep(min(0.1, max(0.0, deadline_s - time.monotonic())))
+
     def rx_loop(self) -> None:
         while not self.stop.is_set():
             msg = self.conn.recv_match(blocking=True, timeout=1.0)
             if msg is None:
                 continue
+            self.supervisor.mark_progress("rx")
             kind = msg.get_type()
             t = self.telem
             if kind == "LOCAL_POSITION_NED":
@@ -181,6 +279,18 @@ class Demo:
             elif kind == "DISTANCE_SENSOR":
                 with t.lock:
                     t.distance_sensor_rx += 1
+            elif kind == "PARAM_VALUE":
+                parameter_id = msg.param_id
+                if isinstance(parameter_id, bytes):
+                    parameter_id = parameter_id.decode("ascii", errors="replace")
+                name = str(parameter_id).rstrip("\x00")
+                with t.lock:
+                    t.parameter_count = int(msg.param_count)
+                    t.parameters[name] = {
+                        "value": float(msg.param_value),
+                        "type": int(msg.param_type),
+                        "index": int(msg.param_index),
+                    }
             elif kind == "STATUSTEXT":
                 with t.lock:
                     t.statustexts.append(msg.text)
@@ -197,6 +307,7 @@ class Demo:
                 0,
                 0,
             )
+            self.supervisor.mark_progress("heartbeat")
             time.sleep(1.0)
 
     def obstacle_loop(self) -> None:
@@ -238,6 +349,9 @@ class Demo:
                 0.0,  # angle_offset: sector 0 = straight ahead
                 mavutil.mavlink.MAV_FRAME_BODY_FRD,
             )
+            with self.telem.lock:
+                self.telem.obstacle_tx_count += 1
+            self.supervisor.mark_progress("obstacle")
             time.sleep(period)
 
     def command(self, cmd: int, *params: float) -> None:
@@ -258,7 +372,7 @@ class Demo:
             value,
             mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
         )
-        time.sleep(1.0)  # PARAM_VALUE echo is consumed by the rx thread
+        self._sleep_checked(1.0)  # PARAM_VALUE echo is consumed by the rx thread
         print(f"[demo] set {name}={value}", flush=True)
 
     def set_mode(self, name: str) -> None:
@@ -294,6 +408,7 @@ class Demo:
         gate = StableArmReadinessGate(stable_s=stable_s)
         reported_missing: tuple[str, ...] | None = None
         while time.monotonic() < deadline:
+            self._check_workers()
             now_s = time.monotonic()
             snapshot, _ = self._arm_readiness_state()
             ready = gate.update(now_s, snapshot)
@@ -314,7 +429,7 @@ class Demo:
             if ready:
                 print("[demo] arm readiness stable", flush=True)
                 return
-            time.sleep(0.5)
+            self._sleep_checked(0.5)
 
         snapshot, recent_status = self._arm_readiness_state()
         missing = missing_arm_preconditions(snapshot)
@@ -325,18 +440,35 @@ class Demo:
         )
 
     def arm(self, timeout_s: float = 60.0) -> None:
-        deadline = time.monotonic() + timeout_s
         snapshot, _ = self._arm_readiness_state()
         if missing_arm_preconditions(snapshot):
             self.wait_ready_to_arm(timeout_s=timeout_s)
+        deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
+            self._check_workers()
+            snapshot, recent_status = self._arm_readiness_state()
+            missing = missing_arm_preconditions(snapshot)
+            if missing:
+                remaining_s = max(0.0, deadline - time.monotonic())
+                if remaining_s <= 0.0:
+                    break
+                self.wait_ready_to_arm(timeout_s=remaining_s)
+                snapshot, recent_status = self._arm_readiness_state()
+                missing = missing_arm_preconditions(snapshot)
+                if missing:
+                    raise RuntimeError(
+                        "arm prerequisites disappeared before command; "
+                        f"missing={missing}; snapshot={snapshot}; "
+                        f"recent_status={recent_status}"
+                    )
             self.command(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1)
             for _ in range(30):
+                self._check_workers()
                 with self.telem.lock:
                     if self.telem.armed:
                         print("[demo] armed", flush=True)
                         return
-                time.sleep(0.1)
+                self._sleep_checked(0.1)
         snapshot, recent_status = self._arm_readiness_state()
         missing = missing_arm_preconditions(snapshot)
         raise TimeoutError(
@@ -347,8 +479,9 @@ class Demo:
 
     def takeoff(self, alt_m: float, timeout_s: float = 90.0) -> None:
         """Arm and retry takeoff until altitude."""
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            self._check_workers()
             with self.telem.lock:
                 armed = self.telem.armed
                 alt = -self.telem.down_m
@@ -360,7 +493,7 @@ class Demo:
             self.command(
                 mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, alt_m
             )
-            time.sleep(3.0)
+            self._sleep_checked(3.0)
         raise TimeoutError("takeoff did not reach altitude")
 
     def goto_local(self, north_m: float, east_m: float, alt_m: float) -> None:
@@ -381,6 +514,7 @@ class Demo:
         """Stream local-NED velocity at 10 Hz."""
         while not self.stop.is_set():
             self.send_velocity(vx_mps, 0.0)
+            self.supervisor.mark_progress("velocity")
             time.sleep(0.1)
 
     def send_velocity(self, north_mps: float, east_mps: float) -> None:
@@ -426,6 +560,7 @@ class Demo:
             if captured_scan is None:
                 self._record_planner_hold("NO_SCAN")
                 self.send_velocity(0.0, 0.0)
+                self.supervisor.mark_progress("planner")
                 time.sleep(0.1)
                 continue
 
@@ -452,6 +587,7 @@ class Demo:
                 reason = result.reason.value if result.reason is not None else "NO_PATH"
                 self._record_planner_hold(reason)
                 self.send_velocity(0.0, 0.0)
+                self.supervisor.mark_progress("planner")
                 time.sleep(0.1)
                 continue
 
@@ -471,6 +607,7 @@ class Demo:
                 self.planner_reason = None
                 self.planner_waypoint = (result.waypoint.x, result.waypoint.y)
                 self.planner_path_found_count += 1
+            self.supervisor.mark_progress("planner")
             time.sleep(0.1)
 
     def _record_planner_hold(self, reason: str) -> None:
@@ -511,8 +648,9 @@ class Demo:
             mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
         )
         sent: set[int] = set()
-        deadline = time.time() + 30
-        while time.time() < deadline:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            self._check_workers()
             with self.telem.lock:
                 reqs = [s for s in self.telem.mission_requests if s not in sent]
                 acked = self.telem.mission_acked
@@ -527,11 +665,57 @@ class Demo:
                 else:
                     item(2, mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, ALT_M, goal_lat, lon)
                 sent.add(seq)
-            time.sleep(0.05)
+            self._sleep_checked(0.05)
         raise TimeoutError("mission upload not acknowledged")
 
+    def download_parameters(self, output_path: str, timeout_s: float = 60.0) -> None:
+        """Download and persist one complete effective FC parameter set."""
+
+        with self.telem.lock:
+            self.telem.parameter_count = None
+            self.telem.parameters.clear()
+        self.conn.mav.param_request_list_send(
+            self.conn.target_system,
+            self.conn.target_component,
+        )
+        deadline_s = time.monotonic() + timeout_s
+        while time.monotonic() < deadline_s:
+            self._check_workers()
+            with self.telem.lock:
+                expected = self.telem.parameter_count
+                received = len(self.telem.parameters)
+                complete = expected is not None and expected > 0 and received >= expected
+                parameters = dict(self.telem.parameters) if complete else None
+            if parameters is not None:
+                payload = {
+                    "expected_count": expected,
+                    "received_count": received,
+                    "parameters": dict(sorted(parameters.items())),
+                }
+                destination = Path(output_path)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                temporary = destination.with_suffix(destination.suffix + ".tmp")
+                temporary.write_text(
+                    json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                temporary.replace(destination)
+                print(
+                    f"[demo] downloaded {received}/{expected} parameters",
+                    flush=True,
+                )
+                return
+            self._sleep_checked(0.1)
+        with self.telem.lock:
+            expected = self.telem.parameter_count
+            received = len(self.telem.parameters)
+        raise TimeoutError(
+            "parameter download incomplete; "
+            f"received={received}; expected={expected}"
+        )
+
     def monitor(self, duration_s: float, log_path: str) -> dict:
-        start = time.time()
+        timer = ScenarioTimer()
         min_wall_dist = math.inf
         max_north = -math.inf
         goal_reached_at = None
@@ -539,7 +723,9 @@ class Demo:
         prev_n: float | None = None
         prev_e = 0.0
         with open(log_path, "w", encoding="utf-8") as log:
-            while time.time() - start < duration_s:
+            while not timer.expired(duration_s):
+                self._check_workers()
+                elapsed_s = timer.elapsed_s()
                 with self.telem.lock:
                     n, e, d = (
                         self.telem.north_m,
@@ -551,8 +737,6 @@ class Demo:
                     planner_status = self.planner_status
                     planner_reason = self.planner_reason
                     planner_waypoint = self.planner_waypoint
-                    planner_path_found_count = self.planner_path_found_count
-                    planner_hold_count = self.planner_hold_count
                 wall_d = distance_to_wall_m(n, e) if self.wall else None
                 if wall_d is not None:
                     min_wall_dist = min(min_wall_dist, wall_d)
@@ -573,11 +757,22 @@ class Demo:
                     and abs(n - GOAL_NORTH_M) < GOAL_TOLERANCE_M
                     and abs(e) < 10.0
                 ):
-                    goal_reached_at = round(time.time() - start, 1)
+                    goal_reached_at = round(elapsed_s, 1)
+                self._monitor_metrics = {
+                    "min_wall_dist_m": (
+                        round(min_wall_dist, 2)
+                        if self.wall and min_wall_dist < math.inf
+                        else None
+                    ),
+                    "breached": breached if self.wall else None,
+                    "max_north_m": round(max_north, 2),
+                    "goal_reached_at_s": goal_reached_at,
+                }
                 log.write(
                     json.dumps(
                         {
-                            "t": round(time.time() - start, 2),
+                            "t": round(elapsed_s, 2),
+                            "utc": datetime.now(timezone.utc).isoformat(),
                             "north_m": round(n, 2),
                             "east_m": round(e, 2),
                             "alt_m": round(-d, 2),
@@ -594,25 +789,103 @@ class Demo:
                 )
                 if goal_reached_at is not None:
                     break
-                time.sleep(0.5)
-        return {
-            "min_wall_dist_m": (
-                round(min_wall_dist, 2) if self.wall else None
-            ),
-            "breached": breached if self.wall else None,
-            "max_north_m": round(max_north, 2),
-            "goal_reached_at_s": goal_reached_at,
-            "distance_sensor_rx": ds_rx,
-            "planner_status": planner_status,
-            "planner_reason": planner_reason,
-            "planner_path_found_count": planner_path_found_count,
-            "planner_hold_count": planner_hold_count,
-        }
+                self._sleep_checked(0.5)
+        return self.summary_snapshot()
+
+    def summary_snapshot(self) -> dict[str, Any]:
+        """Return the latest telemetry, planner, and monitor metrics."""
+
+        with self.telem.lock:
+            armed = self.telem.armed
+            distance_sensor_rx = self.telem.distance_sensor_rx
+            obstacle_tx_count = self.telem.obstacle_tx_count
+            north_m = self.telem.north_m
+        with self.planner_lock:
+            planner_status = self.planner_status
+            planner_reason = self.planner_reason
+            planner_path_found_count = self.planner_path_found_count
+            planner_hold_count = self.planner_hold_count
+        summary = dict(self._monitor_metrics)
+        if summary["max_north_m"] is None:
+            summary["max_north_m"] = round(north_m, 2)
+        summary.update(
+            {
+                "armed": armed,
+                "distance_sensor_rx": distance_sensor_rx,
+                "obstacle_tx_count": obstacle_tx_count,
+                "planner_status": planner_status,
+                "planner_reason": planner_reason,
+                "planner_path_found_count": planner_path_found_count,
+                "planner_hold_count": planner_hold_count,
+            }
+        )
+        return summary
 
     def shutdown(self) -> None:
-        self.stop.set()
-        time.sleep(0.3)
+        self.supervisor.stop_and_join()
         self.conn.close()
+
+
+def empty_summary(scenario: str) -> dict[str, Any]:
+    return {
+        "scenario": scenario,
+        "verdict": "FAIL",
+        "armed": False,
+        "failure_stage": None,
+        "failure_reason": None,
+        "worker_failure": None,
+        "min_wall_dist_m": None,
+        "breached": None,
+        "max_north_m": None,
+        "goal_reached_at_s": None,
+        "distance_sensor_rx": 0,
+        "obstacle_tx_count": 0,
+        "planner_status": "NOT_STARTED",
+        "planner_reason": None,
+        "planner_path_found_count": 0,
+        "planner_hold_count": 0,
+        "clearance_ok": None,
+    }
+
+
+def apply_verdict(summary: dict[str, Any], scenario: str) -> None:
+    """Apply scenario-specific acceptance rules in place."""
+
+    summary["scenario"] = scenario
+    summary["failure_stage"] = None
+    summary["failure_reason"] = None
+    summary["worker_failure"] = None
+    if scenario.startswith("wall"):
+        minimum = summary["min_wall_dist_m"]
+        summary["clearance_ok"] = (
+            minimum is not None and minimum >= MIN_CLEARANCE_M
+        )
+    else:
+        summary["clearance_ok"] = None
+
+    if scenario == "wall_custom_2d":
+        qualified = (
+            summary["armed"]
+            and not summary["breached"]
+            and summary["clearance_ok"]
+            and summary["goal_reached_at_s"] is not None
+            and summary["distance_sensor_rx"] > 0
+            and summary["obstacle_tx_count"] > 0
+            and summary["planner_path_found_count"] > 0
+            and summary["planner_hold_count"] == 0
+            and summary["planner_status"] == PlanStatus.PATH_FOUND.value
+        )
+    elif scenario in ("wall_guided_wpnav", "wall_auto"):
+        qualified = (
+            not summary["breached"]
+            and summary["clearance_ok"]
+            and summary["goal_reached_at_s"] is not None
+        )
+    elif scenario in ("wall_guided", "wall_guided_vel"):
+        qualified = not summary["breached"]
+    else:
+        qualified = summary["goal_reached_at_s"] is not None
+    summary["verdict"] = "PASS" if qualified else "FAIL"
 
 
 def main() -> int:
@@ -632,65 +905,112 @@ def main() -> int:
     parser.add_argument("--url", default="tcp:127.0.0.1:5760")
     parser.add_argument("--duration", type=float, default=90.0)
     parser.add_argument("--log", default=None)
+    parser.add_argument("--summary-json", default=None)
+    parser.add_argument("--params-json", default=None)
     args = parser.parse_args()
     log_path = args.log or f"/demo/logs/{args.scenario}.jsonl"
-
-    demo = Demo(args.url, args.scenario)
-    for target in (demo.rx_loop, demo.heartbeat_loop, demo.obstacle_loop):
-        threading.Thread(target=target, daemon=True).start()
-
+    emitter = SummaryEmitter(args.summary_json)
+    summary = empty_summary(args.scenario)
+    demo: Demo | None = None
+    stage = "connect"
     try:
+        demo = Demo(args.url, args.scenario)
+        stage = "worker_startup"
+        demo.start_worker("rx", demo.rx_loop, stale_after_s=IO_WORKER_STALE_S)
+        demo.start_worker(
+            "heartbeat",
+            demo.heartbeat_loop,
+            stale_after_s=IO_WORKER_STALE_S,
+        )
+        demo.start_worker(
+            "obstacle",
+            demo.obstacle_loop,
+            stale_after_s=FAST_WORKER_STALE_S,
+        )
+        if args.params_json:
+            stage = "parameter_download"
+            demo.download_parameters(args.params_json)
+        stage = "readiness"
         demo.wait_ready_to_arm()
+        stage = "configuration"
         if args.scenario == "wall_guided_wpnav":
             demo.set_param("GUID_OPTIONS", 64)
         if args.scenario == "wall_custom_2d":
             # The WARG planner owns avoidance.
             demo.set_param("AVOID_ENABLE", 0)
         if args.scenario == "wall_auto":
+            stage = "mission_upload"
             demo.upload_goal_mission()
+            stage = "arm"
             demo.set_mode("AUTO")
             demo.arm()
             # The mission starts on arming.
         elif args.scenario == "wall_guided_vel":
+            stage = "takeoff"
             demo.set_mode("GUIDED")
             demo.takeoff(ALT_M)
-            threading.Thread(
-                target=demo.velocity_stream_loop, args=(2.0,), daemon=True
-            ).start()
+            stage = "velocity_startup"
+            demo.start_worker(
+                "velocity",
+                lambda: demo.velocity_stream_loop(2.0),
+                stale_after_s=FAST_WORKER_STALE_S,
+            )
             print("[demo] streaming 2 m/s north velocity setpoints", flush=True)
         elif args.scenario == "wall_custom_2d":
+            stage = "takeoff"
             demo.set_mode("GUIDED")
             demo.takeoff(ALT_M)
-            threading.Thread(target=demo.custom_planner_loop, daemon=True).start()
+            stage = "planner_startup"
+            demo.start_worker(
+                "planner",
+                demo.custom_planner_loop,
+                stale_after_s=FAST_WORKER_STALE_S,
+            )
             print("[demo] WARG 2D planner owns velocity setpoints", flush=True)
         else:
+            stage = "takeoff"
             demo.set_mode("GUIDED")
             demo.takeoff(ALT_M)
+            stage = "goto"
             demo.goto_local(GOAL_NORTH_M, 0.0, ALT_M)
             print(f"[demo] goto {GOAL_NORTH_M} m north sent", flush=True)
 
+        stage = "monitor"
         summary = demo.monitor(args.duration, log_path)
-    finally:
-        demo.shutdown()
-
-    summary["scenario"] = args.scenario
-    if demo.wall:
-        # Native scenarios gate only on wall breach.
-        summary["clearance_ok"] = summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
-        if args.scenario == "wall_custom_2d":
-            qualified = (
-                not summary["breached"]
-                and summary["clearance_ok"]
-                and summary["goal_reached_at_s"] is not None
-                and summary["planner_path_found_count"] > 0
+        apply_verdict(summary, args.scenario)
+    except Exception as exc:  # noqa: BLE001 - scenario boundary
+        traceback.print_exc()
+        if demo is not None:
+            summary.update(demo.summary_snapshot())
+            failure = demo.supervisor.failure()
+            if isinstance(exc, WorkerFailureError):
+                failure = exc.failure
+            summary["worker_failure"] = (
+                failure.to_dict() if failure is not None else None
             )
-            summary["verdict"] = "PASS" if qualified else "FAIL"
-        else:
-            summary["verdict"] = "FAIL" if summary["breached"] else "PASS"
-    else:
-        reached = summary["goal_reached_at_s"] is not None
-        summary["verdict"] = "PASS" if reached else "FAIL"
-    print(f"[demo] summary: {json.dumps(summary)}", flush=True)
+        summary.update(
+            {
+                "scenario": args.scenario,
+                "verdict": "FAIL",
+                "failure_stage": stage,
+                "failure_reason": f"{type(exc).__name__}: {exc}",
+            }
+        )
+    finally:
+        if demo is not None:
+            try:
+                demo.shutdown()
+            except Exception as exc:  # noqa: BLE001 - preserve summary
+                traceback.print_exc()
+                if summary["verdict"] != "FAIL":
+                    summary.update(
+                        {
+                            "verdict": "FAIL",
+                            "failure_stage": "shutdown",
+                            "failure_reason": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+    emitter.emit(summary)
     return 0 if summary["verdict"] == "PASS" else 1
 
 
