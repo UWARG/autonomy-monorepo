@@ -4,6 +4,7 @@
 # With no arguments, runs every scenario. Needs docker + warg/sitl:latest.
 set -u
 cd "$(dirname "$0")"
+python3 -m unittest -v test_arm_readiness.py || exit 1
 mkdir -p logs
 if [ "$#" -eq 0 ]; then
     : > logs/summaries.txt

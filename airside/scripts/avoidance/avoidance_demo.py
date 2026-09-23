@@ -14,6 +14,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 
+from arm_readiness import (
+    ArmReadinessSnapshot,
+    StableArmReadinessGate,
+    missing_arm_preconditions,
+)
+from pymavlink import mavutil
+
 from obstacle_avoidance import (
     BendyRuler2D,
     ObstacleSnapshot,
@@ -24,7 +31,6 @@ from obstacle_avoidance import (
     SectorScan,
     sector_scan_to_snapshot,
 )
-from pymavlink import mavutil
 
 SEND_HZ = 10.0
 SECTORS = 72
@@ -56,6 +62,8 @@ class Telemetry:
     gps_fix: int = 0
     prearm_ok: bool = False
     ekf_using_gps: bool = False
+    global_position_seen: bool = False
+    local_position_seen: bool = False
     home_lat: float | None = None
     home_lon: float | None = None
     mission_requests: list[int] = field(default_factory=list)
@@ -140,6 +148,7 @@ class Demo:
             if kind == "LOCAL_POSITION_NED":
                 with t.lock:
                     t.north_m, t.east_m, t.down_m = msg.x, msg.y, msg.z
+                    t.local_position_seen = True
             elif kind == "ATTITUDE":
                 with t.lock:
                     t.yaw_rad = msg.yaw
@@ -151,9 +160,11 @@ class Demo:
                     )
             elif kind == "GLOBAL_POSITION_INT":
                 with t.lock:
-                    if t.home_lat is None and msg.lat != 0:
-                        t.home_lat = msg.lat / 1e7
-                        t.home_lon = msg.lon / 1e7
+                    if msg.lat != 0 or msg.lon != 0:
+                        t.global_position_seen = True
+                        if t.home_lat is None:
+                            t.home_lat = msg.lat / 1e7
+                            t.home_lon = msg.lon / 1e7
             elif kind == "GPS_RAW_INT":
                 with t.lock:
                     t.gps_fix = msg.fix_type
@@ -258,26 +269,67 @@ class Demo:
             mode_id,
         )
 
-    def wait_ready_to_arm(self, timeout_s: float = 180.0) -> None:
-        """Wait for GPS and EKF readiness."""
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
-            with self.telem.lock:
-                ready = (
-                    self.telem.gps_fix >= 3
-                    and self.telem.ekf_using_gps
-                    and self.telem.home_lat is not None
-                ) or self.telem.prearm_ok
+    def _arm_readiness_state(
+        self,
+    ) -> tuple[ArmReadinessSnapshot, tuple[str, ...]]:
+        with self.telem.lock:
+            snapshot = ArmReadinessSnapshot(
+                gps_fix=self.telem.gps_fix,
+                ekf_using_gps=self.telem.ekf_using_gps,
+                home_position_seen=self.telem.global_position_seen,
+                local_position_seen=self.telem.local_position_seen,
+                prearm_ok=self.telem.prearm_ok,
+            )
+            recent_status = tuple(self.telem.statustexts[-5:])
+        return snapshot, recent_status
+
+    def wait_ready_to_arm(
+        self,
+        timeout_s: float = 180.0,
+        stable_s: float = 5.0,
+    ) -> None:
+        """Wait until every arm prerequisite remains stable."""
+
+        deadline = time.monotonic() + timeout_s
+        gate = StableArmReadinessGate(stable_s=stable_s)
+        reported_missing: tuple[str, ...] | None = None
+        while time.monotonic() < deadline:
+            now_s = time.monotonic()
+            snapshot, _ = self._arm_readiness_state()
+            ready = gate.update(now_s, snapshot)
+            if gate.last_missing != reported_missing:
+                reported_missing = gate.last_missing
+                if reported_missing:
+                    print(
+                        "[demo] waiting for arm readiness: "
+                        + ", ".join(reported_missing),
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[demo] arm prerequisites satisfied; "
+                        f"stabilizing for {stable_s:.1f}s",
+                        flush=True,
+                    )
             if ready:
-                print("[demo] EKF/GPS ready", flush=True)
-                time.sleep(5.0)  # Let the estimate settle.
+                print("[demo] arm readiness stable", flush=True)
                 return
             time.sleep(0.5)
-        raise TimeoutError("EKF/GPS never became ready")
+
+        snapshot, recent_status = self._arm_readiness_state()
+        missing = missing_arm_preconditions(snapshot)
+        raise TimeoutError(
+            "arm readiness timeout; "
+            f"missing={missing}; snapshot={snapshot}; "
+            f"recent_status={recent_status}"
+        )
 
     def arm(self, timeout_s: float = 60.0) -> None:
-        deadline = time.time() + timeout_s
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout_s
+        snapshot, _ = self._arm_readiness_state()
+        if missing_arm_preconditions(snapshot):
+            self.wait_ready_to_arm(timeout_s=timeout_s)
+        while time.monotonic() < deadline:
             self.command(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1)
             for _ in range(30):
                 with self.telem.lock:
@@ -285,7 +337,13 @@ class Demo:
                         print("[demo] armed", flush=True)
                         return
                 time.sleep(0.1)
-        raise TimeoutError("failed to arm")
+        snapshot, recent_status = self._arm_readiness_state()
+        missing = missing_arm_preconditions(snapshot)
+        raise TimeoutError(
+            "failed to arm; "
+            f"missing={missing}; snapshot={snapshot}; "
+            f"recent_status={recent_status}"
+        )
 
     def takeoff(self, alt_m: float, timeout_s: float = 90.0) -> None:
         """Arm and retry takeoff until altitude."""
