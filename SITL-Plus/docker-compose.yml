@@ -1,0 +1,18 @@
+services:
+  sitl-plus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/app/docker/entrypoint_rerun.sh"]
+    ports:
+      - 5761:5761
+      - 14550:14550
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - SENSOR_HOST=host.docker.internal #points to the host machine so run airside on host machine eg powershell terminal instead of wsl 
+    volumes:
+      - ./logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    stdin_open: true
+    tty: true
