@@ -1,8 +1,10 @@
 """Dataclasses used throughout the Airside system."""
 
+import math
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
+from .constants import MIN_VECTOR_NORM
 from .enums import Colours, Direction
 
 
@@ -45,6 +47,25 @@ class Quaternion:
     def to_array(self) -> List[float]:
         return [self.w, self.x, self.y, self.z]
 
+    def normalized(self) -> "Quaternion":
+        """Return this quaternion scaled to unit length.
+
+        Raises:
+            ValueError: If any component is non-finite, or the quaternion is too
+                short for its direction to mean anything.
+        """
+        components = self.to_array()
+        if not all(math.isfinite(component) for component in components):
+            raise ValueError(f"Quaternion must be finite, got {components}.")
+
+        norm = math.sqrt(sum(component * component for component in components))
+        if norm < MIN_VECTOR_NORM:
+            raise ValueError("Quaternion must have non-zero norm.")
+
+        return Quaternion(
+            w=self.w / norm, x=self.x / norm, y=self.y / norm, z=self.z / norm
+        )
+
 
 @dataclass
 class Plane:
@@ -55,6 +76,55 @@ class Plane:
 
     def __str__(self) -> str:
         return f"(offset={self.offset}, normal={self.normal})"
+
+
+@dataclass(frozen=True)
+class ImageFrame:
+    """Where a detector found a target within an image, in pixels.
+
+    "Frame" here is the image's coordinate frame, not a video frame: this carries a
+    detection's location within an image, never pixel data.
+    """
+
+    u: float
+    v: float
+
+    def __str__(self) -> str:
+        return f"(u={self.u}, v={self.v})"
+
+    def to_tuple(self) -> Tuple[float, float]:
+        return (self.u, self.v)
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` if this detection cannot be back-projected."""
+        if not math.isfinite(self.u) or not math.isfinite(self.v):
+            raise ValueError(f"Pixel must be finite, got (u={self.u}, v={self.v}).")
+
+
+@dataclass(frozen=True)
+class TargetPosition:
+    """Where a target is, relative to the drone's body origin, in metres.
+
+    Expressed in the Forward-Right-Down (FRD) body frame. Position only: a single ray
+    to a detection centroid carries no information about how the target is *oriented*,
+    so this deliberately is not a full pose.
+    """
+
+    forward_m: float
+    right_m: float
+    down_m: float
+
+    def __str__(self) -> str:
+        return f"(forward={self.forward_m}, right={self.right_m}, down={self.down_m})"
+
+    def to_array(self) -> List[float]:
+        """As a ``[forward, right, down]`` list."""
+        return [self.forward_m, self.right_m, self.down_m]
+
+    @property
+    def range_m(self) -> float:
+        """Straight-line distance from the drone's body origin to the target."""
+        return math.hypot(self.forward_m, self.right_m, self.down_m)
 
 
 @dataclass
