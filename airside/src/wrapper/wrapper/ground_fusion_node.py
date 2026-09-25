@@ -15,16 +15,17 @@ class GroundFusionNode(Node):
     COMM_TOPIC = "airside_comms/info"
     PUBLISH_INTERVAL_S = 0.2
 
-    #PARAMETER INPUTS FOR RC TRIGGERS
+    # Parameter inputs for RC triggers
     _RC_TRIGGER_CHANNELS: int = 4
     _RC_TRIGGER_THRESHOLD = 1500
 
-    def __init__(self, ) -> None:
+    def __init__(self) -> None:
         super().__init__("ground_fusion_node")
         self._rc_trigger_channel = self._RC_TRIGGER_CHANNELS
         self._rc_trigger_threshold = self._RC_TRIGGER_THRESHOLD
         self.get_logger().info(
-            f"RC trigger configured channel={self._rc_trigger_channel} threshold={self._rc_trigger_threshold}"
+            f"RC trigger configured channel={self._rc_trigger_channel} "
+            f"threshold={self._rc_trigger_threshold}"
         )
         self._last_triggered_channels: list[int] = []
         self._latest_image: Image | None = None
@@ -61,7 +62,8 @@ class GroundFusionNode(Node):
         self.create_timer(self.PUBLISH_INTERVAL_S, self._publish_if_triggered)
 
         self.get_logger().info(
-            "Ground fusion node ready - subscribed to image, range, attitude, rc and publishing airside_comms."
+            "Ground fusion node ready - subscribed to image, range, attitude, rc "
+            "and publishing airside_comms."
         )
 
     def _image_callback(self, msg: Image) -> None:

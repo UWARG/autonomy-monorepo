@@ -12,11 +12,16 @@ UNICODE_TREE_DEBUG = False
 LAPPING_DURATION_SEC = 120.0
 
 # MAVLink message IDs the engine needs streamed from the FCU.
+MAVLINK_MSG_ID_HEARTBEAT = 0
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
 MAVLINK_MSG_ID_RC_CHANNELS = 65
 
 # Per-message stream rates requested from ArduPilot (message ID -> Hz).
 STREAM_RATE_REQUESTS_HZ = {
+    # MAVROS publishes ``mavros/state`` from HEARTBEAT. Keep the source rate
+    # comfortably above the obstacle controller's 1 s telemetry timeout so
+    # ordinary scheduling jitter cannot create a false stale-telemetry hold.
+    MAVLINK_MSG_ID_HEARTBEAT: 2.0,
     MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
     MAVLINK_MSG_ID_RC_CHANNELS: 5.0,
 }

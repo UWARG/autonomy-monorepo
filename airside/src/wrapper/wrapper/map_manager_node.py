@@ -16,7 +16,8 @@ from utils.src.types import Coordinate, Target
 
 
 def target_from_msg(msg: TargetMsg) -> Target:
-    """Convert an airside_interfaces/Target message into a utils Target.
+    """
+    Convert an airside_interfaces/Target message into a utils Target.
 
     Raises KeyError if the colour name is not a Colours member.
     """
@@ -31,9 +32,7 @@ def target_from_msg(msg: TargetMsg) -> Target:
 
 
 class TargetLog:
-    """
-    Append-only JSONL log of received targets, archived on demand.
-    """
+    """Append-only JSONL log of received targets, archived on demand."""
 
     WORKING_FILENAME = "targets.jsonl"
 

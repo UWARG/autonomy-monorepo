@@ -216,3 +216,25 @@ def setup(self, **kwargs):
 ```
 
 Use `self._node` for all ROS 2 calls (subscriptions, publishers, service clients, action clients, timers).
+
+### Obstacle-aware lapping
+
+The lapping subtree uses `ObstacleAwareFlyToWaypoint`. It keeps ArduPilot in
+`GUIDED`, consumes a 360-degree `sensor_msgs/LaserScan` on
+`/obstacle_avoidance/scan`, and publishes ENU `geometry_msgs/TwistStamped`
+commands on `/mavros/setpoint_velocity/cmd_vel` at 10 Hz. No global-position
+setpoint is published while this behavior is active.
+
+The scan frame must be `base_link`. Finite ranges are obstacles and positive
+infinity is observed clear space. Empty, partial, stale, future-dated, frozen,
+wrong-frame, NaN, negative-infinity, or otherwise invalid scans are fail-closed:
+the behavior publishes zero velocity and remains `RUNNING`. Stale pose, GPS,
+altitude, or FC state has the same result. If the pilot leaves `GUIDED` or the
+vehicle is disarmed, the behavior releases setpoint ownership and publishes
+nothing until fresh scan and telemetry have arrived after returning to
+`GUIDED`.
+
+Planner state is published as `diagnostic_msgs/DiagnosticArray` on
+`/obstacle_avoidance/diagnostics`. The production scan adapter must honor this
+contract; the synthetic SITL publisher under `scripts/avoidance/` is for
+qualification only and is not an OAK-D integration.

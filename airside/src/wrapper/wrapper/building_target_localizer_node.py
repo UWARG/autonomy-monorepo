@@ -91,6 +91,7 @@ def localization_result_to_msg(result) -> String:
 
 class BuildingTargetLocalizerNode(Node):
     """Consume processed maps and publish building-relative target descriptions."""
+
     INPUT_TOPIC = "/processed_map"
     OUTPUT_TOPIC = "/targets_located"
 
