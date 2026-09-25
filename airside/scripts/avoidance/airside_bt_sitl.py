@@ -483,6 +483,15 @@ class AirsideBTSitlScenario(Node):
         )
         return self.manager_node_gate.observe(manager_present)
 
+    def require_manager_running(self) -> None:
+        """Fail the scenario if the behavior-tree process exited unexpectedly."""
+
+        if self.manager_process is None:
+            raise RuntimeError("engine manager was not started")
+        return_code = self.manager_process.poll()
+        if return_code is not None:
+            raise RuntimeError(f"engine manager exited unexpectedly with {return_code}")
+
     def stop_manager(self) -> None:
         if self.manager_process is None or self.manager_process.poll() is not None:
             return
@@ -659,6 +668,7 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         stage = "scenario_monitor"
         with log_path.open("w", encoding="utf-8") as log:
             while time.monotonic() - navigation_start_s <= args.duration:
+                node.require_manager_running()
                 now_s = time.monotonic()
                 elapsed_s = now_s - navigation_start_s
                 snapshot = node.snapshot()
@@ -748,6 +758,7 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                     break
                 time.sleep(0.1)
 
+        node.require_manager_running()
         with node.lock:
             diagnostics = dict(node.latest_diagnostics)
             summary.update(

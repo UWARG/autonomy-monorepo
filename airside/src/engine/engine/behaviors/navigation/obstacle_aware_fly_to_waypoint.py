@@ -451,6 +451,10 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
             "planner_status": decision.planner_status,
             "reason": decision.reason or "",
             "scan_age_s": f"{scan_age_s:.6f}",
+            "pose_age_s": self._format_age(now_s, self._pose_received_s),
+            "fix_age_s": self._format_age(now_s, self._fix_received_s),
+            "altitude_age_s": self._format_age(now_s, self._altitude_received_s),
+            "state_age_s": self._format_age(now_s, self._state_received_s),
             "minimum_clearance_m": self._format_optional(
                 decision.minimum_clearance_m
             ),
@@ -468,6 +472,10 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
     @staticmethod
     def _format_optional(value: float | None) -> str:
         return "" if value is None else f"{value:.6f}"
+
+    @staticmethod
+    def _format_age(now_s: float, received_s: float | None) -> str:
+        return "" if received_s is None else f"{now_s - received_s:.6f}"
 
     def terminate(self, new_status: py_trees.common.Status) -> None:
         if self._active and self._can_command():
