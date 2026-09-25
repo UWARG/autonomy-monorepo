@@ -10,10 +10,10 @@ import rclpy.node
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from mavros_msgs.msg import State
-from obstacle_avoidance import PlannerConfig, Point2D, sector_scan_to_snapshot
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan, NavSatFix, NavSatStatus
 from std_msgs.msg import Float64
+from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 from engine import blackboard_keys
 from engine.constants import (
@@ -31,7 +31,7 @@ from engine.obstacle_navigation import (
     ScanConversion,
     prepare_sector_scan,
 )
-from utils.src.waypoint_utils import east_north_coordinate_offset_m
+from obstacle_avoidance import PlannerConfig, Point2D, sector_scan_to_snapshot
 
 _SCAN_TOPIC_DEFAULT = "/obstacle_avoidance/scan"
 _DIAGNOSTICS_TOPIC = "/obstacle_avoidance/diagnostics"

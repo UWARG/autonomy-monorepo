@@ -9,24 +9,24 @@ from InquirerPy import inquirer
 from InquirerPy.base.control import Choice
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from ci import affected_projects, run_ci_pipeline
+from doctor import CheckStatus, run_doctor
 from errors import WargError
 from errors import GitError
 from git_adapter import GitAdapter
-from github_adapter import GitHubAdapter
+from github_adapter import GitHubAdapter, GitHubError, GitHubRepository
 from models import Project
 from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
+from constants import BOOTCAMP_UPSTREAM
 from runner import CommandRunner
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
 console = Console()
-GITHUB_SSH_DOCS_URL = (
-    "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
-)
 
 
 @app.callback()
@@ -88,6 +88,128 @@ def clone(
         )
 
 
+@app.command()
+def bootcamp(
+    destination: Optional[str] = typer.Argument(
+        None, help="Directory to clone into. Defaults to the fork's repository name."
+    ),
+) -> None:
+    """Fork, clone, and configure the WARG autonomy bootcamp repository."""
+    try:
+        with console.status("Forking the bootcamp repository..."):
+            fork = GitHubAdapter.fork_repository(BOOTCAMP_UPSTREAM)
+    except GitHubError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        _print_manual_fork_instructions()
+        raise typer.Exit(1) from error
+
+    console.print(f"Fork: {fork.url}")
+    clone_dir = Path(destination) if destination else Path(fork.name)
+    try:
+        clone_dir = _clone_bootcamp_fork(fork, destination, clone_dir)
+        _add_bootcamp_remotes(GitAdapter(clone_dir), fork)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}", soft_wrap=True)
+        raise typer.Exit(1) from error
+
+    _print_bootcamp_next_steps(clone_dir)
+
+
+def _clone_bootcamp_fork(
+    fork: GitHubRepository, destination: str | None, clone_dir: Path
+) -> Path:
+    if not clone_dir.exists():
+        _clone_repository(fork.ssh_url, destination, full=False)
+        return clone_dir.resolve()
+
+    clone_dir = clone_dir.resolve()
+    if not (clone_dir / ".git").exists():
+        raise GitError(
+            f"{clone_dir} already exists and is not a Git repository. Move it "
+            "aside or pass a different destination."
+        )
+    console.print(f"Reusing the existing clone at {clone_dir}.", soft_wrap=True)
+    return clone_dir
+
+
+def _add_bootcamp_remotes(git: GitAdapter, fork: GitHubRepository) -> None:
+    origin = _add_or_validate_remote(
+        git, "origin", fork.ssh_url, _repository_slug(fork.url), required=True
+    )
+    upstream_url = (
+        f"git@github.com:{BOOTCAMP_UPSTREAM}.git"
+        if origin.startswith("git@")
+        else f"https://github.com/{BOOTCAMP_UPSTREAM}.git"
+    )
+    _add_or_validate_remote(git, "upstream", upstream_url, BOOTCAMP_UPSTREAM.lower())
+
+
+def _add_or_validate_remote(
+    git: GitAdapter,
+    name: str,
+    url: str,
+    expected_slug: str | None,
+    *,
+    required: bool = False,
+) -> str:
+    added, current = git.add_remote_if_absent(name, url)
+    if added:
+        console.print(f"Set remote [bold]{name}[/bold] to {url}", soft_wrap=True)
+        return current
+
+    if current == url or _repository_slug(current) == expected_slug:
+        return current
+
+    if required:
+        raise GitError(
+            f"Remote {name} points at {current}, not your fork ({url}). Repoint "
+            f"it yourself, then rerun:\n  git remote set-url {name} {url}"
+        )
+    console.print(
+        f"[yellow]Warning:[/yellow] Remote [bold]{name}[/bold] already points "
+        f"at {current}, not {url}. Leaving it unchanged.",
+        soft_wrap=True,
+    )
+    return current
+
+
+def _repository_slug(url: str) -> str | None:
+    match = re.fullmatch(
+        r"(?:git@github\.com:|(?:ssh|https)://[^/]*github\.com/)"
+        r"([^/]+)/(.+?)(?:\.git)?/?",
+        url,
+    )
+    if not match:
+        return None
+    owner, name = match.groups()
+    return f"{owner}/{name}".lower()
+
+
+def _print_manual_fork_instructions() -> None:
+    console.print(
+        "\nFork the bootcamp repository yourself, then rerun [bold]warg "
+        "bootcamp[/bold] to finish setup."
+    )
+    console.print("\n[bold]With the gh CLI[/bold]")
+    console.print("  gh auth login")
+    console.print(f"  gh repo fork {BOOTCAMP_UPSTREAM} --clone=false")
+    console.print("\n[bold]With the GitHub web UI[/bold]")
+    console.print(f"  1. Open https://github.com/{BOOTCAMP_UPSTREAM}")
+    console.print("  2. Click 'Fork', keep the default name, and create the fork.")
+    console.print("  3. Rerun 'warg bootcamp' to finish setup.")
+    console.print(
+        "     Already have the fork cloned? Use 'warg clone <your-fork-ssh-url>'."
+    )
+
+
+def _print_bootcamp_next_steps(clone_dir: Path) -> None:
+    readme = clone_dir / "README.md"
+    console.print("\n[bold]Next steps[/bold]")
+    console.print(f"  cd {clone_dir}", soft_wrap=True)
+    console.print("  Then read the bootcamp guide before anything else:")
+    console.print(f"    [bold]{readme}[/bold]", soft_wrap=True)
+
+
 @app.command("list")
 def list_projects() -> None:
     """List discovered projects."""
@@ -128,13 +250,44 @@ def info(project: str) -> None:
 
 
 @app.command()
-def doctor() -> None:
-    """Print Git config, SSH environment, and remote access diagnostics."""
-    console.print("[bold]Git repository access[/bold]")
-    root = find_repo_root_or_none()
-    git = GitAdapter(root)
-    for line in git.repository_access_diagnostics():
-        console.print(f"  - {line}")
+def doctor(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Show the output of every command doctor runs.",
+    ),
+) -> None:
+    """Check this machine for common WARG dev environment problems."""
+    icons = {
+        CheckStatus.OK: ("✓", "green"),
+        CheckStatus.WARN: ("!", "yellow"),
+        CheckStatus.FAIL: ("✗", "red"),
+    }
+
+    console.print(f"[bold]warg doctor[/bold] v{package_version('warg-cli')}")
+
+    sections = run_doctor(find_repo_root_or_none())
+    failed = False
+    for section in sections:
+        console.print(f"\n[bold]{section.title}[/bold]")
+        for check in section.checks:
+            icon, style = icons[check.status]
+            console.print(f"  [{style}]{icon}[/{style}] {check.detail}")
+            if check.fix and check.status != CheckStatus.OK:
+                console.print(f"      [dim]fix: {check.fix}[/dim]")
+            if verbose:
+                for entry in check.transcript:
+                    for line in entry.splitlines():
+                        console.print(f"      [dim]{escape(line)}[/dim]")
+            failed = failed or check.status == CheckStatus.FAIL
+
+    if failed:
+        console.print(
+            "\n[red]Some checks failed.[/red] Fix the items marked ✗ and rerun "
+            "'warg doctor'."
+        )
+        raise typer.Exit(1)
+    console.print("\nNo blocking problems found.")
 
 
 @app.command()
@@ -315,8 +468,8 @@ def _warn_if_https_repository(repository: str) -> None:
     console.print(
         "[yellow]Warning:[/yellow] This repository is configured with an HTTPS "
         "remote, so you will be unable to push to it through the expected WARG "
-        "SSH workflow. Set up GitHub SSH access and clone with the SSH URL "
-        f"instead: {GITHUB_SSH_DOCS_URL}"
+        "SSH workflow. Set up GitHub SSH access and clone with the SSH URL instead: "
+        "https://docs.github.com/en/authentication/connecting-to-github-with-ssh"
     )
 
 
@@ -408,9 +561,7 @@ def _materialize_dependency_graph(
         requested_paths.update(missing_paths)
 
 
-def _extra_paths_for_order(
-    registry: Registry, order: list[Project]
-) -> set[str]:
+def _extra_paths_for_order(registry: Registry, order: list[Project]) -> set[str]:
     extra: set[str] = set()
     for project in order:
         entry = registry.entries.get(project.name)
@@ -462,12 +613,34 @@ def _unload_paths(
         if name in registry.projects
     }
     paths.update(dependents)
+
+    unloaded_names = {project_name} | dependent_names
     if include_dependencies and project_name in registry.projects:
-        paths.update(
-            project.relative_path for project in registry.dependency_order(project_name)
-        )
+        for project in registry.dependency_order(project_name):
+            paths.add(project.relative_path)
+            unloaded_names.add(project.name)
+
+    paths.update(_removable_extra_paths(registry, unloaded_names))
     return sorted(paths), dependents
 
+
+def _removable_extra_paths(
+    registry: Registry, unloaded_names: set[str]
+) -> set[str]:
+    candidate: set[str] = set()
+    for name in unloaded_names:
+        entry = registry.entries.get(name)
+        if entry is not None:
+            candidate.update(entry.extra_paths)
+
+    retained: set[str] = set()
+    for name in registry.projects: 
+        if name not in unloaded_names:
+            entry = registry.entries.get(name)
+            if entry is not None:
+                retained.update(entry.extra_paths)
+
+    return candidate - retained
 
 def _path_for_project(root: Path, project_name: str) -> str:
     registry = Registry(root)

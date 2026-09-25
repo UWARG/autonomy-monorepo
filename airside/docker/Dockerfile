@@ -1,26 +1,28 @@
 FROM ros:humble-ros-base AS dev
 
 ENV DEBIAN_FRONTEND=noninteractive
-ARG ROS_HUMBLE_SNAPSHOT=2026-07-02
+ARG ROS_SNAPSHOT=2026-08-07
 
 SHELL ["/bin/bash", "-lc"]
 
-RUN gpg --batch --keyserver hkp://keyserver.ubuntu.com:80 \
-      --recv-keys 4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA \
-  && gpg --batch --export 4B63CF8FDE49746E98FA01DDAD19BAB3CBF125EA \
-      > /usr/share/keyrings/ros-snapshots.gpg \
-  && rm -f /etc/apt/sources.list.d/ros2.sources \
-  && printf '%s\n' \
-      "deb [arch=amd64 signed-by=/usr/share/keyrings/ros-snapshots.gpg] http://snapshots.ros.org/humble/${ROS_HUMBLE_SNAPSHOT}/ubuntu jammy main" \
-      > /etc/apt/sources.list.d/ros2-snapshot.list
+COPY airside/docker/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+RUN gpg --batch --yes --dearmor \
+      --output /usr/share/keyrings/ros-snapshots.gpg \
+      /usr/share/keyrings/ros-snapshots.asc \
+  && rm /usr/share/keyrings/ros-snapshots.asc \
+  && rm /etc/apt/sources.list.d/ros2.sources \
+  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.gpg\n' \
+     "${ROS_SNAPSHOT}" > /etc/apt/sources.list.d/ros2-snapshot.sources
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
     python3-colcon-common-extensions \
+    python3-numpy \
     python3-pip \
     python3-pytest \
     python3-rosdep \
+    python3-shapely \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
@@ -48,8 +50,13 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY obstacle-avoidance/ /monorepo/obstacle-avoidance/
+COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/obstacle-avoidance /monorepo/utils
+RUN pip install \
+    /monorepo/camera \
+    /monorepo/obstacle-avoidance \
+    /monorepo/perception \
+    /monorepo/utils
 
 COPY airside/src/ src/
 
