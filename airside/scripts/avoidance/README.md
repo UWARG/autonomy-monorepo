@@ -43,6 +43,20 @@ docker exec sitl-96 python3 /demo/avoidance_demo.py --scenario wall_auto
 ./run_all.sh
 ```
 
+For a formal airside behavior-tree campaign under WSL, keep high-frequency
+JSONL and rosbag writes on the Linux filesystem and copy the evidence to the
+final host directory when the campaign exits:
+
+```bash
+ARTIFACT_DIR=/mnt/d/warg/pr144-airside-artifacts \
+STAGING_ARTIFACT_DIR=/tmp/pr144-airside-staging \
+DOCKER_BIN=/snap/bin/docker \
+./run_airside_bt_campaign.sh
+```
+
+The staging directory must be unique to the campaign. Partial evidence is also
+copied when a test fails, while attempts are never replaced.
+
 ## Scenarios and expected outcomes
 
 | Scenario | Command path | Expected |

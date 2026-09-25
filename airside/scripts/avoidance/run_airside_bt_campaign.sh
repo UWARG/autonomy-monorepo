@@ -4,9 +4,38 @@ set -uo pipefail
 
 cd "$(dirname "$0")"
 
-artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+final_artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+mkdir -p "$final_artifact_dir"
+final_artifact_dir="$(realpath "$final_artifact_dir")"
+
+# ROS bag and JSONL flushes can briefly stall callbacks when the destination is
+# a Windows-mounted WSL path. Formal runs may stage on the Linux filesystem and
+# copy the complete (or partial, on failure) evidence to the requested location.
+artifact_dir="${STAGING_ARTIFACT_DIR:-$final_artifact_dir}"
 mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
+if [ "$artifact_dir" != "$final_artifact_dir" ] \
+    && [ -n "$(find "$artifact_dir" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+    echo "staging artifact directory must be empty: $artifact_dir" >&2
+    exit 1
+fi
+
+sync_artifacts() {
+    if [ "$artifact_dir" != "$final_artifact_dir" ]; then
+        cp -a "$artifact_dir"/. "$final_artifact_dir"/
+    fi
+}
+
+finish() {
+    status=$?
+    trap - EXIT
+    if ! sync_artifacts; then
+        status=1
+    fi
+    exit "$status"
+}
+trap finish EXIT
+
 export ARTIFACT_DIR="$artifact_dir"
 
 planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
