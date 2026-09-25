@@ -6,6 +6,7 @@ from pathlib import Path
 
 from harness_runtime import (
     ScenarioTimer,
+    StableConditionGate,
     SummaryEmitter,
     WorkerFailureError,
     WorkerSupervisor,
@@ -23,6 +24,19 @@ class FakeClock:
 
 
 class HarnessRuntimeTests(unittest.TestCase):
+    def test_stable_condition_gate_resets_on_manager_disappearance(self) -> None:
+        clock = FakeClock()
+        gate = StableConditionGate(2.0, clock=clock)
+
+        self.assertFalse(gate.observe(True))
+        clock.now_s = 1.9
+        self.assertFalse(gate.observe(True))
+        self.assertFalse(gate.observe(False))
+        clock.now_s = 3.0
+        self.assertFalse(gate.observe(True))
+        clock.now_s = 5.0
+        self.assertTrue(gate.observe(True))
+
     def test_only_nonzero_ardupilot_heartbeat_is_accepted(self) -> None:
         self.assertFalse(is_flight_controller_heartbeat(0, 3, 3))
         self.assertFalse(is_flight_controller_heartbeat(1, 8, 3))

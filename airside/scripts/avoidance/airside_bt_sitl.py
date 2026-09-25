@@ -18,6 +18,7 @@ from typing import Any
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseStamped, TwistStamped
+from harness_runtime import StableConditionGate
 from mavros_msgs.msg import GlobalPositionTarget, ParamEvent, State
 from mavros_msgs.srv import CommandBool, ParamPull, SetMode
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
@@ -45,6 +46,8 @@ GOAL_ALTITUDE_M = 15.0
 GOAL_TOLERANCE_M = 1.0
 MIN_CLEARANCE_M = 1.0
 EARTH_RADIUS_M = 6_371_000.0
+SCAN_PERIOD_S = 0.05
+MANAGER_STABLE_S = 2.0
 
 
 class AirsideBTSitlScenario(Node):
@@ -72,6 +75,7 @@ class AirsideBTSitlScenario(Node):
         self.scan_mode = "normal"
         self.frozen_scan_stamp = None
         self.manager_process: subprocess.Popen[str] | None = None
+        self.manager_node_gate = StableConditionGate(MANAGER_STABLE_S)
 
         self._scenario_subscriptions = [
             self.create_subscription(State, "/mavros/state", self._state_callback, 10),
@@ -123,7 +127,7 @@ class AirsideBTSitlScenario(Node):
             "/obstacle_avoidance/scan",
             qos_profile_sensor_data,
         )
-        self.scan_timer = self.create_timer(0.1, self._publish_scan)
+        self.scan_timer = self.create_timer(SCAN_PERIOD_S, self._publish_scan)
         self.arm_client = self.create_client(CommandBool, "/mavros/cmd/arming")
         self.mode_client = self.create_client(SetMode, "/mavros/set_mode")
         self.param_pull_client = self.create_client(ParamPull, "/mavros/param/pull")
@@ -270,8 +274,8 @@ class AirsideBTSitlScenario(Node):
         message.angle_max = ANGLE_MIN_RAD + angle_increment * (beam_count - 1)
         message.range_min = RANGE_MIN_M
         message.range_max = RANGE_MAX_M
-        message.scan_time = 0.1
-        message.time_increment = 0.1 / beam_count
+        message.scan_time = SCAN_PERIOD_S
+        message.time_increment = SCAN_PERIOD_S / beam_count
         message.ranges = list(ranges)
         self.scan_publisher.publish(message)
 
@@ -471,6 +475,14 @@ class AirsideBTSitlScenario(Node):
             start_new_session=True,
         )
 
+    def manager_ready(self) -> bool:
+        """Return true after the engine ROS node has been stable long enough."""
+
+        manager_present = ("engine_manager", "/") in set(
+            self.get_node_names_and_namespaces()
+        )
+        return self.manager_node_gate.observe(manager_present)
+
     def stop_manager(self) -> None:
         if self.manager_process is None or self.manager_process.poll() is not None:
             return
@@ -627,6 +639,8 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         node.write_waypoints(waypoints_path)
         stage = "manager_startup"
         node.start_manager(waypoints_path)
+        stage = "manager_readiness"
+        node.wait_for("stable engine manager ROS node", node.manager_ready, 60.0)
         stage = "guided_mode"
         node.set_mode("GUIDED")
         stage = "arming"

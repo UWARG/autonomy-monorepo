@@ -188,6 +188,30 @@ class ScenarioTimer:
         return self.elapsed_s() >= duration_s
 
 
+class StableConditionGate:
+    """Require a boolean condition to remain true for a monotonic interval."""
+
+    def __init__(
+        self,
+        stable_for_s: float,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if stable_for_s < 0.0:
+            raise ValueError("stable interval must be non-negative")
+        self._stable_for_s = stable_for_s
+        self._clock = clock
+        self._true_since_s: float | None = None
+
+    def observe(self, condition: bool) -> bool:
+        now_s = self._clock()
+        if not condition:
+            self._true_since_s = None
+            return False
+        if self._true_since_s is None:
+            self._true_since_s = now_s
+        return now_s - self._true_since_s >= self._stable_for_s
+
+
 class SummaryEmitter:
     """Write and print exactly one machine-readable scenario summary."""
 
