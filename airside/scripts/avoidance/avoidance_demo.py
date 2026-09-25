@@ -33,7 +33,6 @@ from harness_runtime import (
     has_callable_attribute,
     is_flight_controller_heartbeat,
 )
-
 from obstacle_avoidance import (
     BendyRuler2D,
     ObstacleSnapshot,
