@@ -172,6 +172,13 @@ def main() -> int:
     script_dir = Path(__file__).resolve().parent
     artifact_dir = Path(args.artifact_dir).resolve()
     artifact_dir.mkdir(parents=True, exist_ok=False)
+    test_env = os.environ.copy()
+    planner_src = script_dir.parents[2] / "obstacle-avoidance" / "src"
+    test_env["PYTHONPATH"] = os.pathsep.join(
+        value
+        for value in (str(planner_src), test_env.get("PYTHONPATH", ""))
+        if value
+    )
 
     unit_log = artifact_dir / "harness-unittest.txt"
     with unit_log.open("w", encoding="utf-8") as output:
@@ -188,12 +195,28 @@ def main() -> int:
                 "test_*.py",
             ],
             cwd=script_dir,
+            env=test_env,
             stdout=output,
             stderr=subprocess.STDOUT,
             check=False,
         )
     if unit_result.returncode != 0:
         print(f"harness tests failed; see {unit_log}", flush=True)
+        return 1
+
+    probe_result = subprocess.run(
+        [
+            sys.executable,
+            str(script_dir / "unknown_sector_probe.py"),
+            "--output-json",
+            str(artifact_dir / "unknown-sector-probe.json"),
+        ],
+        cwd=script_dir,
+        env=test_env,
+        check=False,
+    )
+    if probe_result.returncode != 0:
+        print("unknown-sector probe failed", flush=True)
         return 1
 
     control_results: list[dict[str, Any]] = []

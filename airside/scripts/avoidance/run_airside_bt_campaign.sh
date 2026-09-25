@@ -9,7 +9,11 @@ mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
 export ARTIFACT_DIR="$artifact_dir"
 
-python3 -m unittest -v test_synthetic_laserscan.py || exit 1
+planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
+export PYTHONPATH="$planner_src${PYTHONPATH:+:$PYTHONPATH}"
+python3 -m unittest discover -v -s . -p 'test_*.py' || exit 1
+python3 unknown_sector_probe.py \
+    --output-json "$artifact_dir/unknown-sector-probe.json" || exit 1
 
 suite_status=0
 control_scenarios="${CONTROL_SCENARIOS:-clear dropout frozen invalid partial pilot_takeover}"
