@@ -4,7 +4,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-lc"]
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo "deb [trusted=yes] http://snapshots.ros.org/humble/2026-08-07/ubuntu jammy main" > /etc/apt/sources.list.d/ros2-snapshot.list \
+  && apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
     python3-colcon-common-extensions \
@@ -13,13 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pytest \
     python3-rosdep \
     python3-shapely \
-    ros-humble-mavros \
-    ros-humble-mavros-extras \
+    ros-humble-mavros=2.14.* \
+    ros-humble-mavros-extras=2.14.* \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
     ros-humble-rosbridge-suite \
     wget \
+  && rm -f /etc/apt/sources.list.d/ros2-snapshot.list \
   && rm -rf /var/lib/apt/lists/*
 
 RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh

@@ -50,15 +50,15 @@ export interface PositionMessage {
 
 /**
  * payload for { "type": "target" }
- *
- * PROVISIONAL 
+ * Mirrors TargetPayload in utils/src/messages.py.
  */
 export interface TargetMessage {
   /** degrees */
-  lat: number; 
+  lat: number;
   lon: number;
-  label?: string; 
+  label?: string;
   tracking?: boolean;
+  cluster?: number;
 }
 
 /**
