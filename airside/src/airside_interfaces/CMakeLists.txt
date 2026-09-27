@@ -15,6 +15,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ProcessedMap.msg"
   "msg/SpatialTarget.msg"
   "msg/Target.msg"
+  "msg/TriggerImageCapture.msg"
+  "msg/TriggeredImageCapture.msg"
   "msg/WingBoundary.msg"
   DEPENDENCIES geometry_msgs sensor_msgs std_msgs
 )
@@ -26,3 +28,4 @@ endif()
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
+

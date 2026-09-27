@@ -16,6 +16,7 @@
   <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>airside_interfaces</depend>
   <depend>py_trees</depend>
   <depend>py_trees_ros</depend>
   <depend>py_trees_ros_interfaces</depend>
@@ -33,3 +34,4 @@
     <build_type>ament_python</build_type>
   </export>
 </package>
+
