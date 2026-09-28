@@ -148,6 +148,30 @@ blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
 
+### Triggered image capture
+
+The default launch starts `triggered_image_publisher`, implemented in
+`src/wrapper/wrapper/triggered_image_publisher_node.py`. It caches `/camera/image_raw`
+(`sensor_msgs/Image`), `/mavros/global_position/global` (`sensor_msgs/NavSatFix`),
+and `/mavros/imu/data` (`sensor_msgs/Imu`). Sensor topic names can be changed
+using ROS remapping.
+
+Send a request after all three sensor feeds are available:
+
+```bash
+ros2 topic pub --once /TriggerImageCapture airside_interfaces/msg/TriggerImageCapture "{command: 'capture'}"
+```
+
+Groundside must subscribe to `/TriggeredImageCapture` with type
+`airside_interfaces/msg/TriggeredImageCapture`. Each accepted request publishes
+one message containing the latest image, GPS coordinates and IMU (including
+orientation). The outer header records packaging time; the original image and
+IMU timestamps are preserved. These are the latest independent readings, not
+time-synchronized measurements. Requests with missing inputs are logged and
+discarded; send another request once the feeds are ready. Other commands are
+ignored.
+
+
 ### Map manager
 
 The `map_manager` node (in the `wrapper` package) is launched alongside the engine and records detected targets for post processing.

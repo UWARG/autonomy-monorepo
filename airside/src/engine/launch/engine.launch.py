@@ -86,6 +86,12 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="wrapper",
+                executable="triggered_image_publisher",
+                name="triggered_image_publisher",
+                output="both",
+            ),
+            Node(
+                package="wrapper",
                 executable="building_target_localizer",
                 name="building_target_localizer",
                 output="screen",
