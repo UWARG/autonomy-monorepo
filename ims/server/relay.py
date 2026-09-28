@@ -53,12 +53,12 @@ class Relay:
         self._airside_count += 1
         try:
             async for raw in websocket:
-                text = raw if isinstance(raw, str) else raw.decode()
                 try:
-                    message = decode(text)
-                except (msgspec.DecodeError, msgspec.ValidationError) as error:
+                    message = decode(raw)
+                except msgspec.DecodeError as error:
                     log.warning("dropping invalid airside message: %s", error)
                     continue
+                text = raw if isinstance(raw, str) else raw.decode()
                 self._latest[type(message).__struct_config__.tag] = text
                 broadcast(self._clients, text)
         finally:
