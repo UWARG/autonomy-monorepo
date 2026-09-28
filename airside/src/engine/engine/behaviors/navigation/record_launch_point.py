@@ -6,15 +6,10 @@ from engine import blackboard_keys
 from engine.constants import RETURN_ALTITUDE_M
 from engine.ground_log import send_to_ground
 from mavros_msgs.msg import HomePosition, State
-from std_srvs.srv import Trigger
 from utils.src.types import Coordinate
 
 _STATE_TOPIC = "mavros/state"
 _HOME_TOPIC = "mavros/home_position/home"
-_HOME_UPDATE_SERVICE = "mavros/home_position/req_update"
-
-# Re-request the home position if the FCU has not answered within this long.
-_HOME_REQUEST_RETRY_S = 5.0
 
 
 class RecordLaunchPoint(py_trees.behaviour.Behaviour):
@@ -22,13 +17,14 @@ class RecordLaunchPoint(py_trees.behaviour.Behaviour):
     Records where the drone was armed as the mission's landing spot.
 
     ArduPilot resets its home position to the current location on arming, so
-    once the drone is armed this requests a fresh home position from the FCU
-    and writes it to ``launch_point`` at ``RETURN_ALTITUDE_M`` relative
-    altitude. Reading it back from the FCU (rather than sampling GPS here)
-    keeps the true arming spot even if the engine restarts mid-flight.
+    once the drone is seen armed, the next home position streamed by the FCU
+    (``HOME_POSITION`` is requested in ``ConfigureStreamRates``) is written to
+    ``launch_point`` at ``RETURN_ALTITUDE_M`` relative altitude. Reading it
+    back from the FCU (rather than sampling GPS here) keeps the true arming
+    spot even if the engine restarts mid-flight.
 
     Returns RUNNING until armed and a home position has been received after
-    the request, then SUCCESS.
+    arming was seen, then SUCCESS.
     """
 
     def __init__(self, name: str = "RecordLaunchPoint") -> None:
@@ -44,7 +40,7 @@ class RecordLaunchPoint(py_trees.behaviour.Behaviour):
         self._latest_state: State | None = None
         self._latest_home: HomePosition | None = None
         self._home_received_s = 0.0
-        self._requested_s: float | None = None
+        self._armed_seen_s: float | None = None
 
         self._state_sub = self._node.create_subscription(
             msg_type=State,
@@ -58,9 +54,6 @@ class RecordLaunchPoint(py_trees.behaviour.Behaviour):
             callback=self._home_callback,
             qos_profile=10,
         )
-        self._home_update_client = self._node.create_client(
-            srv_type=Trigger, srv_name=_HOME_UPDATE_SERVICE
-        )
 
     def _state_callback(self, msg: State) -> None:
         self._latest_state = msg
@@ -73,49 +66,29 @@ class RecordLaunchPoint(py_trees.behaviour.Behaviour):
         return self._node.get_clock().now().nanoseconds / 1e9
 
     def initialise(self) -> None:
-        self._requested_s = None
+        self._armed_seen_s = None
 
     def update(self) -> py_trees.common.Status:
-        if self._latest_state is None:
-            self._node.get_logger().warning(
-                f"{self.name}: waiting for '{_STATE_TOPIC}'",
-                throttle_duration_sec=5.0,
-            )
-            return py_trees.common.Status.RUNNING
-
-        if not self._latest_state.armed:
+        if self._latest_state is None or not self._latest_state.armed:
+            self._armed_seen_s = None
             self._node.get_logger().warning(
                 f"{self.name}: waiting for the pilot to arm",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
 
+        if self._armed_seen_s is None:
+            self._armed_seen_s = self._now_s()
+
         # Only trust a home position that arrived after arming was seen, since
         # ArduPilot also sets a provisional home at first GPS lock.
-        if self._requested_s is not None and self._home_received_s >= self._requested_s:
-            return self._record_launch_point()
-
-        if (
-            self._requested_s is None
-            or self._now_s() - self._requested_s > _HOME_REQUEST_RETRY_S
-        ):
-            self._request_home()
-
-        return py_trees.common.Status.RUNNING
-
-    def _request_home(self) -> None:
-        if not self._home_update_client.service_is_ready():
+        if self._home_received_s <= self._armed_seen_s:
             self._node.get_logger().warning(
-                f"{self.name}: waiting for '{_HOME_UPDATE_SERVICE}' service",
+                f"{self.name}: waiting for a home position on '{_HOME_TOPIC}'",
                 throttle_duration_sec=5.0,
             )
-            return
+            return py_trees.common.Status.RUNNING
 
-        self._home_update_client.call_async(Trigger.Request())
-        self._requested_s = self._now_s()
-        self._node.get_logger().info(f"{self.name}: requesting home position")
-
-    def _record_launch_point(self) -> py_trees.common.Status:
         launch_point = Coordinate(
             self._latest_home.geo.latitude,
             self._latest_home.geo.longitude,
