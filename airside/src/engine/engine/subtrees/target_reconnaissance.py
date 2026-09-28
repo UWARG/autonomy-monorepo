@@ -1,18 +1,17 @@
 """
-Target reconnaissance subtree: passes the drone to the pilot for manual target
-scanning, waits for the recon-complete RC switch, then triggers groundside
-post-processing.
+Target reconnaissance subtree: the engine commands nothing while the pilot
+flies and captures images on manual triggers through the always-running
+``triggered_image_publisher`` node. Waits for the recon-complete RC switch
+before handing over to the land phase.
 
 TargetReconnaissance
-├── WaitForReconComplete
-└── TriggerPostProcessing
+└── WaitForReconComplete
 """
 
 from __future__ import annotations
 
 import py_trees
 from engine.behaviors.rc.rc_switch import WaitForRCSwitch
-from engine.behaviors.trigger_post_processing import TriggerPostProcessing
 from engine.constants import RC_SWITCHES_ENABLED, RECON_COMPLETE_RC_CHANNEL
 
 
@@ -27,7 +26,6 @@ def create_target_reconnaissance_subtree() -> py_trees.behaviour.Behaviour:
                 channel=RECON_COMPLETE_RC_CHANNEL,
             )
         )
-    children.append(TriggerPostProcessing())
 
     return py_trees.composites.Sequence(
         name="TargetReconnaissance",

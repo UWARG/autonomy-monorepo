@@ -11,11 +11,20 @@ airside/
 │   ├── Dockerfile
 │   └── airside_entrypoint.sh
 ├── src/
-│   ├── airside_interfaces/
-│   ├── engine/
-│   └── wrapper/
+│   ├── airside_bringup/      # Launch file that starts the whole system
+│   ├── airside_interfaces/   # Custom ROS 2 messages
+│   ├── camera/               # camera, triggered_image_publisher
+│   ├── engine/               # manager (behavior-tree mission), rc_bridge, heartbeat + mission config
+│   └── navigation/           # position_controller
 └── warg.toml
 ```
+
+Packages are grouped by domain; each lists its nodes (executables) above.
+Everything is started by `src/airside_bringup/launch/airside.launch.py`
+(`ros2 launch airside_bringup airside.launch.py`).
+
+The `camera` package's Python module is `camera_ros`, so it does not shadow the
+monorepo `camera` library it wraps.
 
 ## Prerequisites
 
@@ -62,7 +71,6 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
-| `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
 | `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
 
 ### Networking
@@ -82,6 +90,37 @@ ROS logs (rclpy logger output and captured node stdout) are written to
 ### Behavior tree
 
 The engine is built with [py_trees_ros](https://py-trees-ros.readthedocs.io/en/latest/).  The tree is composed in `src/engine/engine/manager.py` and ticked every `TICK_PERIOD_MS` milliseconds.
+
+#### Mission
+
+1. **Record launch point**: once the pilot arms, the FCU home position (which
+   ArduPilot resets at arming) is read back and stored as the landing spot.
+2. **Lapping**: fly the waypoints in `config/waypoints.yaml` as a clockwise
+   sweep, starting from the side facing the launch point, until the lapping
+   deadline.
+3. **Reconnaissance**: the engine commands nothing and waits for the pilot to
+   flip the recon-complete RC switch (`RECON_COMPLETE_RC_CHANNEL`). The pilot
+   flies (switching out of GUIDED pauses the mission) and captures images on
+   manual triggers through `triggered_image_publisher`. Switching back to
+   GUIDED with the switch flipped continues to the land phase.
+4. **Land**: fly back over the launch point at `RETURN_ALTITUDE_M` and land.
+
+The engine never changes flight mode. The whole mission is wrapped in
+`PauseUnlessGuided`: it waits for the pilot to select GUIDED, freezes (keeping
+its progress) whenever the pilot switches to any other mode, and resumes when
+GUIDED is selected again. The only mode change it causes is the final land
+command, which puts the FCU in LAND.
+
+#### Position controller
+
+Behaviors never command MAVROS setpoints directly. They publish where they
+want to go to the always-running `position_controller` node, which forwards
+each target to MAVROS.
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/position_controller/target` | `airside_interfaces/Coordinate` | subscribe | Target `lat`, `lon` and relative `alt` (m) |
+| `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
 
 #### Adding a behavior
 
@@ -150,8 +189,9 @@ blackboard.altitude = 0.0
 
 ### Triggered image capture
 
-The default launch starts `triggered_image_publisher`, implemented in
-`src/wrapper/wrapper/triggered_image_publisher_node.py`. It caches `/camera/image_raw`
+The default launch starts `triggered_image_publisher` (always running, respawned
+on exit), implemented in
+`src/camera/camera_ros/triggered_image_publisher_node.py`. It caches `/camera/image_raw`
 (`sensor_msgs/Image`), `/mavros/global_position/global` (`sensor_msgs/NavSatFix`),
 and `/mavros/imu/data` (`sensor_msgs/Imu`). Sensor topic names can be changed
 using ROS remapping.
@@ -171,62 +211,6 @@ time-synchronized measurements. Requests with missing inputs are logged and
 discarded; send another request once the feeds are ready. Other commands are
 ignored.
 
-
-### Map manager
-
-The `map_manager` node (in the `wrapper` package) is launched alongside the engine and records detected targets for post processing.
-
-| Topic | Type | Direction | Purpose |
-|---|---|---|---|
-| `/capture/target_location` | `airside_interfaces/Target` | subscribe | A detected target: `colour` (a `utils.src.enums.Colours` member name, e.g. `"RED"`) and `location` (`airside_interfaces/Coordinate`: `lat`, `lon`, `alt`) |
-| `/trigger_post_processing` | `std_msgs/Empty` | subscribe | Snapshots the current target log to a timestamped file for post processing |
-
-Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is wiped at every startup (one file per run). Each trigger copies it to `targets_<YYYY-MM-DDTHH-MM-SS>.jsonl` in the same directory.
-
-### Building-space target localizer
-
-The `building_target_localizer` wrapper converts processed building planes and
-target points into firefighter-readable location descriptions. The non-ROS
-geometry and localization code lives in the top-level `perception` project.
-
-| Topic | Type | Direction | Purpose |
-|---|---|---|---|
-| `/processed_map` | `airside_interfaces/ProcessedMap` | subscribe | Complete building geometry and target snapshot |
-| `/targets_located` | `std_msgs/String` | publish | Newline-separated final target descriptions |
-
-Both topics use reliable, transient-local, depth-one QoS. Input geometry must
-use `header.frame_id = "mission_frd"`, where +x is north/forward, +y is
-east/right, and +z is down. Plane normals point out of the building and use
-`normal · point + offset = 0`.
-
-Each rectangular wing references two adjacent observed wall planes and gives
-the distance to each opposing wall. The node completes those walls, merges
-connected wings, removes internal faces, and derives outer and inside corners.
-All wings share the supplied ground plane and building height. Disconnected
-wings and footprints containing holes are rejected at snapshot level.
-
-Targets that cannot be snapped safely or have ambiguous geometry are omitted
-from the description string and logged by the wrapper. Other targets in the
-same snapshot continue to be reported. Plane covariance is row-major for
-`[normal.x, normal.y, normal.z, offset]`; target covariance is row-major for
-`[x, y, z]`. Each description includes the propagated 95th-percentile error.
-
-The default node parameters are:
-
-| Parameter | Default |
-|---|---:|
-| `expected_frame_id` | `mission_frd` |
-| `max_snap_distance_m` | `0.5` |
-| `surface_tie_tolerance_m` | `0.1` |
-| `near_wall_distance_m` | `5.0` |
-| `anchor_tie_tolerance_m` | `0.25` |
-| `wall_vertical_tolerance_deg` | `5.0` |
-| `wing_orthogonality_tolerance_deg` | `5.0` |
-| `wing_join_tolerance_m` | `0.05` |
-| `condition_epsilon` | `1e-6` |
-| `uncertainty_samples` | `1000` |
-| `uncertainty_seed` | `97` |
-| `max_unstable_sample_fraction` | `0.05` |
 
 ### ROS integration inside a behavior
 

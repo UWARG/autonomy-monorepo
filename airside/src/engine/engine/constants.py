@@ -1,7 +1,10 @@
 """Tuning constants for the airside engine behaviors."""
 
 # ArduPilot flight mode in which the engine is allowed to command the drone.
+# The engine never switches modes itself; the pilot selects GUIDED to hand over.
 GUIDED_MODE = "GUIDED"
+# ArduPilot flight mode the land command puts the drone in.
+LAND_MODE = "LAND"
 
 # Behavior tree tick period, milliseconds.
 TICK_PERIOD_MS = 500.0
@@ -36,9 +39,7 @@ WAYPOINT_NAV_TIMEOUT_S = 120.0
 # Master switch for the RC switch behaviors.
 RC_SWITCHES_ENABLED = True
 
-# RC channel that controls the kill switch, pausing the mission.
-KILL_SWITCH_RC_CHANNEL = 7
-# RC channel that signals the completion of target reconnaissance and starts the land phase.
+# RC channel that signals the end of reconnaissance and starts the land phase.
 RECON_COMPLETE_RC_CHANNEL = 6
 
 # PWM value when the RC switch counts as flipped.
@@ -52,6 +53,9 @@ TAKEOFF_AIRBORNE_THRESHOLD_M = 2.0
 
 # Takeoff tolerance from target altitude.
 TAKEOFF_ALTITUDE_TOLERANCE_M = 1.0
+
+# Relative altitude (meters) to fly back to the launch point at before landing.
+RETURN_ALTITUDE_M = 15.0
 
 # Number of payload items on board at the start of the mission.
 INITIAL_ITEM_COUNT = 3
