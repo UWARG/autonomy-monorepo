@@ -169,10 +169,8 @@ orientation). The outer header records packaging time; the original image and
 IMU timestamps are preserved. These are the latest independent readings, not
 time-synchronized measurements. Requests with missing inputs are logged and
 discarded; send another request once the feeds are ready. Other commands are
-ignored. The default camera node still supplies simulated black frames.
+ignored.
 
-Rebuild the airside container to generate the custom messages and install the
-new executable.
 
 ### Map manager
 

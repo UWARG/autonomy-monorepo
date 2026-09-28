@@ -6,6 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, Imu, NavSatFix
+import message_filters
 
 from airside_interfaces.msg import TriggerImageCapture, TriggeredImageCapture
 
@@ -20,16 +21,32 @@ class TriggeredImagePublisherNode(Node):
         self.latest_imu: Imu | None = None
 
         # Accept both best-effort MAVROS and reliable camera publishers.
-        self.image_subscription = self.create_subscription(
-            Image, '/camera/image_raw', self.image_callback, qos_profile_sensor_data
+        self.image_sub = message_filters.Subscriber(
+            self, Image, '/camera/image_raw',
+            qos_profile=qos_profile_sensor_data,
         )
-        self.gps_subscription = self.create_subscription(
-            NavSatFix, '/mavros/global_position/global',
-            self.gps_callback, qos_profile_sensor_data
+        self.image_cache = message_filters.Cache(
+            self.image_sub, cache_size=5,
         )
-        self.imu_subscription = self.create_subscription(
-            Imu, '/mavros/imu/data', self.imu_callback, qos_profile_sensor_data
+
+        self.gps_sub = message_filters.Subscriber(
+            self, NavSatFix, '/mavros/global_position/global',
+            qos_profile=qos_profile_sensor_data,
         )
+        self.gps_cache = message_filters.Cache(
+            self.gps_sub, cache_size=5,
+        )
+
+        self.imu_sub = message_filters.Subscriber(
+            self, Imu, '/mavros/imu/data',
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.imu_cache = message_filters.Cache(
+            self.imu_sub, cache_size=5,
+        )
+
+
+
         self.publisher = self.create_publisher(
             TriggeredImageCapture, '/TriggeredImageCapture', 10
         )
@@ -41,14 +58,6 @@ class TriggeredImagePublisherNode(Node):
             'publishing bundles on /TriggeredImageCapture'
         )
 
-    def image_callback(self, msg: Image):
-        self.latest_frame = msg
-
-    def gps_callback(self, msg: NavSatFix):
-        self.latest_gps = msg
-
-    def imu_callback(self, msg: Imu):
-        self.latest_imu = msg
 
     def trigger_callback(self, msg: TriggerImageCapture):
         if msg.command != 'capture':
@@ -58,7 +67,12 @@ class TriggeredImagePublisherNode(Node):
 
     def publish_triggered_image(self):
         """Send cached data without altering the source image or its timestamp."""
-        frame, gps, imu = self.latest_frame, self.latest_gps, self.latest_imu
+
+        frame = self.image_cache.getElemBeforeTime(self.get_clock().now())
+        gps = self.gps_cache.getElemBeforeTime(self.get_clock().now())
+        imu = self.imu_cache.getElemBeforeTime(self.get_clock().now())
+
+        
         if frame is None or gps is None or imu is None:
             self.get_logger().warning(
                 'Capture skipped: waiting for camera, GPS and IMU data. '
