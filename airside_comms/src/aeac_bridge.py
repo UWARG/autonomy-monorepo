@@ -17,7 +17,6 @@ from .comms import AirsideComms
 DEFAULT_AEAC_URL = "wss://o61e21rvtd.execute-api.ca-central-1.amazonaws.com/prod"
 DEFAULT_IMS_URL = "ws://localhost:8765/airside"
 
-
 def traffic_to_drones(payload: dict) -> list[NearbyDronePayload]:
     """Convert an AEAC `traffic` event payload into IMS drone payloads."""
     drones = []

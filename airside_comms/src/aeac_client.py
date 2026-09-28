@@ -1,5 +1,5 @@
 """
-Minimal client for the AEAC competition WebSocket API.
+Client for the AEAC competition WebSocket API.
 """
 
 import json

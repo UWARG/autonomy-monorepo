@@ -1,10 +1,25 @@
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 import { enuOffsetM, haversineM } from '../geo';
 import type { NearbyDronesMessage, PositionMessage } from '../types';
 
 const DASH = '—';
 
+const GLOBAL_POSITION_TOPIC = 'mavros/global_position/global';
+
+interface NavSatFix {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+}
+
 /** Plot half-range steps in metres; the smallest one that fits all traffic is used. */
 const RANGE_STEPS_M = [50, 100, 250, 500, 1000, 2500, 5000];
+
+/** Force a tight zoom once anything gets this close, so a near drone doesn't shrink to a dot. */
+const NEAR_ZOOM_THRESHOLD_M = 200;
+const NEAR_ZOOM_RANGE_M = 250;
 
 const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;
@@ -16,16 +31,29 @@ function pickRangeM(maxDistanceM: number): number {
 }
 
 export default function NearbyDronesWidget({
-  position,
   nearby,
   connected,
   stale,
 }: {
-  position?: PositionMessage;
   nearby?: NearbyDronesMessage;
   connected: boolean;
   stale: boolean;
 }) {
+  const [position, setPosition] = useState<PositionMessage>();
+
+  useEffect(() => {
+    const fixTopic = new ROSLIB.Topic<NavSatFix>({
+      ros,
+      name: GLOBAL_POSITION_TOPIC,
+      messageType: 'sensor_msgs/NavSatFix',
+    });
+    const onFix = (msg: NavSatFix) => {
+      setPosition({ lat: msg.latitude, lon: msg.longitude, alt: msg.altitude });
+    };
+    fixTopic.subscribe(onFix);
+    return () => fixTopic.unsubscribe(onFix);
+  }, []);
+
   const drones = nearby?.drones ?? [];
 
   // Without our own position, centre on the traffic so it is still visible.
@@ -41,8 +69,11 @@ export default function NearbyDronesWidget({
   const offsets = origin
     ? drones.map((d) => ({ drone: d, ...enuOffsetM(origin.lat, origin.lon, d.lat, d.lon) }))
     : [];
-  const maxRange = offsets.reduce((m, o) => Math.max(m, Math.hypot(o.east, o.north)), 0);
-  const rangeM = pickRangeM(maxRange);
+  const distances = offsets.map((o) => Math.hypot(o.east, o.north));
+  const maxRange = distances.reduce((m, d) => Math.max(m, d), 0);
+  const nearestRange = distances.length ? Math.min(...distances) : Infinity;
+  const rangeM =
+    nearestRange <= NEAR_ZOOM_THRESHOLD_M ? NEAR_ZOOM_RANGE_M : pickRangeM(maxRange);
   const scale = (CENTER - EDGE_MARGIN) / rangeM; // px per metre
 
   const nearest =
@@ -142,7 +173,10 @@ export default function NearbyDronesWidget({
                     {label}
                   </text>
                   <text x={x + 7} y={y + 5} fontSize="6" fill="var(--nd-ink3)">
-                    {Math.round(drone.alt)} m
+                    {Math.round(range)} m
+                  </text>
+                  <text x={x + 7} y={y + 11} fontSize="6" fill="var(--nd-ink3)">
+                    {Math.round(drone.alt)} m alt
                   </text>
                 </g>
               );

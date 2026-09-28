@@ -51,7 +51,6 @@ export default function App() {
         </div>
         <div className="col-span-12 h-[380px] min-h-0 lg:col-span-4 lg:row-span-2 lg:h-auto">
           <NearbyDronesWidget
-            position={ims.position}
             nearby={ims.nearbyDrones}
             connected={ims.connected}
             stale={ims.nearbyDronesStale}
