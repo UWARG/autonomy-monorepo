@@ -11,6 +11,7 @@ from utils.src.message_encoder import (
     encode_camera,
     encode_health,
     encode_log,
+    encode_nearby_drones,
     encode_position,
     encode_status,
 )
@@ -40,6 +41,11 @@ class AirsideComms:
 
     def send_position(self, position) -> None:
         """Encode and send a PositionMessage to IMS."""
+        self._ws.send(encode_position(position))
+
+    def send_nearby_drones(self, drones) -> None:
+        """Encode and send a NearbyDronesMessage (full traffic snapshot) to IMS."""
+        self._ws.send(encode_nearby_drones(drones))
 
     def send_camera(self, width: int, height: int, encoding: str) -> None:
         """Encode and send camera frame metadata to IMS."""
