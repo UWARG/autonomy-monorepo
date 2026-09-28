@@ -145,7 +145,10 @@ export default function NearbyDronesWidget({
               const k = range > rangeM ? rangeM / range : 1;
               const x = CENTER + east * k * scale;
               const y = CENTER - north * k * scale;
-              const keepAwayPx = drone.horizontal_keep_away * scale;
+              // k < 1 means the icon was pulled in from its true position to
+              // stay on-screen; the ring would then mark a spot the drone
+              // isn't actually at, so only draw it at the true position.
+              const keepAwayPx = k === 1 ? drone.horizontal_keep_away * scale : 0;
               const label =
                 drone.name.length > MAX_LABEL_CHARS
                   ? `${drone.name.slice(0, MAX_LABEL_CHARS - 1)}…`

@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { IMS_WS_URL, RECONNECT_DELAY_MS, STALE_AFTER_MS } from '../constants';
-import type { NearbyDronesMessage, PositionMessage } from '../types';
+import type { NearbyDronesMessage } from '../types';
 
 export interface ImsState {
   connected: boolean;
-  position?: PositionMessage;
   nearbyDrones?: NearbyDronesMessage;
   /** True until a nearby_drones message arrives, and again if none arrives for STALE_AFTER_MS. */
   nearbyDronesStale: boolean;
@@ -17,9 +16,9 @@ interface Envelope {
 
 /** Subscribes to the IMS relay and keeps the latest message of each type. Reconnects forever. */
 export default function useImsSocket(): ImsState {
-  const [messages, setMessages] = useState<
-    Pick<ImsState, 'connected' | 'position' | 'nearbyDrones'>
-  >({ connected: false });
+  const [messages, setMessages] = useState<Pick<ImsState, 'connected' | 'nearbyDrones'>>({
+    connected: false,
+  });
   const [stale, setStale] = useState(true);
   const lastNearbyAt = useRef(0);
 
@@ -40,9 +39,7 @@ export default function useImsSocket(): ImsState {
         } catch {
           return;
         }
-        if (envelope.type === 'position') {
-          setMessages((m) => ({ ...m, position: envelope.payload as PositionMessage }));
-        } else if (envelope.type === 'nearby_drones') {
+        if (envelope.type === 'nearby_drones') {
           lastNearbyAt.current = Date.now();
           setStale(false);
           setMessages((m) => ({ ...m, nearbyDrones: envelope.payload as NearbyDronesMessage }));
