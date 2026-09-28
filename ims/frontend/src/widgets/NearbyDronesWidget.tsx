@@ -111,7 +111,7 @@ export default function NearbyDronesWidget({
       </header>
 
       <div
-        className="relative mt-3 flex-1 overflow-hidden rounded-lg"
+        className="relative mt-3 flex-1 min-h-0 aspect-square w-full mx-auto overflow-hidden rounded-lg"
         style={{ background: 'var(--nd-map)' }}
       >
         <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="h-full w-full">
