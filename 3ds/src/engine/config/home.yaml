@@ -1,0 +1,7 @@
+# Home coordinate the drone returns to and lands at once the
+# go-home command is received. `alt` is the relative altitude
+# to fly back at before landing.
+home:
+  lat: 43.4338267
+  lon: -80.5773236
+  alt: 10
