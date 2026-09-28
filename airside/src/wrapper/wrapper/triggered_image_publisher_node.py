@@ -16,9 +16,6 @@ class TriggeredImagePublisherNode(Node):
 
     def __init__(self):
         super().__init__('triggered_image_publisher')
-        self.latest_frame: Image | None = None
-        self.latest_gps: NavSatFix | None = None
-        self.latest_imu: Imu | None = None
 
         # Accept both best-effort MAVROS and reliable camera publishers.
         self.image_sub = message_filters.Subscriber(
