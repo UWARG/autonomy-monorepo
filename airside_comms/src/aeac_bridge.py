@@ -1,18 +1,23 @@
 """
 Bridges the AEAC competition server to IMS: AEAC traffic becomes a NearbyDronesMessage.
 
-Listen-only: nothing is sent to AEAC.
+Reads from airside_comms/.env
 
 Run from the monorepo root:
-    AEAC_CONNECTION_TOKEN=... python -m airside_comms.src.aeac_bridge
+    python -m airside_comms.src.aeac_bridge
 """
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from utils.src.messages import NearbyDronePayload
 
 from .aeac_client import AeacClient
 from .comms import AirsideComms
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 DEFAULT_AEAC_URL = "wss://o61e21rvtd.execute-api.ca-central-1.amazonaws.com/prod"
 DEFAULT_IMS_URL = "ws://localhost:8765/airside"
