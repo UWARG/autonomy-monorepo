@@ -16,4 +16,4 @@ AEAC_CONNECTION_TOKEN=your-token-here
 
 ## Architecture
 
-- `comms.py` — `AirsideComms` class. Manages the WebSocket connection and exposes `send_attitude()`, `send_position()`, `send_camera()` etc.
+- `comms.py` — `AirsideComms` class. Manages the WebSocket connection and exposes `send_nearby_drones()`, `send_status()`.
