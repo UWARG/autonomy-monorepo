@@ -49,13 +49,16 @@ final host directory when the campaign exits:
 
 ```bash
 ARTIFACT_DIR=/mnt/d/warg/pr144-airside-artifacts \
-STAGING_ARTIFACT_DIR=/tmp/pr144-airside-staging \
+STAGING_ARTIFACT_DIR=/var/snap/docker/common/pr144-airside-staging \
 DOCKER_BIN=/snap/bin/docker \
 ./run_airside_bt_campaign.sh
 ```
 
 The staging directory must be unique to the campaign. Partial evidence is also
 copied when a test fails, while attempts are never replaced.
+The runner verifies that the staging path is visible from both WSL and the
+Docker daemon before starting. Snap Docker uses a private `/tmp`, so `/tmp` is
+not a valid bind-mount staging path for this campaign.
 
 ## Scenarios and expected outcomes
 

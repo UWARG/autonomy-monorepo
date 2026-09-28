@@ -5,6 +5,7 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 final_artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+docker_bin="${DOCKER_BIN:-docker}"
 mkdir -p "$final_artifact_dir"
 final_artifact_dir="$(realpath "$final_artifact_dir")"
 
@@ -19,6 +20,28 @@ if [ "$artifact_dir" != "$final_artifact_dir" ] \
     echo "staging artifact directory must be empty: $artifact_dir" >&2
     exit 1
 fi
+
+# Snap Docker gives the daemon a private /tmp. A host path can therefore look
+# valid to the shell while /artifacts resolves to a different directory in the
+# scenario container. Verify visibility in both directions before spending
+# time on a formal campaign.
+host_probe="$artifact_dir/.pr144-host-bind-probe"
+container_probe="$artifact_dir/.pr144-container-bind-probe"
+printf 'host-visible\n' >"$host_probe"
+if ! "$docker_bin" run --rm --entrypoint /bin/bash \
+    -v "$artifact_dir":/probe warg/airside:latest -lc \
+    'grep -Fx host-visible /probe/.pr144-host-bind-probe >/dev/null && touch /probe/.pr144-container-bind-probe'; then
+    rm -f "$host_probe" "$container_probe"
+    echo "artifact directory is not shared with the Docker daemon: $artifact_dir" >&2
+    echo "Snap Docker users should stage below /var/snap/docker/common, not /tmp." >&2
+    exit 1
+fi
+if [ ! -f "$container_probe" ]; then
+    rm -f "$host_probe" "$container_probe"
+    echo "Docker writes are not visible in artifact directory: $artifact_dir" >&2
+    exit 1
+fi
+rm -f "$host_probe" "$container_probe"
 
 sync_artifacts() {
     if [ "$artifact_dir" != "$final_artifact_dir" ]; then
