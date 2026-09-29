@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pil \
     python3-pytest \
     python3-rosdep \
-    python3-shapely \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
@@ -34,7 +33,7 @@ RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling pymavlink
+RUN pip install --upgrade pip packaging hatchling
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
@@ -43,9 +42,8 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
-COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils /monorepo/perception
+RUN pip install /monorepo/camera /monorepo/utils
 
 COPY 3ds/src/ src/
 

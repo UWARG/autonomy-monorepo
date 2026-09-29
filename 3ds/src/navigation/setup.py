@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 
-package_name = "engine"
+package_name = "navigation"
 
 
 setup(
@@ -19,13 +19,11 @@ setup(
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Behavior-tree mission manager for 3DS and its support nodes.",
+    description="Position control between the engine and MAVROS.",
     license="MIT",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "manager = engine.manager:main",
-            "heartbeat = engine.heartbeat_node:main",
+            "position_controller = navigation.position_controller_node:main",
         ],
     },
 )

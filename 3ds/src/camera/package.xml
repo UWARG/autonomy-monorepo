@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>engine</name>
+  <name>camera</name>
   <version>0.1.0</version>
-  <description>Behavior-tree mission manager for 3DS and its support nodes.</description>
+  <description>Camera streaming and photo capture node</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
@@ -11,16 +11,13 @@
 
   <depend>airside_interfaces</depend>
   <depend>rclpy</depend>
-  <depend>mavros</depend>
-  <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
-  <depend>py_trees</depend>
-  <depend>py_trees_ros</depend>
-  <depend>py_trees_ros_interfaces</depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
 
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>

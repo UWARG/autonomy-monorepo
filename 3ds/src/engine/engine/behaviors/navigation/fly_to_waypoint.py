@@ -11,33 +11,23 @@ from engine.constants import (
     WAYPOINT_NAV_TIMEOUT_S,
 )
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
-from mavros_msgs.msg import GlobalPositionTarget, State
+from airside_interfaces.msg import Coordinate
+from mavros_msgs.msg import State
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
 
 
-_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
+_POSITION_TARGET_TOPIC = "position_controller/target"
 _GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
 _REL_ALT_TOPIC = "mavros/global_position/rel_alt"
 _STATE_TOPIC = "mavros/state"
 
-# Position-only setpoint: ignores velocity, acceleration and yaw fields
-_TYPE_MASK = (
-    GlobalPositionTarget.IGNORE_VX
-    | GlobalPositionTarget.IGNORE_VY
-    | GlobalPositionTarget.IGNORE_VZ
-    | GlobalPositionTarget.IGNORE_AFX
-    | GlobalPositionTarget.IGNORE_AFY
-    | GlobalPositionTarget.IGNORE_AFZ
-    | GlobalPositionTarget.IGNORE_YAW
-    | GlobalPositionTarget.IGNORE_YAW_RATE
-)
-
 
 class FlyToWaypoint(py_trees.behaviour.Behaviour):
     """
-    Flies the drone to ``current_waypoint`` using MAVROS guided-mode setpoints.
+    Flies the drone to ``current_waypoint`` by publishing it as a position target
+    for the ``position_controller`` node.
 
     Returns RUNNING while traveling, SUCCESS once within ``WAYPOINT_ACCEPTANCE_RADIUS_M``
     of the waypoint, and FAILURE if the waypoint is not reached within
@@ -58,12 +48,12 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         self._latest_fix: NavSatFix | None = None
         self._latest_rel_alt_m: float | None = None
         self._latest_state: State | None = None
-        self._setpoint: GlobalPositionTarget | None = None
+        self._target: Coordinate | None = None
         self._start_time_s = 0.0
 
-        self._setpoint_pub = self._node.create_publisher(
-            msg_type=GlobalPositionTarget,
-            topic=_SETPOINT_TOPIC,
+        self._target_pub = self._node.create_publisher(
+            msg_type=Coordinate,
+            topic=_POSITION_TARGET_TOPIC,
             qos_profile=10,
         )
 
@@ -102,21 +92,16 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         try:
             waypoint = self.blackboard.get(blackboard_keys.CURRENT_WAYPOINT)
         except KeyError:
-            self._setpoint = None
+            self._target = None
             return
 
-        self._setpoint = GlobalPositionTarget()
-        self._setpoint.coordinate_frame = GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
-        self._setpoint.type_mask = _TYPE_MASK
-        self._setpoint.latitude = waypoint.lat
-        self._setpoint.longitude = waypoint.lon
-        self._setpoint.altitude = waypoint.alt
+        self._target = Coordinate(lat=waypoint.lat, lon=waypoint.lon, alt=waypoint.alt)
 
         self._start_time_s = self._now_s()
         self._node.get_logger().info(f"{self.name}: flying to {waypoint}")
 
     def update(self) -> py_trees.common.Status:
-        if self._setpoint is None:
+        if self._target is None:
             self._node.get_logger().error(f"{self.name}: no waypoint to fly to")
             return py_trees.common.Status.FAILURE
 
@@ -141,21 +126,20 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         if self._latest_state.mode != GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
-                f"mode, not '{GUIDED_MODE}' - holding off on setpoints",
+                f"mode, not '{GUIDED_MODE}' - holding off on position targets",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
 
-        self._setpoint.header.stamp = self._node.get_clock().now().to_msg()
-        self._setpoint_pub.publish(self._setpoint)
+        self._target_pub.publish(self._target)
 
         east_m, north_m = east_north_coordinate_offset_m(
             self._latest_fix.latitude,
             self._latest_fix.longitude,
-            self._setpoint.latitude,
-            self._setpoint.longitude,
+            self._target.lat,
+            self._target.lon,
         )
-        up_m = self._setpoint.altitude - self._latest_rel_alt_m
+        up_m = self._target.alt - self._latest_rel_alt_m
         distance = math.sqrt(east_m**2 + north_m**2 + up_m**2)
 
         if distance <= WAYPOINT_ACCEPTANCE_RADIUS_M:
@@ -172,4 +156,4 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
 
     def terminate(self, new_status: py_trees.common.Status) -> None:
         if new_status != py_trees.common.Status.SUCCESS:
-            self._setpoint = None
+            self._target = None
