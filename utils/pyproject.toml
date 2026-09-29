@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Shared constants, enums, and dataclasses used across all Airside modules."
 license = "MIT"
 requires-python = ">=3.9"
-dependencies = ["pyyaml>=6.0"]
+dependencies = ["pyyaml>=6.0", "msgspec>=0.18"]
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/utils"

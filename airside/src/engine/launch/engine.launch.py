@@ -20,6 +20,11 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 description="MAVROS connection URL to ArduPilot",
             ),
+            DeclareLaunchArgument(
+                "aeac_connection_token",
+                default_value=EnvironmentVariable("AEAC_CONNECTION_TOKEN", default_value=""),
+                description="Token from the AEAC connect page (https://aeac.mylonics.com/#/connect)",
+            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -95,6 +100,15 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
+            ),
+            Node(
+                package="aeac_telemetry",
+                executable="telemetry",
+                name="aeac_telemetry_node",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"aeac_connection_token": LaunchConfiguration("aeac_connection_token")}],
             ),
         ]
     )
