@@ -3,13 +3,12 @@
 <package format="3">
   <name>engine</name>
   <version>0.1.0</version>
-  <description>Behavior tree manager for airside autonomy projects.</description>
+  <description>Behavior-tree mission manager and its support nodes.</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
-  <exec_depend>wrapper</exec_depend>
   <depend>rclpy</depend>
   <depend>ament_index_python</depend>
   <depend>diagnostic_msgs</depend>
@@ -18,14 +17,10 @@
   <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>airside_interfaces</depend>
   <depend>py_trees</depend>
   <depend>py_trees_ros</depend>
   <depend>py_trees_ros_interfaces</depend>
-
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
-  <exec_depend>rosbridge_server</exec_depend>
-  <exec_depend>rosapi</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

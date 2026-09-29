@@ -5,6 +5,7 @@ from unittest.mock import Mock
 
 import py_trees
 from engine.behaviors.navigation.obstacle_aware_fly_to_waypoint import (
+    _VELOCITY_TOPIC,
     ObstacleAwareFlyToWaypoint,
 )
 from engine.obstacle_navigation import NavigationDecision
@@ -12,6 +13,10 @@ from mavros_msgs.msg import State
 
 
 class ObstacleAwareBehaviorLifecycleTests(unittest.TestCase):
+    def test_velocity_targets_use_navigation_adapter_not_mavros(self) -> None:
+        self.assertEqual(_VELOCITY_TOPIC, "position_controller/velocity_target")
+        self.assertNotIn("mavros", _VELOCITY_TOPIC)
+
     def test_inactive_timer_does_not_touch_controller_or_publish(self) -> None:
         behavior = ObstacleAwareFlyToWaypoint()
         behavior._active = False
@@ -29,11 +34,14 @@ class ObstacleAwareBehaviorLifecycleTests(unittest.TestCase):
         behavior._active = True
         behavior._latest_state = State(armed=True, mode="GUIDED")
         behavior._controller = Mock()
+        behavior._latest_decision = Mock()
         behavior._publish_velocity = Mock()
+        behavior._publish_diagnostics = Mock()
 
         behavior.terminate(py_trees.common.Status.SUCCESS)
 
         behavior._publish_velocity.assert_called_once_with(0.0, 0.0, 0.0)
+        behavior._publish_diagnostics.assert_called_once()
         behavior._controller.planner.reset.assert_called_once_with()
         self.assertFalse(behavior._active)
 
@@ -42,11 +50,14 @@ class ObstacleAwareBehaviorLifecycleTests(unittest.TestCase):
         behavior._active = True
         behavior._latest_state = State(armed=True, mode="LOITER")
         behavior._controller = Mock()
+        behavior._latest_decision = Mock()
         behavior._publish_velocity = Mock()
+        behavior._publish_diagnostics = Mock()
 
         behavior.terminate(py_trees.common.Status.INVALID)
 
         behavior._publish_velocity.assert_not_called()
+        behavior._publish_diagnostics.assert_called_once()
         self.assertFalse(behavior._active)
 
     def test_control_cycle_after_pilot_takeover_releases_without_publish(self) -> None:

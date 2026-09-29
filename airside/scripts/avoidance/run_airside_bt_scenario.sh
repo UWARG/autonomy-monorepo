@@ -6,6 +6,10 @@ cd "$(dirname "$0")"
 
 scenario="${1:?scenario is required}"
 label="${2:-$scenario}"
+scenario_duration="${DEMO_DURATION_S:-90}"
+if [[ "$scenario" == "transition" && -z "${DEMO_DURATION_S:-}" ]]; then
+    scenario_duration=150
+fi
 artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
 repo_root="$(cd ../../.. && pwd)"
 docker_bin="${DOCKER_BIN:-docker}"
@@ -62,13 +66,14 @@ sleep 3
        /mavros/local_position/pose \
        /mavros/global_position/global \
        /mavros/global_position/rel_alt \
+       /position_controller/velocity_target \
        /mavros/setpoint_velocity/cmd_vel \
        /mavros/setpoint_raw/global \
        > /artifacts/${label}-rosbag.log 2>&1 &
      bag_pid=\$!
      python3 /repo/airside/scripts/avoidance/airside_bt_sitl.py \
        --scenario ${scenario} \
-       --duration ${DEMO_DURATION_S:-90} \
+       --duration ${scenario_duration} \
        --readiness-timeout ${READINESS_TIMEOUT_S:-180} \
        --log-jsonl /artifacts/${label}.jsonl \
        --summary-json /artifacts/${label}-summary.json \

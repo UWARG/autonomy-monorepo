@@ -19,7 +19,7 @@ import rclpy
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from harness_runtime import StableConditionGate
-from mavros_msgs.msg import GlobalPositionTarget, ParamEvent, State
+from mavros_msgs.msg import GlobalPositionTarget, ParamEvent, RCIn, State
 from mavros_msgs.srv import CommandBool, ParamPull, SetMode
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, ListParameters, SetParameters
@@ -48,6 +48,9 @@ MIN_CLEARANCE_M = 1.0
 EARTH_RADIUS_M = 6_371_000.0
 SCAN_PERIOD_S = 0.05
 MANAGER_STABLE_S = 2.0
+CONTROLLER_STABLE_S = 2.0
+TRANSITION_LAPPING_DURATION_S = 40.0
+TRANSITION_RECON_SWITCH_S = 45.0
 
 
 class AirsideBTSitlScenario(Node):
@@ -66,16 +69,21 @@ class AirsideBTSitlScenario(Node):
         self.latest_diagnostics: dict[str, str] = {}
         self.diagnostics_count = 0
         self.velocity_count = 0
+        self.internal_velocity_count = 0
         self.nonzero_velocity_count = 0
         self.global_setpoint_count = 0
+        self.total_global_setpoint_count = 0
         self.last_velocity = (0.0, 0.0, 0.0)
         self.last_velocity_received_s: float | None = None
         self.parameters: dict[str, dict[str, int | float]] = {}
         self.parameter_expected_count: int | None = None
         self.scan_mode = "normal"
         self.frozen_scan_stamp = None
+        self.recon_switch_high = False
         self.manager_process: subprocess.Popen[str] | None = None
+        self.controller_process: subprocess.Popen[str] | None = None
         self.manager_node_gate = StableConditionGate(MANAGER_STABLE_S)
+        self.controller_node_gate = StableConditionGate(CONTROLLER_STABLE_S)
 
         self._scenario_subscriptions = [
             self.create_subscription(State, "/mavros/state", self._state_callback, 10),
@@ -110,6 +118,12 @@ class AirsideBTSitlScenario(Node):
                 10,
             ),
             self.create_subscription(
+                TwistStamped,
+                "/position_controller/velocity_target",
+                self._internal_velocity_callback,
+                10,
+            ),
+            self.create_subscription(
                 GlobalPositionTarget,
                 "/mavros/setpoint_raw/global",
                 self._global_setpoint_callback,
@@ -128,6 +142,8 @@ class AirsideBTSitlScenario(Node):
             qos_profile_sensor_data,
         )
         self.scan_timer = self.create_timer(SCAN_PERIOD_S, self._publish_scan)
+        self.rc_publisher = self.create_publisher(RCIn, "/mavros/rc/in", 10)
+        self.rc_timer = self.create_timer(0.2, self._publish_rc)
         self.arm_client = self.create_client(CommandBool, "/mavros/cmd/arming")
         self.mode_client = self.create_client(SetMode, "/mavros/set_mode")
         self.param_pull_client = self.create_client(ParamPull, "/mavros/param/pull")
@@ -186,10 +202,23 @@ class AirsideBTSitlScenario(Node):
             if math.sqrt(sum(component**2 for component in velocity)) > 0.05:
                 self.nonzero_velocity_count += 1
 
+    def _internal_velocity_callback(self, _message: TwistStamped) -> None:
+        with self.lock:
+            self.internal_velocity_count += 1
+
     def _global_setpoint_callback(self, _message: GlobalPositionTarget) -> None:
         with self.lock:
+            self.total_global_setpoint_count += 1
             if self.latest_diagnostics.get("active") == "true":
                 self.global_setpoint_count += 1
+
+    def _publish_rc(self) -> None:
+        message = RCIn()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.channels = [1500] * 18
+        if self.recon_switch_high:
+            message.channels[5] = 1800
+        self.rc_publisher.publish(message)
 
     def _parameter_callback(self, message: ParamEvent) -> None:
         value = message.value
@@ -245,7 +274,7 @@ class AirsideBTSitlScenario(Node):
             ranges = (math.inf,) * beam_count
         elif self.scan_mode == "invalid":
             ranges = (math.nan,) + (math.inf,) * (BEAM_COUNT - 1)
-        elif self.scenario == "clear":
+        elif self.scenario in {"clear", "transition"}:
             ranges = (math.inf,) * BEAM_COUNT
         else:
             ranges = wall_scan_ranges(
@@ -284,31 +313,18 @@ class AirsideBTSitlScenario(Node):
         while time.monotonic() < deadline_s:
             if predicate():
                 return
-            if self.manager_process is not None and self.manager_process.poll() is not None:
-                raise RuntimeError(
-                    f"engine manager exited with {self.manager_process.returncode} "
-                    f"while waiting for {description}"
-                )
+            self.require_airside_running(f"while waiting for {description}")
             time.sleep(0.1)
         raise TimeoutError(f"timed out waiting for {description}")
 
     def _call_service(self, client: Any, request: Any, timeout_s: float) -> Any:
-        if self.manager_process is not None and self.manager_process.poll() is not None:
-            raise RuntimeError(
-                f"engine manager exited with {self.manager_process.returncode}"
-            )
+        self.require_airside_running()
         if not client.wait_for_service(timeout_sec=timeout_s):
             raise TimeoutError(f"service {client.srv_name} unavailable")
         future = client.call_async(request)
         deadline_s = time.monotonic() + timeout_s
         while not future.done() and time.monotonic() < deadline_s:
-            if (
-                self.manager_process is not None
-                and self.manager_process.poll() is not None
-            ):
-                raise RuntimeError(
-                    f"engine manager exited with {self.manager_process.returncode}"
-                )
+            self.require_airside_running()
             time.sleep(0.05)
         if not future.done():
             raise TimeoutError(f"service {client.srv_name} timed out")
@@ -460,17 +476,31 @@ class AirsideBTSitlScenario(Node):
             encoding="utf-8",
         )
 
-    def start_manager(self, waypoints_path: Path) -> None:
+    def start_manager(
+        self,
+        waypoints_path: Path,
+        lapping_duration_s: float | None = None,
+    ) -> None:
+        command = [
+            "ros2",
+            "run",
+            "engine",
+            "manager",
+            "--ros-args",
+            "-p",
+            f"waypoints_file:={waypoints_path}",
+        ]
+        if lapping_duration_s is not None:
+            command.extend(["-p", f"lapping_duration_s:={lapping_duration_s}"])
         self.manager_process = subprocess.Popen(
-            [
-                "ros2",
-                "run",
-                "engine",
-                "manager",
-                "--ros-args",
-                "-p",
-                f"waypoints_file:={waypoints_path}",
-            ],
+            command,
+            text=True,
+            start_new_session=True,
+        )
+
+    def start_controller(self) -> None:
+        self.controller_process = subprocess.Popen(
+            ["ros2", "run", "navigation", "position_controller"],
             text=True,
             start_new_session=True,
         )
@@ -483,28 +513,64 @@ class AirsideBTSitlScenario(Node):
         )
         return self.manager_node_gate.observe(manager_present)
 
-    def require_manager_running(self) -> None:
-        """Fail the scenario if the behavior-tree process exited unexpectedly."""
+    def controller_ready(self) -> bool:
+        """Return true after the navigation adapter is stable and owns outputs."""
 
-        if self.manager_process is None:
-            raise RuntimeError("engine manager was not started")
-        return_code = self.manager_process.poll()
-        if return_code is not None:
-            raise RuntimeError(f"engine manager exited unexpectedly with {return_code}")
+        controller_present = ("position_controller", "/") in set(
+            self.get_node_names_and_namespaces()
+        )
+        return self.controller_node_gate.observe(
+            controller_present and self.position_controller_is_sole_owner()
+        )
 
-    def stop_manager(self) -> None:
-        if self.manager_process is None or self.manager_process.poll() is not None:
+    def position_controller_is_sole_owner(self) -> bool:
+        """Verify both MAVROS setpoint topics have exactly one Airside publisher."""
+
+        topics = (
+            "/mavros/setpoint_velocity/cmd_vel",
+            "/mavros/setpoint_raw/global",
+        )
+        for topic in topics:
+            publishers = self.get_publishers_info_by_topic(topic)
+            if len(publishers) != 1 or publishers[0].node_name != "position_controller":
+                return False
+        return True
+
+    def require_airside_running(self, context: str = "") -> None:
+        """Fail if either supervised Airside process exits unexpectedly."""
+
+        processes = (
+            ("position controller", self.controller_process),
+            ("engine manager", self.manager_process),
+        )
+        for name, process in processes:
+            if process is None:
+                continue
+            return_code = process.poll()
+            if return_code is not None:
+                suffix = f" {context}" if context else ""
+                raise RuntimeError(
+                    f"{name} exited unexpectedly with {return_code}{suffix}"
+                )
+
+    @staticmethod
+    def _stop_process(process: subprocess.Popen[str] | None) -> None:
+        if process is None or process.poll() is not None:
             return
-        os.killpg(self.manager_process.pid, signal.SIGINT)
+        os.killpg(process.pid, signal.SIGINT)
         try:
-            self.manager_process.wait(timeout=10.0)
+            process.wait(timeout=10.0)
         except subprocess.TimeoutExpired:
-            os.killpg(self.manager_process.pid, signal.SIGTERM)
+            os.killpg(process.pid, signal.SIGTERM)
             try:
-                self.manager_process.wait(timeout=3.0)
+                process.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
-                os.killpg(self.manager_process.pid, signal.SIGKILL)
-            self.manager_process.wait(timeout=5.0)
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5.0)
+
+    def stop_airside(self) -> None:
+        self._stop_process(self.manager_process)
+        self._stop_process(self.controller_process)
 
     def readiness_complete(self) -> bool:
         with self.lock:
@@ -570,7 +636,9 @@ class AirsideBTSitlScenario(Node):
                 "mode": state.mode if state is not None else None,
                 "velocity": self.last_velocity,
                 "velocity_count": self.velocity_count,
+                "internal_velocity_count": self.internal_velocity_count,
                 "global_setpoint_count": self.global_setpoint_count,
+                "total_global_setpoint_count": self.total_global_setpoint_count,
                 "diagnostics": diagnostics,
             }
 
@@ -579,6 +647,8 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
     scenario = str(summary["scenario"])
     common = (
         summary["global_setpoint_count"] == 0
+        and summary["internal_velocity_count"] > 0
+        and summary["position_controller_sole_owner"]
         and summary["diagnostics_count"] > 0
         and summary["failure_reason"] is None
     )
@@ -588,6 +658,19 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
             and summary["nonzero_velocity_count"] == 0
             and summary["planner_status"] == "NO_PATH"
             and summary["goal_reached_at_s"] is None
+        )
+    elif scenario == "transition":
+        passed = (
+            common
+            and summary["goal_reached_at_s"] is not None
+            and summary["goal_reached_at_s"] <= 90.0
+            and summary["stop_observed"]
+            and summary["pilot_resume_observed"]
+            and summary["recon_switch_sent"]
+            and summary["total_global_setpoint_count"] > 0
+            and summary["land_mode_observed"]
+            and summary["landed_disarmed"]
+            and not summary["breached"]
         )
     else:
         passed = (
@@ -624,9 +707,17 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         "planner_hold_count": 0,
         "diagnostics_count": 0,
         "velocity_count": 0,
+        "internal_velocity_count": 0,
         "nonzero_velocity_count": 0,
         "global_setpoint_count": 0,
+        "total_global_setpoint_count": 0,
+        "position_controller_sole_owner": False,
         "stop_observed": False,
+        "pilot_resume_observed": False,
+        "recon_switch_sent": False,
+        "land_mode_observed": False,
+        "landed_disarmed": False,
+        "transition_completed_at_s": None,
         "zero_at_goal": False,
     }
     stage = "mavros_readiness"
@@ -646,8 +737,23 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         stage = "waypoint_generation"
         waypoints_path = Path(args.waypoints_file)
         node.write_waypoints(waypoints_path)
+        stage = "position_controller_startup"
+        node.start_controller()
+        stage = "position_controller_readiness"
+        node.wait_for(
+            "stable position controller and exclusive MAVROS ownership",
+            node.controller_ready,
+            60.0,
+        )
         stage = "manager_startup"
-        node.start_manager(waypoints_path)
+        node.start_manager(
+            waypoints_path,
+            (
+                TRANSITION_LAPPING_DURATION_S
+                if args.scenario == "transition"
+                else None
+            ),
+        )
         stage = "manager_readiness"
         node.wait_for("stable engine manager ROS node", node.manager_ready, 60.0)
         stage = "guided_mode"
@@ -664,11 +770,12 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         min_wall_distance_m = math.inf
         pilot_quiet_start_count: int | None = None
         pilot_quiet_deadline_s: float | None = None
+        resume_nonzero_start_count: int | None = None
 
         stage = "scenario_monitor"
         with log_path.open("w", encoding="utf-8") as log:
             while time.monotonic() - navigation_start_s <= args.duration:
-                node.require_manager_running()
+                node.require_airside_running()
                 now_s = time.monotonic()
                 elapsed_s = now_s - navigation_start_s
                 snapshot = node.snapshot()
@@ -677,22 +784,26 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                 log.flush()
 
                 position = node._relative_position()
-                if position is not None and args.scenario != "clear":
+                if position is not None:
                     east_m, north_m = position
-                    wall_distance_m = point_to_wall_distance_m(
-                        east_m,
-                        north_m,
-                        wall_north_m=WALL_NORTH_M,
-                        wall_half_width_m=WALL_HALF_WIDTH_M,
-                    )
-                    min_wall_distance_m = min(min_wall_distance_m, wall_distance_m)
-                    if previous_position is not None and crossed_wall_segment(
-                        previous_position,
-                        position,
-                        wall_north_m=WALL_NORTH_M,
-                        wall_half_width_m=WALL_HALF_WIDTH_M,
-                    ):
-                        summary["breached"] = True
+                    if args.scenario not in {"clear", "transition"}:
+                        wall_distance_m = point_to_wall_distance_m(
+                            east_m,
+                            north_m,
+                            wall_north_m=WALL_NORTH_M,
+                            wall_half_width_m=WALL_HALF_WIDTH_M,
+                        )
+                        min_wall_distance_m = min(
+                            min_wall_distance_m,
+                            wall_distance_m,
+                        )
+                        if previous_position is not None and crossed_wall_segment(
+                            previous_position,
+                            position,
+                            wall_north_m=WALL_NORTH_M,
+                            wall_half_width_m=WALL_HALF_WIDTH_M,
+                        ):
+                            summary["breached"] = True
                     previous_position = position
 
                     if (
@@ -721,7 +832,7 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                         not fault_finished
                         and fault_started_s is None
                         and north_m >= 5.0
-                        and args.scenario == "pilot_takeover"
+                        and args.scenario in {"pilot_takeover", "transition"}
                     ):
                         node.set_mode("LOITER")
                         fault_started_s = time.monotonic()
@@ -739,14 +850,50 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                                 node.velocity_count == pilot_quiet_start_count
                             )
                         node.set_mode("GUIDED")
+                        with node.lock:
+                            resume_nonzero_start_count = node.nonzero_velocity_count
                         fault_finished = True
+
+                    if (
+                        args.scenario == "transition"
+                        and fault_finished
+                        and resume_nonzero_start_count is not None
+                    ):
+                        with node.lock:
+                            if node.nonzero_velocity_count > resume_nonzero_start_count:
+                                summary["pilot_resume_observed"] = True
+
+                if (
+                    args.scenario == "transition"
+                    and elapsed_s >= TRANSITION_RECON_SWITCH_S
+                ):
+                    node.recon_switch_high = True
+                    summary["recon_switch_sent"] = True
+
+                if args.scenario == "transition":
+                    with node.lock:
+                        state = node.state
+                        if state is not None and state.mode == "LAND":
+                            summary["land_mode_observed"] = True
+                        if (
+                            summary["land_mode_observed"]
+                            and state is not None
+                            and not state.armed
+                        ):
+                            summary["landed_disarmed"] = True
+                            summary["transition_completed_at_s"] = round(
+                                elapsed_s,
+                                3,
+                            )
+                            break
 
                 if args.scenario in {"invalid", "partial"}:
                     node.scan_mode = args.scenario
                     if elapsed_s >= 5.0:
                         break
                 elif node.goal_reached():
-                    summary["goal_reached_at_s"] = round(elapsed_s, 3)
+                    if summary["goal_reached_at_s"] is None:
+                        summary["goal_reached_at_s"] = round(elapsed_s, 3)
                     time.sleep(0.3)
                     with node.lock:
                         summary["zero_at_goal"] = (
@@ -755,10 +902,11 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                             )
                             <= 0.05
                         )
-                    break
+                    if args.scenario != "transition":
+                        break
                 time.sleep(0.1)
 
-        node.require_manager_running()
+        node.require_airside_running()
         with node.lock:
             diagnostics = dict(node.latest_diagnostics)
             summary.update(
@@ -766,8 +914,13 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                     "armed": bool(node.state and node.state.armed),
                     "diagnostics_count": node.diagnostics_count,
                     "velocity_count": node.velocity_count,
+                    "internal_velocity_count": node.internal_velocity_count,
                     "nonzero_velocity_count": node.nonzero_velocity_count,
                     "global_setpoint_count": node.global_setpoint_count,
+                    "total_global_setpoint_count": node.total_global_setpoint_count,
+                    "position_controller_sole_owner": (
+                        node.position_controller_is_sole_owner()
+                    ),
                     "planner_status": diagnostics.get("planner_status", "NOT_STARTED"),
                     "planner_reason": diagnostics.get("reason") or None,
                     "planner_path_found_count": int(
@@ -787,7 +940,7 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         summary["failure_reason"] = f"{type(error).__name__}: {error}"
         summary["readiness"] = node.readiness_details()
     finally:
-        node.stop_manager()
+        node.stop_airside()
     return summary
 
 
@@ -803,6 +956,7 @@ def main() -> int:
             "invalid",
             "partial",
             "pilot_takeover",
+            "transition",
         ],
         required=True,
     )

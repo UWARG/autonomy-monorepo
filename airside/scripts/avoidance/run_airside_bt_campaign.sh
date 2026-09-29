@@ -75,6 +75,10 @@ for scenario in $control_scenarios; do
     fi
 done
 
+if ! bash ./run_airside_bt_scenario.sh transition transition; then
+    suite_status=1
+fi
+
 wall_runs="${WALL_RUNS:-10}"
 for run_number in $(seq -w 1 "$wall_runs"); do
     if ! bash ./run_airside_bt_scenario.sh wall "wall-run-${run_number}"; then

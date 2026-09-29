@@ -22,7 +22,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-pytest \
     python3-rosdep \
-    python3-shapely \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
@@ -50,12 +49,10 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY obstacle-avoidance/ /monorepo/obstacle-avoidance/
-COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
 RUN pip install \
     /monorepo/camera \
     /monorepo/obstacle-avoidance \
-    /monorepo/perception \
     /monorepo/utils
 
 COPY airside/src/ src/

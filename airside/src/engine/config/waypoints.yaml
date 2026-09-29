@@ -1,11 +1,5 @@
-# Lap waypoints. `home` orients the waypoints
-# and is the returning location at the end
-# of the mission.
-home:
-  lat: 43.4338267
-  lon: -80.5773236
-  alt: 10
-
+# Lap waypoints. They are flown as a clockwise sweep starting from the
+# side facing the launch point (where the drone was armed).
 waypoints:
   - lat: 43.4338803
     lon: -80.5775947
