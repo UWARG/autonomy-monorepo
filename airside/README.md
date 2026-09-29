@@ -12,6 +12,7 @@ airside/
 │   └── airside_entrypoint.sh
 ├── src/
 │   ├── airside_interfaces/
+│   ├── camera/
 │   ├── engine/
 │   └── wrapper/
 └── warg.toml
@@ -206,14 +207,18 @@ The default node parameters are:
 
 ### Triggered image capture
 
-The `camera` node (in the `wrapper` package) publishes the forward-facing feed
+The `camera` node (in the `camera` package) publishes the forward-facing feed
 on `camera/image_raw`; the `downward_camera` node publishes the downward feed
-on `/down/camera/image_raw`. Both currently use the same simulated camera as
-`camera_node.py` — no real-driver selection exists yet.
+on `/down/camera/image_raw`. Both are the same `CameraNode` class, selecting a
+real or simulated driver via the `camera_type` ROS parameter (`sim` | `oakd` |
+`arducam`, default `sim`). The launch file sets `camera_node` to `oakd` and
+`downward_camera_node` to `arducam`; for bench testing without hardware
+attached, edit the `camera_type` value in `engine.launch.py`, or run a node
+standalone with `ros2 run camera camera --ros-args -p camera_type:=sim`.
 
-The `triggered_image_publisher` node (in the `wrapper` package) caches the
-latest message from each of five topics and, on request, publishes one bundle
-containing all of them:
+The `triggered_image_publisher` node (in the `camera` package) caches the
+latest message from each of five topics (via `message_filters.Cache`) and, on
+request, publishes one bundle containing all of them:
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|

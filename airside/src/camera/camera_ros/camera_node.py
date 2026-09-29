@@ -7,7 +7,15 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 
 from camera.src.abstract_camera import AbstractCamera
+from camera.src.arducam import Arducam
+from camera.src.oakd import OakD
 from camera.src.sim import SimCamera
+
+CAMERA_TYPES: dict[str, Callable[[], AbstractCamera]] = {
+    "sim": SimCamera,
+    "oakd": OakD,
+    "arducam": Arducam,
+}
 
 
 class CameraNode(Node):
@@ -19,12 +27,22 @@ class CameraNode(Node):
     def __init__(
         self,
         topic: str = TOPIC,
-        camera_factory: Callable[[], AbstractCamera] = SimCamera,
         node_name: str = "camera_node",
+        default_camera_type: str = "sim",
     ) -> None:
         super().__init__(node_name)
 
         self._topic = topic
+        self.declare_parameter("camera_type", default_camera_type)
+        camera_type = self.get_parameter("camera_type").get_parameter_value().string_value
+        camera_factory = CAMERA_TYPES.get(camera_type)
+        if camera_factory is None:
+            self.get_logger().warning(
+                f"Unknown camera_type '{camera_type}', falling back to 'sim'. "
+                f"Valid options: {', '.join(CAMERA_TYPES)}"
+            )
+            camera_factory = SimCamera
+
         self._camera: AbstractCamera = camera_factory()
         self._camera.initialize_camera()
 
@@ -70,4 +88,3 @@ def main(args: list[str] | None = None) -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
-

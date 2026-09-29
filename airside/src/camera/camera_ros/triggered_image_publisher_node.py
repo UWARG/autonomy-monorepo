@@ -6,6 +6,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, Imu, NavSatFix, Range
+import message_filters
 
 from airside_interfaces.msg import TriggerImageCapture, TriggeredImageCapture
 
@@ -21,27 +22,48 @@ class TriggeredImagePublisherNode(Node):
 
     def __init__(self):
         super().__init__('triggered_image_publisher')
-        self.latest_forward_frame: Image | None = None
-        self.latest_downward_frame: Image | None = None
-        self.latest_gps: NavSatFix | None = None
-        self.latest_imu: Imu | None = None
-        self.latest_range: Range | None = None
 
-        self.forward_image_subscription = self.create_subscription(
-            Image, self.FORWARD_IMAGE_TOPIC, self.forward_image_callback, qos_profile_sensor_data
+        # Accept both best-effort MAVROS and reliable camera publishers.
+        self.forward_image_sub = message_filters.Subscriber(
+            self, Image, self.FORWARD_IMAGE_TOPIC,
+            qos_profile=qos_profile_sensor_data,
         )
-        self.downward_image_subscription = self.create_subscription(
-            Image, self.DOWNWARD_IMAGE_TOPIC, self.downward_image_callback, qos_profile_sensor_data
+        self.forward_image_cache = message_filters.Cache(
+            self.forward_image_sub, cache_size=5,
         )
-        self.gps_subscription = self.create_subscription(
-            NavSatFix, self.GPS_TOPIC, self.gps_callback, qos_profile_sensor_data
+
+        self.downward_image_sub = message_filters.Subscriber(
+            self, Image, self.DOWNWARD_IMAGE_TOPIC,
+            qos_profile=qos_profile_sensor_data,
         )
-        self.imu_subscription = self.create_subscription(
-            Imu, self.IMU_TOPIC, self.imu_callback, qos_profile_sensor_data
+        self.downward_image_cache = message_filters.Cache(
+            self.downward_image_sub, cache_size=5,
         )
-        self.range_subscription = self.create_subscription(
-            Range, self.RANGE_TOPIC, self.range_callback, qos_profile_sensor_data
+
+        self.gps_sub = message_filters.Subscriber(
+            self, NavSatFix, self.GPS_TOPIC,
+            qos_profile=qos_profile_sensor_data,
         )
+        self.gps_cache = message_filters.Cache(
+            self.gps_sub, cache_size=5,
+        )
+
+        self.imu_sub = message_filters.Subscriber(
+            self, Imu, self.IMU_TOPIC,
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.imu_cache = message_filters.Cache(
+            self.imu_sub, cache_size=5,
+        )
+
+        self.range_sub = message_filters.Subscriber(
+            self, Range, self.RANGE_TOPIC,
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.range_cache = message_filters.Cache(
+            self.range_sub, cache_size=5,
+        )
+
         self.publisher = self.create_publisher(
             TriggeredImageCapture, '/TriggeredImageCapture', 10
         )
@@ -53,21 +75,6 @@ class TriggeredImagePublisherNode(Node):
             'publishing bundles on /TriggeredImageCapture'
         )
 
-    def forward_image_callback(self, msg: Image):
-        self.latest_forward_frame = msg
-
-    def downward_image_callback(self, msg: Image):
-        self.latest_downward_frame = msg
-
-    def gps_callback(self, msg: NavSatFix):
-        self.latest_gps = msg
-
-    def imu_callback(self, msg: Imu):
-        self.latest_imu = msg
-
-    def range_callback(self, msg: Range):
-        self.latest_range = msg
-
     def trigger_callback(self, msg: TriggerImageCapture):
         if msg.command != 'capture':
             self.get_logger().warning(f'Unknown capture command: {msg.command!r}')
@@ -76,13 +83,13 @@ class TriggeredImagePublisherNode(Node):
 
     def publish_triggered_image(self):
         """Send cached data without altering the source images or their timestamps."""
-        forward, downward, gps, imu, range_ = (
-            self.latest_forward_frame,
-            self.latest_downward_frame,
-            self.latest_gps,
-            self.latest_imu,
-            self.latest_range,
-        )
+        now = self.get_clock().now()
+        forward = self.forward_image_cache.getElemBeforeTime(now)
+        downward = self.downward_image_cache.getElemBeforeTime(now)
+        gps = self.gps_cache.getElemBeforeTime(now)
+        imu = self.imu_cache.getElemBeforeTime(now)
+        range_ = self.range_cache.getElemBeforeTime(now)
+
         if forward is None or downward is None or gps is None or imu is None or range_ is None:
             self.get_logger().warning(
                 'Capture skipped: waiting for forward camera, downward camera, GPS, IMU '

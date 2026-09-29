@@ -26,10 +26,6 @@ setup(
         'console_scripts': [
             'building_target_localizer = '
             'wrapper.building_target_localizer_node:main',
-            'camera = wrapper.camera_node:main',
-            'downward_camera = wrapper.downward_camera_node:main',
-            'triggered_image_publisher = '
-            'wrapper.triggered_image_publisher_node:main',
             'map_manager = wrapper.map_manager_node:main',
             'ground_fusion = wrapper.ground_fusion_node:main',
         ],
