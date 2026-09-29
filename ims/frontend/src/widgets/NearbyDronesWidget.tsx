@@ -14,21 +14,13 @@ interface NavSatFix {
   altitude: number;
 }
 
-/** Plot half-range steps in metres; the smallest one that fits all traffic is used. */
-const RANGE_STEPS_M = [50, 100, 250, 500, 1000, 2500, 5000];
-
-/** Force a tight zoom once anything gets this close, so a near drone doesn't shrink to a dot. */
-const NEAR_ZOOM_THRESHOLD_M = 200;
-const NEAR_ZOOM_RANGE_M = 250;
+/** Plot half-range, fixed rather than auto-fit to traffic. */
+const RANGE_M = 250;
 
 const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;
 const EDGE_MARGIN = 24;
 const MAX_LABEL_CHARS = 10;
-
-function pickRangeM(maxDistanceM: number): number {
-  return RANGE_STEPS_M.find((r) => r >= maxDistanceM) ?? RANGE_STEPS_M[RANGE_STEPS_M.length - 1];
-}
 
 export default function NearbyDronesWidget({
   nearby,
@@ -69,12 +61,7 @@ export default function NearbyDronesWidget({
   const offsets = origin
     ? drones.map((d) => ({ drone: d, ...enuOffsetM(origin.lat, origin.lon, d.lat, d.lon) }))
     : [];
-  const distances = offsets.map((o) => Math.hypot(o.east, o.north));
-  const maxRange = distances.reduce((m, d) => Math.max(m, d), 0);
-  const nearestRange = distances.length ? Math.min(...distances) : Infinity;
-  const rangeM =
-    nearestRange <= NEAR_ZOOM_THRESHOLD_M ? NEAR_ZOOM_RANGE_M : pickRangeM(maxRange);
-  const scale = (CENTER - EDGE_MARGIN) / rangeM; // px per metre
+  const scale = (CENTER - EDGE_MARGIN) / RANGE_M; // px per metre
 
   const nearest =
     position && drones.length
@@ -130,19 +117,19 @@ export default function NearbyDronesWidget({
           <circle
             cx={CENTER}
             cy={CENTER}
-            r={rangeM * scale}
+            r={RANGE_M * scale}
             fill="none"
             stroke="var(--nd-grid)"
             strokeWidth="0.75"
           />
           <text x="6" y={VIEW - 6} fontSize="7" fill="var(--nd-ink3)">
-            {rangeM} m radius
+            {RANGE_M} m radius
           </text>
 
           <g opacity={noFeed ? 0.35 : 1}>
             {offsets.map(({ drone, east, north }) => {
               const range = Math.hypot(east, north);
-              const k = range > rangeM ? rangeM / range : 1;
+              const k = range > RANGE_M ? RANGE_M / range : 1;
               const x = CENTER + east * k * scale;
               const y = CENTER - north * k * scale;
               // k < 1 means the icon was pulled in from its true position to
