@@ -69,7 +69,6 @@ class TriggeredImagePublisherNode(Node):
         gps = self.gps_cache.getElemBeforeTime(self.get_clock().now())
         imu = self.imu_cache.getElemBeforeTime(self.get_clock().now())
 
-        
         if frame is None or gps is None or imu is None:
             self.get_logger().warning(
                 'Capture skipped: waiting for camera, GPS and IMU data. '

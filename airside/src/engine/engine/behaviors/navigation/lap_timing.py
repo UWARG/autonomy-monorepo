@@ -6,9 +6,12 @@ from __future__ import annotations
 
 import py_trees
 import rclpy.node
+
 from engine import blackboard_keys
 from engine.constants import LAPPING_DURATION_SEC
 from engine.ground_log import send_to_ground
+
+_LAPPING_DURATION_PARAMETER = "lapping_duration_s"
 
 
 class SetLappingDeadline(py_trees.behaviour.Behaviour):
@@ -29,17 +32,24 @@ class SetLappingDeadline(py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
+        self._node.declare_parameter(
+            _LAPPING_DURATION_PARAMETER,
+            LAPPING_DURATION_SEC,
+        )
 
     def update(self) -> py_trees.common.Status:
         now_s = self._node.get_clock().now().nanoseconds / 1e9
+        duration_s = float(
+            self._node.get_parameter(_LAPPING_DURATION_PARAMETER).value
+        )
         self.blackboard.set(
-            blackboard_keys.LAPPING_END_TIME_SEC, now_s + LAPPING_DURATION_SEC
+            blackboard_keys.LAPPING_END_TIME_SEC, now_s + duration_s
         )
         self._node.get_logger().info(
-            f"{self.name}: lapping deadline set to t={now_s + LAPPING_DURATION_SEC:.1f}s"
+            f"{self.name}: lapping deadline set to t={now_s + duration_s:.1f}s"
         )
         send_to_ground(
-            self._node, f"ENG: lapping phase, {LAPPING_DURATION_SEC:.0f}s window"
+            self._node, f"ENG: lapping phase, {duration_s:.0f}s window"
         )
         return py_trees.common.Status.SUCCESS
 

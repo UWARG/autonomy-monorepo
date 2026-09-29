@@ -1,0 +1,17 @@
+{"t": 0.0, "north_m": 0.01, "east_m": -0.01, "alt_m": 9.33, "wall_dist_m": 19.99, "distance_sensor_rx": 438}
+{"t": 0.51, "north_m": 0.04, "east_m": -0.01, "alt_m": 9.69, "wall_dist_m": 19.96, "distance_sensor_rx": 443}
+{"t": 1.01, "north_m": 0.46, "east_m": -0.01, "alt_m": 9.81, "wall_dist_m": 19.54, "distance_sensor_rx": 448}
+{"t": 1.51, "north_m": 1.53, "east_m": -0.01, "alt_m": 9.81, "wall_dist_m": 18.47, "distance_sensor_rx": 453}
+{"t": 2.01, "north_m": 3.23, "east_m": -0.0, "alt_m": 9.82, "wall_dist_m": 16.77, "distance_sensor_rx": 458}
+{"t": 2.51, "north_m": 5.54, "east_m": 0.0, "alt_m": 9.83, "wall_dist_m": 14.46, "distance_sensor_rx": 463}
+{"t": 3.02, "north_m": 8.45, "east_m": 0.01, "alt_m": 9.85, "wall_dist_m": 11.55, "distance_sensor_rx": 472}
+{"t": 3.52, "north_m": 11.94, "east_m": 0.01, "alt_m": 9.88, "wall_dist_m": 8.06, "distance_sensor_rx": 487}
+{"t": 4.03, "north_m": 15.79, "east_m": 0.01, "alt_m": 9.9, "wall_dist_m": 4.21, "distance_sensor_rx": 502}
+{"t": 4.53, "north_m": 19.62, "east_m": 0.01, "alt_m": 9.92, "wall_dist_m": 0.38, "distance_sensor_rx": 521}
+{"t": 5.03, "north_m": 23.25, "east_m": 0.01, "alt_m": 9.94, "wall_dist_m": 3.25, "distance_sensor_rx": 526}
+{"t": 5.53, "north_m": 27.31, "east_m": 0.01, "alt_m": 9.95, "wall_dist_m": 7.31, "distance_sensor_rx": 526}
+{"t": 6.03, "north_m": 30.39, "east_m": 0.02, "alt_m": 9.97, "wall_dist_m": 10.39, "distance_sensor_rx": 526}
+{"t": 6.54, "north_m": 32.61, "east_m": 0.03, "alt_m": 9.97, "wall_dist_m": 12.61, "distance_sensor_rx": 526}
+{"t": 7.04, "north_m": 35.5, "east_m": 0.03, "alt_m": 9.98, "wall_dist_m": 15.5, "distance_sensor_rx": 526}
+{"t": 7.54, "north_m": 37.44, "east_m": 0.03, "alt_m": 9.99, "wall_dist_m": 17.44, "distance_sensor_rx": 526}
+{"t": 8.04, "north_m": 38.96, "east_m": 0.03, "alt_m": 9.99, "wall_dist_m": 18.96, "distance_sensor_rx": 526}
