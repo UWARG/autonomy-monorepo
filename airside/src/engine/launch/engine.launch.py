@@ -80,6 +80,18 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="wrapper",
+                executable="downward_camera",
+                name="downward_camera_node",
+                output="both",
+            ),
+            Node(
+                package="wrapper",
+                executable="triggered_image_publisher",
+                name="triggered_image_publisher",
+                output="both",
+            ),
+            Node(
+                package="wrapper",
                 executable="map_manager",
                 name="map_manager_node",
                 output="screen",

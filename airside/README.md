@@ -204,6 +204,40 @@ The default node parameters are:
 | `uncertainty_seed` | `97` |
 | `max_unstable_sample_fraction` | `0.05` |
 
+### Triggered image capture
+
+The `camera` node (in the `wrapper` package) publishes the forward-facing feed
+on `camera/image_raw`; the `downward_camera` node publishes the downward feed
+on `/down/camera/image_raw`. Both currently use the same simulated camera as
+`camera_node.py` — no real-driver selection exists yet.
+
+The `triggered_image_publisher` node (in the `wrapper` package) caches the
+latest message from each of five topics and, on request, publishes one bundle
+containing all of them:
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/TriggerImageCapture` | `airside_interfaces/TriggerImageCapture` | subscribe | Send `command: "capture"` to request a bundle |
+| `camera/image_raw` | `sensor_msgs/Image` | subscribe | Forward-facing camera feed |
+| `/down/camera/image_raw` | `sensor_msgs/Image` | subscribe | Downward-facing camera feed |
+| `/mavros/global_position/global` | `sensor_msgs/NavSatFix` | subscribe | GPS fix |
+| `/mavros/imu/data` | `sensor_msgs/Imu` | subscribe | Orientation |
+| `/mavros/rangefinder/rangefinder` | `sensor_msgs/Range` | subscribe | Height above ground |
+| `/TriggeredImageCapture` | `airside_interfaces/TriggeredImageCapture` | publish | Forward image, downward image, GPS location, IMU and range, bundled |
+
+Send a request once all five inputs have published at least once:
+
+```bash
+ros2 topic pub --once /TriggerImageCapture airside_interfaces/msg/TriggerImageCapture "{command: 'capture'}"
+```
+
+Each accepted request publishes one `/TriggeredImageCapture` message. The
+outer header records packaging time; the original image, GPS and IMU
+timestamps are preserved. These are the latest independent readings, not
+time-synchronized measurements. Requests sent before all five inputs are
+available are logged and discarded; send another request once the feeds are
+ready. Other commands are ignored.
+
 ### ROS integration inside a behavior
 
 The `BehaviourTree` runner passes `rclpy.Node` as the `node` keyword argument to `setup()`:

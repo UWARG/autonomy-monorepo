@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -14,18 +16,24 @@ class CameraNode(Node):
     WIDTH = 640
     HEIGHT = 480
 
-    def __init__(self) -> None:
-        super().__init__("camera_node")
+    def __init__(
+        self,
+        topic: str = TOPIC,
+        camera_factory: Callable[[], AbstractCamera] = SimCamera,
+        node_name: str = "camera_node",
+    ) -> None:
+        super().__init__(node_name)
 
-        self._camera: AbstractCamera = SimCamera()
+        self._topic = topic
+        self._camera: AbstractCamera = camera_factory()
         self._camera.initialize_camera()
 
-        self._publisher = self.create_publisher(Image, self.TOPIC, 10)
+        self._publisher = self.create_publisher(Image, self._topic, 10)
         self._frame_id = 0
         self.create_timer(1.0 / self.PUBLISH_HZ, self._publish_frame)
 
         self.get_logger().info(
-            f"Camera node ready - publishing on '{self.TOPIC}' at {self.PUBLISH_HZ} Hz "
+            f"Camera node ready - publishing on '{self._topic}' at {self.PUBLISH_HZ} Hz "
             f"using {type(self._camera).__name__}."
         )
 
