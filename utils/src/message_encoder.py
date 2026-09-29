@@ -12,6 +12,9 @@ from utils.src.messages import (
     HealthPayload,
     LogMessage,
     LogPayload,
+    NearbyDronePayload,
+    NearbyDronesMessage,
+    NearbyDronesPayload,
     PositionMessage,
     PositionPayload,
     StatusMessage,
@@ -65,4 +68,10 @@ def encode_log(message: str) -> bytes:
 def encode_status(task: str, state: str, text: str) -> bytes:
     return _encoder.encode(
         StatusMessage(payload=StatusPayload(task=task, state=state, text=text))
+    )
+
+
+def encode_nearby_drones(drones: list[NearbyDronePayload]) -> bytes:
+    return _encoder.encode(
+        NearbyDronesMessage(payload=NearbyDronesPayload(drones=drones))
     )

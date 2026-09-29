@@ -73,9 +73,23 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
-                package="wrapper",
+                package="camera",
                 executable="camera",
                 name="camera_node",
+                output="both",
+                parameters=[{"camera_type": "oakd"}],
+            ),
+            Node(
+                package="camera",
+                executable="downward_camera",
+                name="downward_camera_node",
+                output="both",
+                parameters=[{"camera_type": "arducam"}],
+            ),
+            Node(
+                package="camera",
+                executable="triggered_image_publisher",
+                name="triggered_image_publisher",
                 output="both",
             ),
             Node(

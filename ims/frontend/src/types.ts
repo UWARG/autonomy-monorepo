@@ -50,15 +50,40 @@ export interface PositionMessage {
 
 /**
  * payload for { "type": "target" }
- *
- * PROVISIONAL 
+ * Mirrors TargetPayload in utils/src/messages.py.
  */
 export interface TargetMessage {
   /** degrees */
-  lat: number; 
+  lat: number;
   lon: number;
-  label?: string; 
+  label?: string;
   tracking?: boolean;
+  cluster?: number;
+}
+
+/**
+ * One aircraft in { "type": "nearby_drones" }.
+ * Mirrors NearbyDronePayload in utils/src/messages.py.
+ */
+export interface NearbyDrone {
+  id: number;
+  name: string;
+  lat: number; // degrees
+  lon: number; // degrees
+  alt: number; // meter AGL
+  speed: number; // m/s
+  /** degrees clockwise from true north */
+  direction: number;
+  horizontal_keep_away: number; // meter
+  vertical_keep_away: number; // meter
+}
+
+/**
+ * payload for { "type": "nearby_drones" } — snapshot of all traffic, replaces the previous one.
+ * Mirrors NearbyDronesPayload in utils/src/messages.py.
+ */
+export interface NearbyDronesMessage {
+  drones: NearbyDrone[];
 }
 
 /**
