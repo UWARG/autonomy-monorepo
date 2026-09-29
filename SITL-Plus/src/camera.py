@@ -13,8 +13,6 @@ import rerun as rr
 import constants
 import state
 
-prev_state = state.update
-
 _DOWNWARD_DIRECTIONS = ([0, 0, -1], [0, 0, 1])
 
 
@@ -55,9 +53,13 @@ class Camera:
         width=224,
         direction=None,
         depth_map: bool = True,
+        sensor_host=None,
+        log_prefix="",
     ):
         if direction is None:
             direction = [0, 0, -1]
+        self.sensor_host = sensor_host
+        self.log_prefix = log_prefix
         self.attached_to_object = attached_to_object
         self.direction = direction
         self.port = port
@@ -112,7 +114,7 @@ class Camera:
                 continue
             rgb_bytes = rgb_bytes.tobytes()
             rr.log(
-                str(self.port) + "_rgb_image",
+                self.log_prefix + str(self.port) + "_rgb_image",
                 rr.EncodedImage(contents=rgb_bytes, media_type="image/jpeg"),
             )
             real_depth = (
@@ -122,7 +124,10 @@ class Camera:
                 / (self.far - (self.far - self.near) * np.asarray(self.depth_img))
             )
             depth_array = real_depth.reshape(self.height, self.width).astype(np.uint16)
-            rr.log(str(self.port) + "_depth_map", rr.DepthImage(depth_array, meter=100))
+            rr.log(
+                self.log_prefix + str(self.port) + "_depth_map",
+                rr.DepthImage(depth_array, meter=100),
+            )
             if not self.depth_map:
                 depth_bytes = b""
             else:
@@ -139,5 +144,6 @@ class Camera:
                 "QQff", len(rgb_bytes), len(depth_bytes), self.far, self.near
             )
             state.airside_socket.sendto(
-                udp_header + rgb_bytes + depth_bytes, (_sensor_host(), self.port)
+                udp_header + rgb_bytes + depth_bytes,
+                (self.sensor_host or _sensor_host(), self.port),
             )

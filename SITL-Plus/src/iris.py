@@ -16,9 +16,10 @@ def constrain(value, min_value, max_value):
 class Iris:
     """Iris quadcopter"""
 
-    def __init__(self):
+    def __init__(self, position=(0, 0, 0.2)):
         iris_path = os.path.join(state.dir_path, "iris/iris.urdf")
-        state.robot_id = p.loadURDF(iris_path, [0, 0, 0.2])
+        self.position = tuple(position)
+        self.robot_id = p.loadURDF(iris_path, self.position)
 
         self.motor_indices = [1, 2, 3, 4]
         self.motor_dir = [1, 1, -1, -1]
@@ -50,7 +51,7 @@ class Iris:
         for i in range(num_motors):
             force = [0, 0, thrusts[i]]
             p.applyExternalForce(
-                objectUniqueId=state.robot_id,
+                objectUniqueId=self.robot_id,
                 linkIndex=self.motor_indices[i],
                 forceObj=force,
                 posObj=[0, 0, 0],
@@ -62,7 +63,7 @@ class Iris:
             )
 
         p.applyExternalTorque(
-            objectUniqueId=state.robot_id,
+            objectUniqueId=self.robot_id,
             linkIndex=-1,
             torqueObj=[0, 0, -total_yaw_torque],
             flags=p.LINK_FRAME,
@@ -75,7 +76,7 @@ class Iris:
                 * self.motor_speed
             )
             p.setJointMotorControl2(
-                state.robot_id,
+                self.robot_id,
                 self.motor_indices[i],
                 p.VELOCITY_CONTROL,
                 targetVelocity=speed,
@@ -83,4 +84,5 @@ class Iris:
 
     def reset(self):
         """Reset time and location."""
-        p.resetBasePositionAndOrientation(state.robot_id, [0, 0, 0.2], [0, 0, 0, 1])
+        p.resetBasePositionAndOrientation(self.robot_id, self.position, [0, 0, 0, 1])
+        p.resetBaseVelocity(self.robot_id, [0, 0, 0], [0, 0, 0])

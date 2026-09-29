@@ -1,17 +1,28 @@
 services:
-  sitl-plus:
+  physics:
+    image: sitl-plus:local
     build:
       context: .
       dockerfile: Dockerfile
-    entrypoint: ["/app/docker/entrypoint_rerun.sh"]
-    ports:
-      - 5761:5761
-      - 14550:14550
+    entrypoint: ["uv", "run", "python3", "src/main.py"]
     environment:
-      - DEBIAN_FRONTEND=noninteractive
-      - SENSOR_HOST=host.docker.internal #points to the host machine so run airside on host machine eg powershell terminal instead of wsl 
+      SENSOR_HOST: host.docker.internal
+      DRONE_HOSTS: ${DRONE_HOSTS:-sitl-plus}
+      DRONE_MODEL: ${DRONE_MODEL:-iris:Iris}
+      SIM_RATE_HZ: ${SIM_RATE_HZ:-800}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  sitl-plus:
+    image: sitl-plus:local
+    depends_on:
+      - physics
+    ports:
+      - "5761:5761"
+    environment:
+      PHYSICS_HOST: physics
+      SIM_RATE_HZ: ${SIM_RATE_HZ:-800}
     volumes:
-      - ./logs:/app/logs
+      - ./logs/drone_1:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     stdin_open: true

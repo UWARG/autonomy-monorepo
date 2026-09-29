@@ -12,8 +12,6 @@ import rerun as rr
 import constants
 import state
 
-prev_state = state.update
-
 
 def _sensor_host():
     host = os.getenv("SENSOR_HOST")
@@ -25,9 +23,20 @@ def _sensor_host():
 class Range_Finder:  # pylint: disable=invalid-name
     """Simulated downward range finder using PyBullet ray tests."""
 
-    def __init__(self, port, direction=None, dist=100):
+    def __init__(
+        self,
+        port,
+        attached_to_object,
+        direction=None,
+        dist=100,
+        sensor_host=None,
+        log_prefix="",
+    ):
         if direction is None:
             direction = [0, 0, -1]
+        self.attached_to_object = attached_to_object
+        self.sensor_host = sensor_host
+        self.log_prefix = log_prefix
         self.port = port
         self.direction = direction
         self.dist = dist
@@ -35,7 +44,7 @@ class Range_Finder:  # pylint: disable=invalid-name
 
     def update(self):
         """Cast a ray and store the distance to the nearest obstacle."""
-        pos, orn = p.getBasePositionAndOrientation(state.robot_id)
+        pos, orn = p.getBasePositionAndOrientation(self.attached_to_object)
         ray_from = np.array(pos)
         rot_matrix = p.getMatrixFromQuaternion(orn)
         rot_matrix = np.reshape(rot_matrix, (3, 3))
@@ -46,7 +55,7 @@ class Range_Finder:  # pylint: disable=invalid-name
         result = p.rayTest(ray_from, ray_to)
         body_id = result[0][0]
         coordinates = result[0][3]
-        while body_id == state.robot_id:
+        while body_id == self.attached_to_object:
             ray_from = ray_from + local_direction * 0.01
             result = p.rayTest(ray_from, ray_to)
             body_id = result[0][0]
@@ -63,6 +72,7 @@ class Range_Finder:  # pylint: disable=invalid-name
             time.sleep(1 / constants.RANGE_FINDER_FPS)
             self.update()
             state.airside_socket.sendto(
-                struct.pack("f", self.range), (_sensor_host(), self.port)
+                struct.pack("f", self.range),
+                (self.sensor_host or _sensor_host(), self.port),
             )
-            rr.log(str(self.port) + "_range", rr.Scalars(self.range))
+            rr.log(self.log_prefix + str(self.port) + "_range", rr.Scalars(self.range))
