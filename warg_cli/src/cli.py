@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from importlib.metadata import version as package_version
+import os
 from pathlib import Path
 import re
 from typing import Optional
@@ -22,10 +23,27 @@ from models import Project
 from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
 from constants import BOOTCAMP_UPSTREAM
 from runner import CommandRunner
+from startup import (
+    SyncResult,
+    SystemdUser,
+    find_warg_executable,
+    install_sync_unit,
+    render_sync_unit,
+    render_units,
+    startup_entries,
+    sync_units,
+    uninstall_units,
+)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
+startup_app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(
+    startup_app,
+    name="startup",
+    help="Run project commands as background services at boot on Linux.",
+)
 console = Console()
 
 
@@ -248,6 +266,11 @@ def info(project: str) -> None:
     for name in selected.commands:
         console.print(f"  - {name}")
 
+    if selected.startup.commands:
+        console.print(f"Startup commands (restart: {selected.startup.restart}):")
+        for name in selected.startup.commands:
+            console.print(f"  - {name}")
+
 
 @app.command()
 def doctor(
@@ -414,6 +437,126 @@ def ci_main(
 ) -> None:
     """Run main-branch CI for projects affected by this push."""
     _run_ci("main", base=base, merge_base=False)
+
+
+@startup_app.command("list")
+def startup_list() -> None:
+    """List the commands checked-out projects run at startup."""
+    try:
+        entries = startup_entries(_load_registry())
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if not entries:
+        console.print("No checked-out projects define \\[startup] commands.")
+        return
+
+    systemd = SystemdUser()
+    available = systemd.is_available()
+    table = Table(title="WARG startup commands")
+    table.add_column("Project")
+    table.add_column("Command")
+    table.add_column("Restart")
+    table.add_column("Service")
+    table.add_column("State")
+    for entry in entries:
+        state = systemd.unit_state(entry.unit_name) if available else "-"
+        table.add_row(
+            entry.project, entry.command, entry.restart, entry.unit_name, state
+        )
+    console.print(table)
+
+
+@startup_app.command("install")
+def startup_install() -> None:
+    """Start startup commands now and at every boot on this machine."""
+    root = _load_repo_root()
+    systemd = SystemdUser()
+    try:
+        systemd.ensure_available()
+        warg = find_warg_executable()
+        path_env = os.environ.get("PATH", "")
+        units = render_units(Registry(root), warg=warg, path_env=path_env)
+        install_sync_unit(
+            systemd, render_sync_unit(root=root, warg=warg, path_env=path_env)
+        )
+        result = sync_units(systemd, units)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    _print_sync_result(result)
+    if not systemd.linger_enabled() and not systemd.enable_linger():
+        console.print(
+            "[yellow]Warning:[/yellow] Could not enable lingering, so these "
+            "services only start after you log in. To start them at boot, run:\n"
+            "  sudo loginctl enable-linger $USER",
+            soft_wrap=True,
+        )
+    console.print(
+        "Services resync from warg.toml at every boot. Run 'warg startup sync' "
+        "to apply manifest changes without rebooting."
+    )
+
+
+@startup_app.command("sync")
+def startup_sync() -> None:
+    """Apply warg.toml startup changes to the installed services."""
+    root = _load_repo_root()
+    systemd = SystemdUser()
+    try:
+        systemd.ensure_available()
+        units = render_units(
+            Registry(root),
+            warg=find_warg_executable(),
+            path_env=os.environ.get("PATH", ""),
+        )
+        result = sync_units(systemd, units)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    _print_sync_result(result)
+
+
+@startup_app.command("uninstall")
+def startup_uninstall() -> None:
+    """Stop and remove every startup service warg installed."""
+    systemd = SystemdUser()
+    try:
+        systemd.ensure_available()
+        removed = uninstall_units(systemd)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    if not removed:
+        console.print("No warg startup services are installed.")
+        return
+    console.print("Removed startup services:")
+    for name in removed:
+        console.print(f"  - {name}")
+
+
+def _print_sync_result(result: SyncResult) -> None:
+    for label, names in (
+        ("Added", result.added),
+        ("Updated", result.updated),
+        ("Removed", result.removed),
+        ("Unchanged", result.unchanged),
+    ):
+        if names:
+            console.print(f"{label}:")
+            for name in names:
+                console.print(f"  - {name}")
+
+    if not (result.added or result.updated or result.unchanged):
+        console.print(
+            "No checked-out projects define \\[startup] commands, so nothing "
+            "runs at startup."
+        )
+        return
+    console.print("Follow a service's logs with: journalctl --user -u <service> -f")
 
 
 def _load_registry() -> Registry:
