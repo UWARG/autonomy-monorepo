@@ -24,33 +24,16 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "obstacle_source",
                 default_value=EnvironmentVariable(
-                    "OBSTACLE_SOURCE", default_value="traffic"
+                    "OBSTACLE_SOURCE", default_value="scan"
                 ),
                 description="Exactly one obstacle source: traffic or scan",
             ),
             DeclareLaunchArgument(
-                "aeac_url",
-                default_value=EnvironmentVariable("AEAC_URL", default_value=""),
-            ),
-            DeclareLaunchArgument(
-                "aeac_token",
-                default_value=EnvironmentVariable("AEAC_TOKEN", default_value=""),
-            ),
-            DeclareLaunchArgument(
-                "aeac_uav_id",
-                default_value=EnvironmentVariable("AEAC_UAV_ID", default_value=""),
-            ),
-            DeclareLaunchArgument(
-                "aeac_own_aircraft_index",
+                "horizontal_speed_mps",
                 default_value=EnvironmentVariable(
-                    "AEAC_OWN_AIRCRAFT_INDEX", default_value="-1"
+                    "OBSTACLE_HORIZONTAL_SPEED_MPS", default_value="2.0"
                 ),
-            ),
-            DeclareLaunchArgument(
-                "aeac_protocol_verified",
-                default_value=EnvironmentVariable(
-                    "AEAC_PROTOCOL_VERIFIED", default_value="false"
-                ),
+                description="Obstacle-aware horizontal velocity limit",
             ),
             Node(
                 package="mavros",
@@ -127,29 +110,6 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
-                package="aeac_bridge",
-                executable="bridge",
-                name="aeac_bridge",
-                output="both",
-                respawn=True,
-                respawn_delay=2.0,
-                parameters=[
-                    {
-                        "aeac_websocket_url": LaunchConfiguration("aeac_url"),
-                        "aeac_connection_token": LaunchConfiguration("aeac_token"),
-                        "uav_id": LaunchConfiguration("aeac_uav_id"),
-                        "own_aircraft_index": ParameterValue(
-                            LaunchConfiguration("aeac_own_aircraft_index"),
-                            value_type=int,
-                        ),
-                        "protocol_verified": ParameterValue(
-                            LaunchConfiguration("aeac_protocol_verified"),
-                            value_type=bool,
-                        ),
-                    }
-                ],
-            ),
-            Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",
@@ -158,7 +118,11 @@ def generate_launch_description() -> LaunchDescription:
                     {
                         "obstacle_avoidance.source": LaunchConfiguration(
                             "obstacle_source"
-                        )
+                        ),
+                        "obstacle_avoidance.horizontal_speed_mps": ParameterValue(
+                            LaunchConfiguration("horizontal_speed_mps"),
+                            value_type=float,
+                        ),
                     }
                 ],
             ),

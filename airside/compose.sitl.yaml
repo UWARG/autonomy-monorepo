@@ -14,12 +14,7 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: tcp://${SITL_HOST:-127.0.0.1}:5762
-      OBSTACLE_SOURCE: ${OBSTACLE_SOURCE:-traffic}
-      AEAC_URL: ${AEAC_URL:-}
-      AEAC_TOKEN: ${AEAC_TOKEN:-}
-      AEAC_UAV_ID: ${AEAC_UAV_ID:-}
-      AEAC_OWN_AIRCRAFT_INDEX: ${AEAC_OWN_AIRCRAFT_INDEX:--1}
-      AEAC_PROTOCOL_VERIFIED: ${AEAC_PROTOCOL_VERIFIED:-false}
+      OBSTACLE_SOURCE: ${OBSTACLE_SOURCE:-scan}
       ROS_LOG_DIR: /ros_ws/log/ros
     volumes:
       - ./src:/ros_ws/src

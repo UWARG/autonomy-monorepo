@@ -16,15 +16,14 @@ docker_bin="${DOCKER_BIN:-docker}"
 sitl_name="sitl-144-airside"
 airside_name="airside-144-test"
 airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
-traffic_scenario=""
-own_aircraft_index=1
-if [[ "$scenario" == "traffic_unknown_identity" ]]; then
-    traffic_scenario="static"
-    own_aircraft_index=-1
-elif [[ "$scenario" == "traffic_pilot_takeover" ]]; then
-    traffic_scenario="static"
-elif [[ "$scenario" == traffic_* ]]; then
-    traffic_scenario="${scenario#traffic_}"
+synthetic_traffic="false"
+include_static_obstacle="true"
+if [[ "$scenario" == "traffic_clear" ]]; then
+    synthetic_traffic="true"
+    include_static_obstacle="false"
+elif [[ "$scenario" == "traffic_static" \
+    || "$scenario" == "traffic_pilot_takeover" ]]; then
+    synthetic_traffic="true"
 fi
 
 mkdir -p "$artifact_dir"
@@ -61,23 +60,17 @@ sleep 3
     "source /opt/ros/humble/setup.bash
      source /ros_ws/install/setup.bash
      export PYTHONPATH=/monorepo\${PYTHONPATH:+:\$PYTHONPATH}
-     fake_server_pid=''
-     bridge_pid=''
-     if [[ -n '${traffic_scenario}' ]]; then
-       setsid python3 /repo/airside/scripts/avoidance/fake_aeac_server.py \
-         --scenario '${traffic_scenario}' \
-         --port 8765 \
-         --transcript /artifacts/${label}-aeac-transcript.jsonl \
-         > /artifacts/${label}-aeac-server.log 2>&1 &
-       fake_server_pid=\$!
-       setsid ros2 run aeac_bridge bridge --ros-args \
-         -p aeac_websocket_url:=ws://127.0.0.1:8765/test \
-         -p aeac_connection_token:=local-test-token \
-         -p uav_id:=WARG-01 \
-         -p own_aircraft_index:=${own_aircraft_index} \
-         -p protocol_verified:=true \
-         > /artifacts/${label}-aeac-bridge.log 2>&1 &
-       bridge_pid=\$!
+     traffic_pid=''
+     if [[ '${synthetic_traffic}' == 'true' ]]; then
+       setsid ros2 run engine synthetic_static_traffic --ros-args \
+         -p include_obstacle:=${include_static_obstacle} \
+         -p east_offset_m:=0.0 \
+         -p north_offset_m:=20.0 \
+         -p altitude_agl_m:=15.0 \
+         -p horizontal_keepaway_m:=5.0 \
+         -p vertical_keepaway_m:=5.0 \
+         > /artifacts/${label}-synthetic-traffic.log 2>&1 &
+       traffic_pid=\$!
      fi
      ros2 run mavros mavros_node --ros-args \
        -p fcu_url:=tcp://127.0.0.1:5760 \
@@ -134,23 +127,14 @@ sleep 3
      sleep 1
      kill -KILL \$mavros_pid >/dev/null 2>&1 || true
      wait \$mavros_pid >/dev/null 2>&1 || true
-     if [[ -n \$bridge_pid ]]; then
-       kill -INT -- -\$bridge_pid >/dev/null 2>&1 || true
+     if [[ -n \$traffic_pid ]]; then
+       kill -INT -- -\$traffic_pid >/dev/null 2>&1 || true
        for _ in \$(seq 1 20); do
-         kill -0 \$bridge_pid >/dev/null 2>&1 || break
+         kill -0 \$traffic_pid >/dev/null 2>&1 || break
          sleep 0.25
        done
-       kill -TERM -- -\$bridge_pid >/dev/null 2>&1 || true
-       wait \$bridge_pid >/dev/null 2>&1 || true
-     fi
-     if [[ -n \$fake_server_pid ]]; then
-       kill -INT -- -\$fake_server_pid >/dev/null 2>&1 || true
-       for _ in \$(seq 1 20); do
-         kill -0 \$fake_server_pid >/dev/null 2>&1 || break
-         sleep 0.25
-       done
-       kill -TERM -- -\$fake_server_pid >/dev/null 2>&1 || true
-       wait \$fake_server_pid >/dev/null 2>&1 || true
+       kill -TERM -- -\$traffic_pid >/dev/null 2>&1 || true
+       wait \$traffic_pid >/dev/null 2>&1 || true
      fi
      exit \$scenario_status" \
     >"$artifact_dir/${label}-runner.log" 2>&1

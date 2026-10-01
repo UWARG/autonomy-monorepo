@@ -34,7 +34,6 @@ from synthetic_laserscan import (
     point_to_wall_distance_m,
     wall_scan_ranges,
 )
-
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 BEAM_COUNT = 72
@@ -57,22 +56,9 @@ TRANSITION_RECON_SWITCH_S = 45.0
 TRAFFIC_SCENARIOS = {
     "traffic_clear",
     "traffic_static",
-    "traffic_crossing",
-    "traffic_dropout",
-    "traffic_malformed",
-    "traffic_reconnect",
-    "traffic_unknown_identity",
     "traffic_pilot_takeover",
 }
-TRAFFIC_OBSTACLE_SCENARIOS = TRAFFIC_SCENARIOS - {
-    "traffic_clear",
-    "traffic_unknown_identity",
-}
-TRAFFIC_FAULT_SCENARIOS = {
-    "traffic_dropout",
-    "traffic_malformed",
-    "traffic_reconnect",
-}
+TRAFFIC_OBSTACLE_SCENARIOS = TRAFFIC_SCENARIOS - {"traffic_clear"}
 
 
 class AirsideBTSitlScenario(Node):
@@ -725,15 +711,13 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
         and summary["diagnostics_count"] > 0
         and summary["failure_reason"] is None
     )
-    if scenario in {"invalid", "partial", "traffic_unknown_identity"}:
+    if scenario in {"invalid", "partial"}:
         passed = (
             common
             and summary["nonzero_velocity_count"] == 0
             and summary["planner_status"] == "NO_PATH"
             and summary["goal_reached_at_s"] is None
         )
-        if scenario == "traffic_unknown_identity":
-            passed = passed and summary["planner_reason"] == "UNVERIFIED_SELF_IDENTITY"
     elif scenario == "transition":
         passed = (
             common
@@ -767,14 +751,11 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
                 )
             elif scenario != "traffic_clear":
                 passed = passed and summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
-        if scenario in {"wall", "traffic_static", "traffic_crossing"}:
+        if scenario in {"wall", "traffic_static"}:
             passed = passed and summary["planner_hold_count"] == 0
         if scenario in {
             "dropout",
             "frozen",
-            "traffic_dropout",
-            "traffic_malformed",
-            "traffic_reconnect",
         }:
             passed = passed and summary["stop_observed"]
         if scenario in {"pilot_takeover", "traffic_pilot_takeover"}:
@@ -969,25 +950,6 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                             resume_nonzero_start_count = node.nonzero_velocity_count
                         fault_finished = True
 
-                    if args.scenario in TRAFFIC_FAULT_SCENARIOS:
-                        diagnostics = snapshot["diagnostics"]
-                        reason = str(diagnostics.get("reason", ""))
-                        if reason in {
-                            "STALE_TRAFFIC",
-                            "TRAFFIC_PROTOCOL_ERROR",
-                            "TRAFFIC_DISCONNECTED",
-                            "WAITING_FOR_TRAFFIC",
-                        } or reason.startswith("DISCONNECTED:"):
-                            with node.lock:
-                                speed = math.sqrt(
-                                    sum(
-                                        component**2
-                                        for component in node.last_velocity
-                                    )
-                                )
-                            if speed <= 0.05 and north_m < WALL_NORTH_M:
-                                summary["stop_observed"] = True
-
                     if (
                         args.scenario
                         in {"pilot_takeover", "transition", "traffic_pilot_takeover"}
@@ -1102,11 +1064,6 @@ def main() -> int:
             "transition",
             "traffic_clear",
             "traffic_static",
-            "traffic_crossing",
-            "traffic_dropout",
-            "traffic_malformed",
-            "traffic_reconnect",
-            "traffic_unknown_identity",
             "traffic_pilot_takeover",
         ],
         required=True,

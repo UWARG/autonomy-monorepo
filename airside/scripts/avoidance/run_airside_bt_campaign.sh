@@ -63,8 +63,7 @@ trap finish EXIT
 export ARTIFACT_DIR="$artifact_dir"
 
 planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
-bridge_src="$(cd ../../src/aeac_bridge && pwd)"
-export PYTHONPATH="$planner_src:$bridge_src${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONPATH="$planner_src${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m unittest discover -v -s . -p 'test_*.py' || exit 1
 python3 unknown_sector_probe.py \
     --output-json "$artifact_dir/unknown-sector-probe.json" || exit 1

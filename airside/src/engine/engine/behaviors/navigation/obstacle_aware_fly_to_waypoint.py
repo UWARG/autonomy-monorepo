@@ -208,7 +208,7 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
 
     def _declare_parameters(self) -> None:
         defaults: dict[str, object] = {
-            "obstacle_avoidance.source": "traffic",
+            "obstacle_avoidance.source": "scan",
             "obstacle_avoidance.scan_topic": _SCAN_TOPIC_DEFAULT,
             "obstacle_avoidance.scan_frame": "base_link",
             "obstacle_avoidance.traffic_topic": _TRAFFIC_TOPIC_DEFAULT,
