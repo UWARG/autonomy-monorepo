@@ -89,6 +89,9 @@ def traffic_payload(
     origin = origin_telemetry or own_telemetry
     origin_latitude = float(origin["latitude"])
     origin_longitude = float(origin["longitude"])
+    if config.scenario == "clear":
+        return {"event": "traffic", "payload": {"traffic": []}}
+
     traffic: list[dict[str, Any]] = [
         {
             "aircraftIndex": config.own_aircraft_index,
@@ -104,9 +107,6 @@ def traffic_payload(
             "verticalKeepAway": 1.0,
         }
     ]
-    if config.scenario == "clear":
-        return {"event": "traffic", "payload": {"traffic": traffic}}
-
     if config.scenario != "crossing":
         intruder_east_m = 0.0
         speed_mps = 0.0

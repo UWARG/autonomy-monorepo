@@ -14,16 +14,14 @@ TELEMETRY = {
 
 
 class FakeAeacPayloadTests(unittest.TestCase):
-    def test_clear_snapshot_contains_only_filterable_self_aircraft(self) -> None:
+    def test_clear_snapshot_is_a_fresh_valid_empty_list(self) -> None:
         payload = traffic_payload(
             config=FakeTrafficConfig("clear"),
             own_telemetry=TELEMETRY,
             elapsed_s=0.0,
         )
 
-        traffic = payload["payload"]["traffic"]
-        self.assertEqual(len(traffic), 1)
-        self.assertEqual(traffic[0]["aircraftIndex"], 1)
+        self.assertEqual(payload["payload"]["traffic"], [])
 
     def test_static_intruder_is_twenty_metres_north(self) -> None:
         payload = traffic_payload(
