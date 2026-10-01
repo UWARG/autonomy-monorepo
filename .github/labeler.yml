@@ -44,3 +44,7 @@
 "target tracking":
   - changed-files:
       - any-glob-to-any-file: "target_tracking/**"
+
+"3DS Groundside":
+  - changed-files:
+      - any-glob-to-any-file: "3DS_Groundside/**"
