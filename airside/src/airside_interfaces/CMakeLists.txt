@@ -8,6 +8,8 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Coordinate.msg"
+  "msg/TrafficAircraft.msg"
+  "msg/TrafficSnapshot.msg"
   "msg/TriggerImageCapture.msg"
   "msg/TriggeredImageCapture.msg"
   DEPENDENCIES sensor_msgs std_msgs

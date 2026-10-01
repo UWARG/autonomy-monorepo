@@ -31,6 +31,7 @@ setup(
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
             "heartbeat = engine.heartbeat_node:main",
+            "synthetic_static_traffic = engine.synthetic_static_traffic:main",
         ],
     },
 )

@@ -15,6 +15,16 @@ repo_root="$(cd ../../.. && pwd)"
 docker_bin="${DOCKER_BIN:-docker}"
 sitl_name="sitl-144-airside"
 airside_name="airside-144-test"
+airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
+synthetic_traffic="false"
+include_static_obstacle="true"
+if [[ "$scenario" == "traffic_clear" ]]; then
+    synthetic_traffic="true"
+    include_static_obstacle="false"
+elif [[ "$scenario" == "traffic_static" \
+    || "$scenario" == "traffic_pilot_takeover" ]]; then
+    synthetic_traffic="true"
+fi
 
 mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
@@ -46,10 +56,22 @@ sleep 3
     -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
-    warg/airside:latest -lc \
+    "$airside_image" -lc \
     "source /opt/ros/humble/setup.bash
      source /ros_ws/install/setup.bash
      export PYTHONPATH=/monorepo\${PYTHONPATH:+:\$PYTHONPATH}
+     traffic_pid=''
+     if [[ '${synthetic_traffic}' == 'true' ]]; then
+       setsid ros2 run engine synthetic_static_traffic --ros-args \
+         -p include_obstacle:=${include_static_obstacle} \
+         -p east_offset_m:=0.0 \
+         -p north_offset_m:=20.0 \
+         -p altitude_agl_m:=15.0 \
+         -p horizontal_keepaway_m:=5.0 \
+         -p vertical_keepaway_m:=5.0 \
+         > /artifacts/${label}-synthetic-traffic.log 2>&1 &
+       traffic_pid=\$!
+     fi
      ros2 run mavros mavros_node --ros-args \
        -p fcu_url:=tcp://127.0.0.1:5760 \
        -p fcu_protocol:=v2.0 \
@@ -61,6 +83,7 @@ sleep 3
      setsid ros2 bag record \
        --output /artifacts/${label}-rosbag \
        /obstacle_avoidance/scan \
+       /aeac/traffic \
        /obstacle_avoidance/diagnostics \
        /mavros/state \
        /mavros/local_position/pose \
@@ -104,6 +127,15 @@ sleep 3
      sleep 1
      kill -KILL \$mavros_pid >/dev/null 2>&1 || true
      wait \$mavros_pid >/dev/null 2>&1 || true
+     if [[ -n \$traffic_pid ]]; then
+       kill -INT -- -\$traffic_pid >/dev/null 2>&1 || true
+       for _ in \$(seq 1 20); do
+         kill -0 \$traffic_pid >/dev/null 2>&1 || break
+         sleep 0.25
+       done
+       kill -TERM -- -\$traffic_pid >/dev/null 2>&1 || true
+       wait \$traffic_pid >/dev/null 2>&1 || true
+     fi
      exit \$scenario_status" \
     >"$artifact_dir/${label}-runner.log" 2>&1
 scenario_status=$?

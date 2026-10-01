@@ -7,6 +7,8 @@ to the flight controller as MAVLink `OBSTACLE_DISTANCE` (72 × 5° sectors,
 send — and ArduPilot's proximity + BendyRuler stack does the avoiding.
 
 See `airside/docs/issue-96-ardupilot-avoidance.md` for the research write-up.
+The explicit static imaginary-obstacle flight-test launch and readiness gate
+are documented in `airside/docs/issue-160-static-obstacle-flight-test.md`.
 
 ## Files
 
