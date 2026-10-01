@@ -1,5 +1,5 @@
-from threeds_groundside import __version__
+import src
 
 
 def test_version() -> None:
-    assert __version__ == "0.1.0"
+    assert src.__version__ == "0.1.0"

@@ -21,7 +21,6 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/threeds_groundside"]
+packages = ["src"]
