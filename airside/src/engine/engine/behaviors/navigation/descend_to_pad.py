@@ -12,30 +12,19 @@ from engine.constants import (
 )
 from engine.ground_log import send_to_ground
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
-from mavros_msgs.msg import GlobalPositionTarget, State
+from airside_interfaces.msg import Coordinate
+from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandTOL
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
 
 
-_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
+_POSITION_TARGET_TOPIC = "position_controller/target"
 _GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
 _REL_ALT_TOPIC = "mavros/global_position/rel_alt"
 _STATE_TOPIC = "mavros/state"
 _LAND_SERVICE = "mavros/cmd/land"
-
-# Position-only setpoint: ignores velocity, acceleration and yaw fields
-_TYPE_MASK = (
-    GlobalPositionTarget.IGNORE_VX
-    | GlobalPositionTarget.IGNORE_VY
-    | GlobalPositionTarget.IGNORE_VZ
-    | GlobalPositionTarget.IGNORE_AFX
-    | GlobalPositionTarget.IGNORE_AFY
-    | GlobalPositionTarget.IGNORE_AFZ
-    | GlobalPositionTarget.IGNORE_YAW
-    | GlobalPositionTarget.IGNORE_YAW_RATE
-)
 
 
 class DescendToLandingPad(py_trees.behaviour.Behaviour):
@@ -43,13 +32,14 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
     Flies to the claimed landing pad in guided mode, then commands a LAND-mode
     descent onto it.
 
-    Reads ``target_landing_pad``. First publishes MAVROS guided-mode setpoints
-    to fly to the pad's global coordinate, returning RUNNING while traveling
-    and FAILURE if the pad is not reached within ``WAYPOINT_NAV_TIMEOUT_S``.
-    Once within ``WAYPOINT_ACCEPTANCE_RADIUS_M`` of the pad, calls the MAVROS
-    land service and returns SUCCESS once the descent is accepted. The drone's
-    touchdown is confirmed separately by ``TouchingGround``. Returns FAILURE if
-    the land command is rejected.
+    Reads ``target_landing_pad``. First publishes position targets to the
+    ``position_controller`` node to fly to the pad's global coordinate,
+    returning RUNNING while traveling and FAILURE if the pad is not reached
+    within ``WAYPOINT_NAV_TIMEOUT_S``. Once within
+    ``WAYPOINT_ACCEPTANCE_RADIUS_M`` of the pad, calls the MAVROS land service
+    and returns SUCCESS once the descent is accepted. The drone's touchdown is
+    confirmed separately by ``TouchingGround``. Returns FAILURE if the land
+    command is rejected.
     """
 
     def __init__(self, name: str = "DescendToLandingPad") -> None:
@@ -65,15 +55,15 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         self._latest_fix: NavSatFix | None = None
         self._latest_rel_alt_m: float | None = None
         self._latest_state: State | None = None
-        self._setpoint: GlobalPositionTarget | None = None
+        self._target: Coordinate | None = None
         self._start_time_s = 0.0
         self._reached_pad = False
         self._land_future = None
         self._land_accepted = False
 
-        self._setpoint_pub = self._node.create_publisher(
-            msg_type=GlobalPositionTarget,
-            topic=_SETPOINT_TOPIC,
+        self._target_pub = self._node.create_publisher(
+            msg_type=Coordinate,
+            topic=_POSITION_TARGET_TOPIC,
             qos_profile=10,
         )
 
@@ -115,15 +105,10 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         try:
             pad = self.blackboard.get(blackboard_keys.TARGET_LANDING_PAD)
         except KeyError:
-            self._setpoint = None
+            self._target = None
             return
 
-        self._setpoint = GlobalPositionTarget()
-        self._setpoint.coordinate_frame = GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
-        self._setpoint.type_mask = _TYPE_MASK
-        self._setpoint.latitude = pad.lat
-        self._setpoint.longitude = pad.lon
-        self._setpoint.altitude = pad.alt
+        self._target = Coordinate(lat=pad.lat, lon=pad.lon, alt=pad.alt)
 
         self._start_time_s = self._now_s()
         self._reached_pad = False
@@ -132,7 +117,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         self._node.get_logger().info(f"{self.name}: descending to pad {pad}")
 
     def update(self) -> py_trees.common.Status:
-        if self._setpoint is None:
+        if self._target is None:
             self._node.get_logger().error(f"{self.name}: no landing pad to descend to")
             return py_trees.common.Status.FAILURE
 
@@ -154,7 +139,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         return self._command_land()
 
     def _fly_to_pad(self) -> py_trees.common.Status:
-        """Publish guided-mode setpoints until the pad is reached."""
+        """Publish position targets until the pad is reached."""
 
         if self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S:
             self._node.get_logger().error(
@@ -165,21 +150,20 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         if self._latest_state.mode != GUIDED_MODE:
             self._node.get_logger().warning(
                 f"{self.name}: flight controller in '{self._latest_state.mode}' "
-                f"mode, not '{GUIDED_MODE}' - holding off on setpoints",
+                f"mode, not '{GUIDED_MODE}' - holding off on position targets",
                 throttle_duration_sec=5.0,
             )
             return py_trees.common.Status.RUNNING
 
-        self._setpoint.header.stamp = self._node.get_clock().now().to_msg()
-        self._setpoint_pub.publish(self._setpoint)
+        self._target_pub.publish(self._target)
 
         east_m, north_m = east_north_coordinate_offset_m(
             self._latest_fix.latitude,
             self._latest_fix.longitude,
-            self._setpoint.latitude,
-            self._setpoint.longitude,
+            self._target.lat,
+            self._target.lon,
         )
-        up_m = self._setpoint.altitude - self._latest_rel_alt_m
+        up_m = self._target.alt - self._latest_rel_alt_m
         distance = math.sqrt(east_m**2 + north_m**2 + up_m**2)
 
         if distance <= WAYPOINT_ACCEPTANCE_RADIUS_M:
@@ -230,7 +214,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
 
     def terminate(self, new_status: py_trees.common.Status) -> None:
         if new_status != py_trees.common.Status.SUCCESS:
-            self._setpoint = None
+            self._target = None
             self._reached_pad = False
             self._land_future = None
             self._land_accepted = False
