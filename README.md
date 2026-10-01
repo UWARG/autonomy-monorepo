@@ -75,3 +75,5 @@ root README.
 - `Utils`: Shared enums and dataclasses used across all Airside modules.
 
 - `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
+
+- `3DS_Groundside`: Groundside for 3DS project. See [3DS_Groundside/README.md](3DS_Groundside/README.md).
