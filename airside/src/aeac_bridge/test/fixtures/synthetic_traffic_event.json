@@ -1,0 +1,20 @@
+{
+  "event": "traffic",
+  "payload": {
+    "traffic": [
+      {
+        "aircraftIndex": 7,
+        "name": "SIM-INTRUDER",
+        "position": {
+          "lat": 43.4718,
+          "lon": -80.5415,
+          "altitude": 15.0,
+          "speed": 4.0,
+          "direction": 90.0
+        },
+        "horizontalKeepAway": 10.0,
+        "verticalKeepAway": 5.0
+      }
+    ]
+  }
+}

@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 
 final_artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
 docker_bin="${DOCKER_BIN:-docker}"
+airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
 mkdir -p "$final_artifact_dir"
 final_artifact_dir="$(realpath "$final_artifact_dir")"
 
@@ -29,7 +30,7 @@ host_probe="$artifact_dir/.pr144-host-bind-probe"
 container_probe="$artifact_dir/.pr144-container-bind-probe"
 printf 'host-visible\n' >"$host_probe"
 if ! "$docker_bin" run --rm --entrypoint /bin/bash \
-    -v "$artifact_dir":/probe warg/airside:latest -lc \
+    -v "$artifact_dir":/probe "$airside_image" -lc \
     'grep -Fx host-visible /probe/.pr144-host-bind-probe >/dev/null && touch /probe/.pr144-container-bind-probe'; then
     rm -f "$host_probe" "$container_probe"
     echo "artifact directory is not shared with the Docker daemon: $artifact_dir" >&2
@@ -62,7 +63,8 @@ trap finish EXIT
 export ARTIFACT_DIR="$artifact_dir"
 
 planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
-export PYTHONPATH="$planner_src${PYTHONPATH:+:$PYTHONPATH}"
+bridge_src="$(cd ../../src/aeac_bridge && pwd)"
+export PYTHONPATH="$planner_src:$bridge_src${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m unittest discover -v -s . -p 'test_*.py' || exit 1
 python3 unknown_sector_probe.py \
     --output-json "$artifact_dir/unknown-sector-probe.json" || exit 1

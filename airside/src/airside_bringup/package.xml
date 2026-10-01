@@ -15,6 +15,7 @@
   <exec_depend>rosbridge_server</exec_depend>
   <exec_depend>rosapi</exec_depend>
   <exec_depend>camera</exec_depend>
+  <exec_depend>aeac_bridge</exec_depend>
   <exec_depend>engine</exec_depend>
   <exec_depend>navigation</exec_depend>
 

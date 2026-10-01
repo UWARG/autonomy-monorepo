@@ -11,6 +11,12 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
+      OBSTACLE_SOURCE: ${OBSTACLE_SOURCE:-traffic}
+      AEAC_URL: ${AEAC_URL:-}
+      AEAC_TOKEN: ${AEAC_TOKEN:-}
+      AEAC_UAV_ID: ${AEAC_UAV_ID:-}
+      AEAC_OWN_AIRCRAFT_INDEX: ${AEAC_OWN_AIRCRAFT_INDEX:--1}
+      AEAC_PROTOCOL_VERIFIED: ${AEAC_PROTOCOL_VERIFIED:-false}
       ROS_LOG_DIR: /ros_ws/log/ros
     devices:
       - /dev/serial0:/dev/serial0

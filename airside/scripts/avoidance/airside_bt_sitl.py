@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import rclpy
+from airside_interfaces.msg import TrafficSnapshot
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from harness_runtime import StableConditionGate
@@ -34,6 +35,8 @@ from synthetic_laserscan import (
     wall_scan_ranges,
 )
 
+from utils.src.waypoint_utils import east_north_coordinate_offset_m
+
 BEAM_COUNT = 72
 ANGLE_MIN_RAD = -math.pi
 ANGLE_INCREMENT_RAD = 2.0 * math.pi / BEAM_COUNT
@@ -51,6 +54,25 @@ MANAGER_STABLE_S = 2.0
 CONTROLLER_STABLE_S = 2.0
 TRANSITION_LAPPING_DURATION_S = 40.0
 TRANSITION_RECON_SWITCH_S = 45.0
+TRAFFIC_SCENARIOS = {
+    "traffic_clear",
+    "traffic_static",
+    "traffic_crossing",
+    "traffic_dropout",
+    "traffic_malformed",
+    "traffic_reconnect",
+    "traffic_unknown_identity",
+    "traffic_pilot_takeover",
+}
+TRAFFIC_OBSTACLE_SCENARIOS = TRAFFIC_SCENARIOS - {
+    "traffic_clear",
+    "traffic_unknown_identity",
+}
+TRAFFIC_FAULT_SCENARIOS = {
+    "traffic_dropout",
+    "traffic_malformed",
+    "traffic_reconnect",
+}
 
 
 class AirsideBTSitlScenario(Node):
@@ -67,6 +89,8 @@ class AirsideBTSitlScenario(Node):
         self.origin_east_m: float | None = None
         self.origin_north_m: float | None = None
         self.latest_diagnostics: dict[str, str] = {}
+        self.latest_traffic: TrafficSnapshot | None = None
+        self.traffic_received_s: float | None = None
         self.diagnostics_count = 0
         self.velocity_count = 0
         self.internal_velocity_count = 0
@@ -135,6 +159,12 @@ class AirsideBTSitlScenario(Node):
                 self._parameter_callback,
                 qos_profile_sensor_data,
             ),
+            self.create_subscription(
+                TrafficSnapshot,
+                "/aeac/traffic",
+                self._traffic_callback,
+                10,
+            ),
         ]
         self.scan_publisher = self.create_publisher(
             LaserScan,
@@ -178,6 +208,11 @@ class AirsideBTSitlScenario(Node):
     def _altitude_callback(self, message: Float64) -> None:
         with self.lock:
             self.relative_altitude_m = message.data
+
+    def _traffic_callback(self, message: TrafficSnapshot) -> None:
+        with self.lock:
+            self.latest_traffic = message
+            self.traffic_received_s = time.monotonic()
 
     def _diagnostics_callback(self, message: DiagnosticArray) -> None:
         for status in message.status:
@@ -480,6 +515,7 @@ class AirsideBTSitlScenario(Node):
         self,
         waypoints_path: Path,
         lapping_duration_s: float | None = None,
+        obstacle_source: str = "scan",
     ) -> None:
         command = [
             "ros2",
@@ -489,6 +525,8 @@ class AirsideBTSitlScenario(Node):
             "--ros-args",
             "-p",
             f"waypoints_file:={waypoints_path}",
+            "-p",
+            f"obstacle_avoidance.source:={obstacle_source}",
         ]
         if lapping_duration_s is not None:
             command.extend(["-p", f"lapping_duration_s:={lapping_duration_s}"])
@@ -621,6 +659,41 @@ class AirsideBTSitlScenario(Node):
             <= GOAL_TOLERANCE_M
         )
 
+    def traffic_clearance_m(self) -> float | None:
+        """Return current horizontal margin outside the simulated keep-away."""
+
+        with self.lock:
+            traffic = self.latest_traffic
+            traffic_received_s = self.traffic_received_s
+            fix = self.fix
+        if (
+            traffic is None
+            or traffic_received_s is None
+            or fix is None
+            or not traffic.connected
+            or not traffic.healthy
+        ):
+            return None
+
+        clearances: list[float] = []
+        age_s = max(0.0, time.monotonic() - traffic_received_s)
+        for aircraft in traffic.aircraft:
+            if aircraft.aircraft_index == traffic.own_aircraft_index:
+                continue
+            east_m, north_m = east_north_coordinate_offset_m(
+                fix.latitude,
+                fix.longitude,
+                aircraft.latitude_deg,
+                aircraft.longitude_deg,
+            )
+            heading_rad = math.radians(aircraft.heading_deg_true)
+            east_m += aircraft.speed_mps * math.sin(heading_rad) * age_s
+            north_m += aircraft.speed_mps * math.cos(heading_rad) * age_s
+            clearances.append(
+                math.hypot(east_m, north_m) - aircraft.horizontal_keepaway_m
+            )
+        return min(clearances) if clearances else None
+
     def snapshot(self) -> dict[str, Any]:
         relative_position = self._relative_position()
         with self.lock:
@@ -652,13 +725,15 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
         and summary["diagnostics_count"] > 0
         and summary["failure_reason"] is None
     )
-    if scenario in {"invalid", "partial"}:
+    if scenario in {"invalid", "partial", "traffic_unknown_identity"}:
         passed = (
             common
             and summary["nonzero_velocity_count"] == 0
             and summary["planner_status"] == "NO_PATH"
             and summary["goal_reached_at_s"] is None
         )
+        if scenario == "traffic_unknown_identity":
+            passed = passed and summary["planner_reason"] == "UNVERIFIED_SELF_IDENTITY"
     elif scenario == "transition":
         passed = (
             common
@@ -683,11 +758,31 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
             and summary["zero_at_goal"]
         )
         if scenario != "clear":
-            passed = passed and summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
-        if scenario == "wall":
+            if scenario in TRAFFIC_OBSTACLE_SCENARIOS:
+                passed = (
+                    passed
+                    and summary["min_traffic_clearance_m"] is not None
+                    and summary["min_traffic_clearance_m"] >= MIN_CLEARANCE_M
+                    and summary["traffic_raw_count"] > 0
+                )
+            elif scenario != "traffic_clear":
+                passed = passed and summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
+        if scenario in {"wall", "traffic_static", "traffic_crossing"}:
             passed = passed and summary["planner_hold_count"] == 0
-        if scenario in {"dropout", "frozen", "pilot_takeover"}:
+        if scenario in {
+            "dropout",
+            "frozen",
+            "traffic_dropout",
+            "traffic_malformed",
+            "traffic_reconnect",
+        }:
             passed = passed and summary["stop_observed"]
+        if scenario in {"pilot_takeover", "traffic_pilot_takeover"}:
+            passed = (
+                passed
+                and summary["stop_observed"]
+                and summary["pilot_resume_observed"]
+            )
     summary["verdict"] = "PASS" if passed else "FAIL"
 
 
@@ -700,11 +795,13 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         "armed": False,
         "goal_reached_at_s": None,
         "min_wall_dist_m": None,
+        "min_traffic_clearance_m": None,
         "breached": False,
         "planner_status": "NOT_STARTED",
         "planner_reason": None,
         "planner_path_found_count": 0,
         "planner_hold_count": 0,
+        "traffic_raw_count": 0,
         "diagnostics_count": 0,
         "velocity_count": 0,
         "internal_velocity_count": 0,
@@ -753,6 +850,9 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                 if args.scenario == "transition"
                 else None
             ),
+            obstacle_source=(
+                "traffic" if args.scenario in TRAFFIC_SCENARIOS else "scan"
+            ),
         )
         stage = "manager_readiness"
         node.wait_for("stable engine manager ROS node", node.manager_ready, 60.0)
@@ -768,6 +868,7 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         fault_finished = False
         previous_position = node._relative_position()
         min_wall_distance_m = math.inf
+        min_traffic_clearance_m = math.inf
         pilot_quiet_start_count: int | None = None
         pilot_quiet_deadline_s: float | None = None
         resume_nonzero_start_count: int | None = None
@@ -786,7 +887,20 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                 position = node._relative_position()
                 if position is not None:
                     east_m, north_m = position
-                    if args.scenario not in {"clear", "transition"}:
+                    if args.scenario in TRAFFIC_OBSTACLE_SCENARIOS:
+                        traffic_clearance_m = node.traffic_clearance_m()
+                        if traffic_clearance_m is not None:
+                            min_traffic_clearance_m = min(
+                                min_traffic_clearance_m,
+                                traffic_clearance_m,
+                            )
+                            if traffic_clearance_m < 0.0:
+                                summary["breached"] = True
+                    elif args.scenario not in {
+                        "clear",
+                        "transition",
+                        "traffic_clear",
+                    }:
                         wall_distance_m = point_to_wall_distance_m(
                             east_m,
                             north_m,
@@ -832,7 +946,8 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                         not fault_finished
                         and fault_started_s is None
                         and north_m >= 5.0
-                        and args.scenario in {"pilot_takeover", "transition"}
+                        and args.scenario
+                        in {"pilot_takeover", "transition", "traffic_pilot_takeover"}
                     ):
                         node.set_mode("LOITER")
                         fault_started_s = time.monotonic()
@@ -854,8 +969,28 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                             resume_nonzero_start_count = node.nonzero_velocity_count
                         fault_finished = True
 
+                    if args.scenario in TRAFFIC_FAULT_SCENARIOS:
+                        diagnostics = snapshot["diagnostics"]
+                        reason = str(diagnostics.get("reason", ""))
+                        if reason in {
+                            "STALE_TRAFFIC",
+                            "TRAFFIC_PROTOCOL_ERROR",
+                            "TRAFFIC_DISCONNECTED",
+                            "WAITING_FOR_TRAFFIC",
+                        } or reason.startswith("DISCONNECTED:"):
+                            with node.lock:
+                                speed = math.sqrt(
+                                    sum(
+                                        component**2
+                                        for component in node.last_velocity
+                                    )
+                                )
+                            if speed <= 0.05 and north_m < WALL_NORTH_M:
+                                summary["stop_observed"] = True
+
                     if (
-                        args.scenario == "transition"
+                        args.scenario
+                        in {"pilot_takeover", "transition", "traffic_pilot_takeover"}
                         and fault_finished
                         and resume_nonzero_start_count is not None
                     ):
@@ -927,11 +1062,19 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                         diagnostics.get("path_found_count", "0")
                     ),
                     "planner_hold_count": int(diagnostics.get("hold_count", "0")),
+                    "traffic_raw_count": int(
+                        diagnostics.get("traffic_raw_count", "0")
+                    ),
                 }
             )
         summary["min_wall_dist_m"] = (
             round(min_wall_distance_m, 3)
             if min_wall_distance_m < math.inf
+            else None
+        )
+        summary["min_traffic_clearance_m"] = (
+            round(min_traffic_clearance_m, 3)
+            if min_traffic_clearance_m < math.inf
             else None
         )
         evaluate_summary(summary)
@@ -957,6 +1100,14 @@ def main() -> int:
             "partial",
             "pilot_takeover",
             "transition",
+            "traffic_clear",
+            "traffic_static",
+            "traffic_crossing",
+            "traffic_dropout",
+            "traffic_malformed",
+            "traffic_reconnect",
+            "traffic_unknown_identity",
+            "traffic_pilot_takeover",
         ],
         required=True,
     )

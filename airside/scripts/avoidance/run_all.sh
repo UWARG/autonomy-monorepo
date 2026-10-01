@@ -5,6 +5,10 @@ set -u
 
 cd "$(dirname "$0")"
 
+planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
+bridge_src="$(cd ../../src/aeac_bridge && pwd)"
+export PYTHONPATH="$planner_src:$bridge_src${PYTHONPATH:+:$PYTHONPATH}"
+
 if [ "${SKIP_HARNESS_TESTS:-0}" != "1" ]; then
     python3 -m unittest discover -v -s . -p 'test_*.py' || exit 1
 fi
@@ -12,7 +16,6 @@ fi
 artifact_dir="${ARTIFACT_DIR:-$PWD/logs}"
 mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
-planner_src="$(cd ../../../obstacle-avoidance && pwd)/src"
 scenarios="${*:-clear_guided wall_guided wall_guided_wpnav wall_guided_vel wall_auto wall_custom_2d}"
 suite_status=0
 
