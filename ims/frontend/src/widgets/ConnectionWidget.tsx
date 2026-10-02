@@ -34,7 +34,7 @@ function Row({
   );
 }
 
-interface HeartbeatStamped {
+interface Empty {
 
 }
 
@@ -42,14 +42,18 @@ export default function ConnectionWidget() {
   const [connection, setConnection] = useState<ConnectionMessage>();
 
   useEffect(() => {
-    const poseTopic = new ROSLIB.Topic<HeartbeatStamped>({
+    const poseTopic = new ROSLIB.Topic<Empty>({
       ros,
       name: '/heartbeat',
       messageType: 'std_msgs/Empty'
     });
 
-    const onPose = (message: HeartbeatStamped) => {
-      
+    const onPose = () => {
+      const status = 'active';
+      const transport = 'placeholder';
+      const heartbeatHz = 1;
+
+      setConnection({status, transport, heartbeatHz})
     }
 
     poseTopic.subscribe(onPose);
