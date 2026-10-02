@@ -49,6 +49,7 @@ export default function ConnectionWidget() {
     });
 
     const onPose = () => {
+      // might need to change values in the future.
       const status = 'active';
       const transport = 'placeholder';
       const heartbeatHz = 1;
