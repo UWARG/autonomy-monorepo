@@ -1,5 +1,10 @@
 """
-AirsideComms — Streams airside data to IMS.
+DEPRECATED — orphaned by the rosbridge migration (#124, f70a50a); see
+utils/src/messages.py. The dashboard reads ROS topics through rosbridge instead, so
+nothing connects to this client. It is also still skeletal: only send_status()
+sends, and every other send_* method is an empty stub.
+
+AirsideComms — was to stream airside data to IMS.
 """
 
 import threading

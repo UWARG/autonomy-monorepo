@@ -26,9 +26,10 @@ function statePill(state?: string): { className: string; label: string } {
 }
 
 /**
- * Mission command buttons. There is no command/send channel yet (socket.js) is
- * receive-only and airside has no command handler  so these are disabled. When
- * a send path exists, wire onClick and drop `disabled`.
+ * Mission command buttons. There is no command path: the dashboard can only
+ * replay recorded telemetry (and blocks command topics), and airside has no
+ * command handler — so these are disabled. When a real uplink exists, wire
+ * onClick and drop `disabled`.
  */
 function CommandButton({
   label,
