@@ -28,3 +28,6 @@ path = "gesture_control"
 
 [projects.target_tracking]
 path = "target_tracking"
+
+[projects.3DS_Groundside]
+path = "3DS_Groundside"
