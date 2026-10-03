@@ -1,4 +1,4 @@
-from behaviour_tree_decoder import BehaviourTreeDecoder
+from src.behaviour_tree_decoder import BehaviourTreeDecoder
 
 decoder = BehaviourTreeDecoder()
 decoder.handle_message("T,27,28,Mission")
