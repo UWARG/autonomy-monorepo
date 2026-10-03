@@ -1,4 +1,7 @@
 """
+DEPRECATED — see utils/src/messages.py. Orphaned by the rosbridge migration (#124);
+airside_comms, its only caller, is a non-functional skeleton.
+
 Encodes utils dataclasses into JSON bytes for transmission to IMS.
 All messages use the envelope: {"type": "...", "payload": {...}}
 """
