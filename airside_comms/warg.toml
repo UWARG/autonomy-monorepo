@@ -1,5 +1,5 @@
 name = "airside_comms"
-description = "WebSocket bridge between the airside system and the IMS ground station."
+description = "Deprecated WebSocket bridge to the IMS ground station; superseded by rosbridge."
 
 depends_on = ["utils"]
 

@@ -1,7 +1,7 @@
 [project]
 name = "airside_comms"
 version = "0.1.0"
-description = "WebSocket bridge between the airside system and the IMS ground station."
+description = "Deprecated WebSocket bridge to the IMS ground station; superseded by rosbridge."
 license = "MIT"
 requires-python = ">=3.9"
 dependencies = ["websockets>=12.0"]
