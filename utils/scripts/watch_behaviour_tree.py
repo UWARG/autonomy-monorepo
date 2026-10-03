@@ -17,7 +17,8 @@ def main() -> None:
             continue
 
         decoder.handle_message(msg.text)
-        print(decoder.current_path())
+        if msg.text.startswith("S,"):
+            print(decoder.current_path())  # print the current path when a running node is reported
 
 if __name__ == "__main__":
     main()

@@ -44,12 +44,17 @@ class BehaviourTreeReporter(Node):
             
         #maps a node UUID as bytes so it can be a key (our node id our number)
         self._ids: dict[bytes, int] = {}
+        self._parents: dict[int, int] = {}
         self._table: list[tuple[int, int, str]] = []
         self._last_running_number: int | None = None
-    
-        self._open_snapshot_stream()
-    
         self._sub = None #created once we know the real topic name 
+
+        # open the snapshot stream to get the behaviour tree snapshots
+        self._open_snapshot_stream()
+
+        # Resend the tree table periodically for ground stations that connect late
+        self.create_timer(30.0, self._resend_table)
+    
 
 
     def _open_snapshot_stream(self) -> None:
@@ -61,22 +66,43 @@ class BehaviourTreeReporter(Node):
 
         request = OpenSnapshotStream.Request()
         request.topic_name = ""
-        request.parameters.snapshot_period = 0.5 # seconds
+        request.parameters.snapshot_period = 0.5 # 5 seconds it asks for updates -> 
         request.parameters.blackboard_data = False
         request.parameters.blackboard_activity = False
-
+        # once it replies run the callback to subscribe to the real topic name
         future = client.call_async(request)
         future.add_done_callback(self._on_stream_opened)
     
 
     def _on_stream_opened(self, future) -> None:
+        # response is the topic name to subscribe to for the snapshots
         response = future.result()
         topic_name = response.topic_name
         self.get_logger().info(f"subscribing to snapshot topic: {topic_name}")
         self._sub = self.create_subscription(
             BehaviourTree, topic_name, self._on_snapshot, 10
         )
+    def _depth(self, number: int) -> int: # counts how far behavior is from root for parent relations 
+        depth = 0
+        while number in self._parents:
+            parent = self._parents[number]
+            if parent == -1: 
+                break
 
+            depth += 1
+            number = parent
+
+        return depth
+    def _resend_table(self) -> None:
+        if not self._table:
+            return
+
+        for message in table_to_messages(self._table):
+            send_to_ground(self, message)
+
+        if self._last_running_number is not None:
+            send_to_ground(self, f"S,{self._last_running_number}")
+            
     def _on_snapshot(self, msg: BehaviourTree) -> None:
         # First snapshot (or whenever we see a new node): (re)build the
         # table and send it to the ground.
@@ -94,6 +120,7 @@ class BehaviourTreeReporter(Node):
                 parent_key = bytes(behaviour.parent_id.uuid)
                 parent_number = self._ids.get(parent_key, -1)  # root has no parent, so -1
                 self._table.append((number, parent_number, behaviour.name))
+                self._parents[number] = parent_number
             for message in table_to_messages(self._table):
                 send_to_ground(self, message)
 
@@ -103,7 +130,7 @@ class BehaviourTreeReporter(Node):
             for behaviour in msg.behaviours
             if behaviour.status == behaviour.RUNNING
         ]
-        running_number = max(running_numbers) if running_numbers else None
+        running_number = max(running_numbers, key=self._depth) if running_numbers else None
 
         if running_number is not None and running_number != self._last_running_number:
             self._last_running_number = running_number

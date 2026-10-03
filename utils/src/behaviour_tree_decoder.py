@@ -24,7 +24,7 @@ class BehaviourTreeDecoder:
     def current_path(self) -> list[str]:
         #start an empty list
         path = []
-        #start at self.running_id
+        #start at self.running_id --> the s
         current_id = self._running_id
 
         while current_id is not None:
@@ -32,11 +32,11 @@ class BehaviourTreeDecoder:
                 raise ValueError(f"Running node id {current_id} not in tree nodes")
             #look up number in self._nodes, get parent and name
             parent, name = self._nodes[current_id]
-            path.append(name)
+            path.append(name) # append the name to the path
             
             if parent == -1:
                 break            #append name to path
-            #set current_id to parent
+            #set current_id to parent for the next iteration
             current_id = parent
-        return path
+        return list(reversed(path)) #return the path in reverse order so that the root is first
         
