@@ -45,7 +45,7 @@ export default function ConnectionWidget({
     : 'Awaiting first heartbeat';
 
   return (
-    <section className="widget flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
+    <section className="widget widget-overflow flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
       <header className="flex items-center justify-between gap-4">
         <h2 className="widget-label">Connection</h2>
         <span

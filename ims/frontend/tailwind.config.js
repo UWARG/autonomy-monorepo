@@ -5,31 +5,34 @@ export default {
     extend: {
       colors: {
         // surfaces
-        app: '#0C0F16',      // page background
-        card: '#151A24',     // widget surface
-        edge: '#252C3A',     // hairline borders / dividers
-        inset: '#0E131C',    // recessed areas (map bg)
-        feed: '#080B11',     // camera feed background
+        app: 'rgb(var(--ims-app) / <alpha-value>)',      // page background
+        card: 'rgb(var(--ims-card) / <alpha-value>)',     // widget surface
+        edge: 'rgb(var(--ims-edge) / <alpha-value>)',     // control borders
+        inset: 'rgb(var(--ims-inset) / <alpha-value>)',   // recessed areas (map bg)
+        feed: 'rgb(var(--ims-feed) / <alpha-value>)',     // camera feed background
 
         // text
         ink: {
-          DEFAULT: '#EAEEF5', // primary
-          2: '#9BA5B7',       // secondary
-          3: '#5E687A',       // labels / captions
+          DEFAULT: 'rgb(var(--ims-ink) / <alpha-value>)', // primary
+          2: 'rgb(var(--ims-ink-2) / <alpha-value>)',     // secondary
+          3: 'rgb(var(--ims-ink-3) / <alpha-value>)',     // labels / captions
         },
 
         // semantic state
-        ok: { DEFAULT: '#34D17E', dim: '#12331F' },
-        warn: { DEFAULT: '#E0A83A', dim: '#3A2E12' },
-        bad: { DEFAULT: '#F26555', dim: '#3A1A16' },
-        accent: { DEFAULT: '#5B8DEF', dim: '#16233F' },
+        ok: { DEFAULT: '#218739', dim: '#E5F4E8' },
+        warn: { DEFAULT: '#A86600', dim: '#FFF3D6' },
+        bad: { DEFAULT: '#C62828', dim: '#FDEAEA' },
+        accent: {
+          DEFAULT: 'rgb(var(--ims-accent) / <alpha-value>)',
+          dim: 'rgb(var(--ims-accent-dim) / <alpha-value>)',
+        },
 
         // artificial horizon
         sky: '#BFE0F5',
         ground: '#6E5744',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Roboto', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       borderRadius: {
