@@ -1,36 +1,25 @@
-import type { ConnectionMessage, StatusMessage } from '../types';
+import { useSyncExternalStore } from 'react';
+import type { LinkStatus } from '../link';
+import { getLinkSnapshot, subscribeLink } from '../link';
 
 /**
- * Header telemetry strip. Only renders the fields the wire contract actually
- * supports today:
- *   LINK    <- connection.status  (active/degraded/lost)
- *   MISSION <- parsed from status.text ("WP n / total")
+ * Header telemetry strip, fed by the same link store as the Connection panel:
+ *   LINK <- /heartbeat + /mavros/state
+ *   MODE <- /mavros/state.mode
  *
- * BATTERY and GPS from the mock are intentionally omitted: utils/messages.py
- * has no battery or GPS message, so they'd be invented/empty. Add them here
- * once airside defines those messages.
+ * The previous MISSION readout ("WP n / total") is gone: nothing in airside
+ * publishes mission or waypoint progress, so it could only ever show a dash.
  */
 
 const DASH = '\u2014';
 
-function parseWaypoints(text?: string): { current: number; total: number } | null {
-  if (!text) return null;
-  const m = text.match(/WP\s+(\d+)\s*\/\s*(\d+)/i);
-  if (!m) return null;
-  const current = Number(m[1]);
-  const total = Number(m[2]);
-  if (!Number.isFinite(current) || !Number.isFinite(total)) return null;
-  if (total <= 0 || current < 0 || current > total) return null;
-  return { current, total };
-}
-
-const LINK_TONE: Record<string, string> = {
+const LINK_TONE: Record<LinkStatus, string> = {
   active: 'text-ok',
   degraded: 'text-warn',
   lost: 'text-bad',
 };
 
-const LINK_LABEL: Record<string, string> = {
+const LINK_LABEL: Record<LinkStatus, string> = {
   active: 'NOMINAL',
   degraded: 'DEGRADED',
   lost: 'LOST',
@@ -57,23 +46,22 @@ function Stat({
   );
 }
 
-export default function HeaderStatus({
-  connection,
-  status,
-}: {
-  connection?: ConnectionMessage;
-  status?: StatusMessage;
-}) {
-  const linkTone = connection ? (LINK_TONE[connection.status] ?? 'text-ink') : 'text-ink-3';
-  const linkLabel = connection ? (LINK_LABEL[connection.status] ?? connection.status.toUpperCase()) : DASH;
-
-  const wp = parseWaypoints(status?.text);
-  const mission = wp ? `WP ${wp.current}/${wp.total}` : DASH;
+export default function HeaderStatus() {
+  const { status, mode, armed } = useSyncExternalStore(subscribeLink, getLinkSnapshot);
 
   return (
     <div className="flex items-center gap-6">
-      <Stat label="Link" value={linkLabel} tone={linkTone} />
-      <Stat label="Mission" value={mission} />
+      <Stat
+        label="Link"
+        value={status ? LINK_LABEL[status] : DASH}
+        tone={status ? LINK_TONE[status] : 'text-ink-3'}
+      />
+      <Stat label="Mode" value={mode ?? DASH} />
+      <Stat
+        label="Armed"
+        value={armed == null ? DASH : armed ? 'YES' : 'NO'}
+        tone={armed ? 'text-ok' : 'text-ink-3'}
+      />
     </div>
   );
 }
