@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 
-package_name = "engine"
+package_name = "camera"
 
 
 setup(
@@ -14,23 +14,18 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
-        (
-            f"share/{package_name}/config",
-["config/waypoints.yaml", "config/landing_pads.yaml"],
-        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Behavior-tree mission manager and its support nodes.",
+    description="Camera drivers and triggered image capture.",
     license="MIT",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "manager = engine.manager:main",
-            "rc_bridge = engine.rc_bridge:main",
-            "heartbeat = engine.heartbeat_node:main",
+            "camera = camera_ros.camera_node:main",
+            "triggered_image_publisher = "
+            "camera_ros.triggered_image_publisher_node:main",
         ],
     },
 )
