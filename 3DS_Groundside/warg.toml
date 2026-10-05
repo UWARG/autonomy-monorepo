@@ -1,0 +1,14 @@
+name = "3DS_Groundside"
+description = "Groundside operator tooling for 3DS autonomy."
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+test = "uv run --extra dev pytest"
+"test:unit" = "uv run --extra dev pytest tests/unit"
+"test:integration" = "uv run --extra dev pytest tests/integration"
+lint = "uv run --extra dev ruff check ."
+
+[ci]
+pr = ["lint", "test"]
