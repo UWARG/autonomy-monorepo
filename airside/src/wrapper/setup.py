@@ -27,6 +27,7 @@ setup(
             'building_target_localizer = '
             'wrapper.building_target_localizer_node:main',
             'camera = wrapper.camera_node:main',
+            "behaviour_tree_reporter = wrapper.behaviour_tree_reporter:main",
             'map_manager = wrapper.map_manager_node:main',
             'ground_fusion = wrapper.ground_fusion_node:main',
         ],
