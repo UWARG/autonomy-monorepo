@@ -60,8 +60,8 @@ project-specific setup and workflows in the project manifest rather than in the
 root README.
 
 To run a command as a background service at boot on a Raspberry Pi or other
-Linux machine, list it under `[startup]` and run `warg startup install` once on
-that machine:
+Linux machine, list it under `[startup]`, enable the project in that machine's
+`~/.config/warg/startup.toml`, and run `warg startup sync` there:
 
 ```toml
 [startup]

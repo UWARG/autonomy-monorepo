@@ -109,7 +109,7 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: 'include_paths' must be "
                     "repo-relative."
                 )
-        return tuple(raw)
+        return _unique(raw)
 
     def _parse_extra_paths(
         self, name: str, metadata: dict[str, Any]
@@ -133,7 +133,7 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
                     "be repo-relative."
                 )
-        return tuple(raw)
+        return _unique(raw)
 
     def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}
@@ -258,10 +258,10 @@ def load_project_manifest(manifest: Path) -> Project:
         name=name,
         path=manifest.parent,
         description=description,
-        depends_on=tuple(depends_on),
+        depends_on=_unique(depends_on),
         commands=dict(sorted(commands.items())),
         ci={
-            pipeline: tuple(command_names)
+            pipeline: _unique(command_names)
             for pipeline, command_names in sorted(ci.items())
         },
         startup=_parse_startup(data, manifest, commands),
@@ -303,7 +303,11 @@ def _parse_startup(
             f"{', '.join(STARTUP_RESTART_POLICIES)}."
         )
 
-    return StartupConfig(commands=tuple(dict.fromkeys(command_names)), restart=restart)
+    return StartupConfig(commands=_unique(command_names), restart=restart)
+
+
+def _unique(items: list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(items))
 
 
 def _expect_string(data: dict[str, Any], key: str, manifest: Path) -> str:

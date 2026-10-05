@@ -121,6 +121,37 @@ restart = "always"
     assert startup.restart == "always"
 
 
+def test_repeated_list_entries_are_deduplicated(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        'include_paths = [".github", ".github"]\n\n'
+        '[projects.a]\npath = "a"\nextra_paths = ["shared", "shared"]\n\n'
+        '[projects.b]\npath = "b"\n'
+    )
+    write_manifest(tmp_path, "b", 'name = "b"\n')
+    write_manifest(
+        tmp_path,
+        "a",
+        """
+name = "a"
+depends_on = ["b", "b"]
+
+[commands]
+test = "echo test"
+
+[ci]
+pr = ["test", "test"]
+""",
+    )
+
+    registry = Registry(tmp_path)
+
+    assert registry.include_paths == (".github",)
+    assert registry.entries["a"].extra_paths == ("shared",)
+    assert registry.get("a").depends_on == ("b",)
+    assert registry.get("a").ci == {"pr": ("test",)}
+
+
 def test_startup_defaults_to_no_commands(fixture_repo: Path) -> None:
     startup = Registry(fixture_repo).get("camera").startup
 

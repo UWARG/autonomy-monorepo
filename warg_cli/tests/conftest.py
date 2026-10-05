@@ -42,6 +42,16 @@ def fake_systemd(tmp_path: Path) -> FakeSystemd:
 
 
 @pytest.fixture()
+def machine_config(tmp_path: Path, monkeypatch) -> Path:
+    path = tmp_path / "machine" / "startup.toml"
+    path.parent.mkdir()
+    path.write_text('projects = ["camera", "gesture_control"]\n')
+    monkeypatch.setattr("startup.machine_config_path", lambda: path)
+    monkeypatch.setattr("cli.machine_config_path", lambda: path)
+    return path
+
+
+@pytest.fixture()
 def startup_repo(fixture_repo: Path) -> Path:
     for project, section in [
         ("camera", 'commands = ["test:unit"]'),
