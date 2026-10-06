@@ -1,31 +1,25 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 
-package_name = "camera"
+package_name = "airside_bringup"
 
 
 setup(
     name=package_name,
     version="0.1.0",
-    packages=find_packages(exclude=["test"]),
+    packages=[],
     data_files=[
         (
             "share/ament_index/resource_index/packages",
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/launch", ["launch/airside.launch.py"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Camera drivers and triggered image capture.",
+    description="Launch files for the airside system.",
     license="MIT",
-    entry_points={
-        "console_scripts": [
-            "camera = camera_ros.camera_node:main",
-            "triggered_image_publisher = "
-            "camera_ros.triggered_image_publisher_node:main",
-        ],
-    },
 )

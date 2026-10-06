@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 
-package_name = "camera"
+package_name = "navigation"
 
 
 setup(
@@ -19,13 +19,11 @@ setup(
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Camera drivers and triggered image capture.",
+    description="Position control between the engine and MAVROS.",
     license="MIT",
     entry_points={
         "console_scripts": [
-            "camera = camera_ros.camera_node:main",
-            "triggered_image_publisher = "
-            "camera_ros.triggered_image_publisher_node:main",
+            "position_controller = navigation.position_controller_node:main",
         ],
     },
 )

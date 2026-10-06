@@ -1,7 +1,10 @@
 """Tuning constants for the airside engine behaviors."""
 
 # ArduPilot flight mode in which the engine is allowed to command the drone.
+# The engine never switches modes itself; the pilot selects GUIDED to hand over.
 GUIDED_MODE = "GUIDED"
+# ArduPilot flight mode the land command puts the drone in.
+LAND_MODE = "LAND"
 
 # Behavior tree tick period, milliseconds.
 TICK_PERIOD_MS = 500.0
@@ -14,11 +17,15 @@ LAPPING_DURATION_SEC = 120.0
 # MAVLink message IDs the engine needs streamed from the FCU.
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
 MAVLINK_MSG_ID_RC_CHANNELS = 65
+MAVLINK_MSG_ID_HOME_POSITION = 242
 
 # Per-message stream rates requested from ArduPilot (message ID -> Hz).
 STREAM_RATE_REQUESTS_HZ = {
     MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
     MAVLINK_MSG_ID_RC_CHANNELS: 5.0,
+    # Streamed so the launch point can be read after arming; MAVROS's
+    # home_position/req_update service does not return.
+    MAVLINK_MSG_ID_HOME_POSITION: 1.0,
 }
 
 # Baseline rate for all legacy streams (REQUEST_DATA_STREAM fallback), Hz.
@@ -36,9 +43,7 @@ WAYPOINT_NAV_TIMEOUT_S = 120.0
 # Master switch for the RC switch behaviors.
 RC_SWITCHES_ENABLED = True
 
-# RC channel that controls the kill switch, pausing the mission.
-KILL_SWITCH_RC_CHANNEL = 7
-# RC channel that signals the completion of target reconnaissance and starts the land phase.
+# RC channel that signals the end of reconnaissance and starts the land phase.
 RECON_COMPLETE_RC_CHANNEL = 6
 
 # PWM value when the RC switch counts as flipped.
@@ -52,6 +57,9 @@ TAKEOFF_AIRBORNE_THRESHOLD_M = 2.0
 
 # Takeoff tolerance from target altitude.
 TAKEOFF_ALTITUDE_TOLERANCE_M = 1.0
+
+# Relative altitude (meters) to fly back to the launch point at before landing.
+RETURN_ALTITUDE_M = 15.0
 
 # Number of payload items on board at the start of the mission.
 INITIAL_ITEM_COUNT = 3
