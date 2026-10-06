@@ -1,12 +1,13 @@
 // Grid (lg):
 //   row 1:  Camera (5)   Target (4)    Attitude (3)
-//   row 2:  Connection (4)        Script (8)
+//   row 2:  Connection (4)   Script (4)   Recording (4)
 //   row 3:  Log (12)
 
 import AttitudeWidget from './widgets/AttitudeWidget';
 import CameraWidget from './widgets/CameraWidget';
 import ConnectionWidget from './widgets/ConnectionWidget';
 import ScriptWidget from './widgets/ScriptWidget';
+import RosbagWidget from './widgets/RosbagWidget';
 import TargetWidget from './widgets/TargetWidget';
 import LogWidget from './widgets/LogWidget';
 import HeaderStatus from './widgets/Header';
@@ -42,8 +43,11 @@ export default function App() {
         <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-4 lg:h-auto">
           <ConnectionWidget />
         </div>
-        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-8 lg:h-auto">
+        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-4 lg:h-auto">
           <ScriptWidget />
+        </div>
+        <div className="col-span-12 min-h-[240px] md:col-span-6 lg:col-span-4 lg:min-h-0">
+          <RosbagWidget />
         </div>
         <div className="col-span-12 h-[220px] min-h-0 lg:h-auto">
           <LogWidget />
