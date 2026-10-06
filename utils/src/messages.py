@@ -5,7 +5,7 @@ These are the wire format — used by airside_comms to encode and ims/server to 
 Separate from types.py (plain dataclasses) which are used internally on the RPi.
 """
 
-from typing import Union
+from typing import Optional, Union
 
 import msgspec
 
@@ -43,6 +43,30 @@ class StatusPayload(msgspec.Struct):
     text: str
 
 
+class TargetPayload(msgspec.Struct):
+    lat: float
+    lon: float
+    label: Optional[str] = None
+    tracking: Optional[bool] = None
+    cluster: Optional[int] = None
+
+
+class NearbyDronePayload(msgspec.Struct):
+    id: int
+    name: str
+    lat: float
+    lon: float
+    alt: float
+    speed: float
+    direction: float
+    horizontal_keep_away: float
+    vertical_keep_away: float
+
+
+class NearbyDronesPayload(msgspec.Struct):
+    drones: list[NearbyDronePayload]
+
+
 class AttitudeMessage(msgspec.Struct, tag_field="type", tag="attitude"):
     payload: AttitudePayload
 
@@ -66,6 +90,14 @@ class LogMessage(msgspec.Struct, tag_field="type", tag="log"):
 class StatusMessage(msgspec.Struct, tag_field="type", tag="status"):
     payload: StatusPayload
 
+
+class TargetMessage(msgspec.Struct, tag_field="type", tag="target"):
+    payload: TargetPayload
+
+
+class NearbyDronesMessage(msgspec.Struct, tag_field="type", tag="nearby_drones"):
+    payload: NearbyDronesPayload
+
 AirsideMessage = Union[
     AttitudeMessage,
     PositionMessage,
@@ -73,4 +105,6 @@ AirsideMessage = Union[
     HealthMessage,
     LogMessage,
     StatusMessage,
+    TargetMessage,
+    NearbyDronesMessage,
 ]
