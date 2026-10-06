@@ -4,6 +4,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-lc"]
 
+ARG ROS_SNAPSHOT=2026-08-07
+COPY airside/docker/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+RUN rm /etc/apt/sources.list.d/ros2.sources \
+  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.asc\n' \
+     "${ROS_SNAPSHOT}" > /etc/apt/sources.list.d/ros2-snapshot.sources
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \

@@ -29,10 +29,6 @@
   - changed-files:
       - any-glob-to-any-file: "utils/**"
 
-"mav_comms":
-  - changed-files:
-      - any-glob-to-any-file: "mav_comms/**"
-
 "IMS":
   - changed-files:
       - any-glob-to-any-file: "ims/**"
@@ -48,3 +44,7 @@
 "target tracking":
   - changed-files:
       - any-glob-to-any-file: "target_tracking/**"
+
+"3d-scan":
+  - changed-files:
+      - any-glob-to-any-file: "3DS_Groundside/**"

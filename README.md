@@ -83,8 +83,10 @@ See [warg_cli/README.md](warg_cli/README.md#startup-commands) for details.
 
 -  `Camera`: A Hardware Abstraction Layer for cameras. Normalizes frames from ArduCam, Oak-D, and simulation. 
 
-- `Utils`: Shared enums and dataclasses used across all Airside modules. 
-
-- `Mav_comms`: Wrapper around pymavlink.
+- `Utils`: Shared enums and dataclasses used across all Airside modules.
 
 - `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
+
+- `3ds`: ROS 2 Humble workspace for the 3DS project: mapping a target region/point of interest using multiple drones in coordination. See [3ds/README.md](3ds/README.md).
+
+- `3DS_Groundside`: Groundside for 3DS project. See [3DS_Groundside/README.md](3DS_Groundside/README.md).
