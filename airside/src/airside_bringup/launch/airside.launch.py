@@ -95,6 +95,14 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
+                package="comms",
+                executable="traffic_listener",
+                name="traffic_listener",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",

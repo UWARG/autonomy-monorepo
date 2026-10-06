@@ -14,6 +14,7 @@ airside/
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages
 │   ├── camera/               # camera, triggered_image_publisher
+│   ├── comms/                # traffic_listener (competition server)
 │   ├── engine/               # manager (behavior-tree mission), rc_bridge, heartbeat + mission config
 │   └── navigation/           # position_controller
 └── warg.toml
@@ -72,6 +73,8 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `AEAC_CONNECTION_TOKEN` | unset | Team connection token for the AEAC competition server. Secret: set it in `airside/.env` |
+| `AEAC_WEBSOCKET_URL` | competition server | Overrides the competition server's WebSocket URL |
 
 ### Networking
 
@@ -128,7 +131,8 @@ each target to MAVROS, steering around other aircraft on the way.
 
 Each `Obstacle` message replaces the previous one with the same
 `aircraft_index`; until the next one arrives the obstacle stays frozen where it
-was last reported. Nothing in this workspace publishes the topic yet.
+was last reported. The messages come from `traffic_listener` (see
+[Competition server traffic](#competition-server-traffic)).
 
 Every obstacle gets a keep-away zone: a circle of `horizontal_keep_away` plus
 `KEEP_AWAY_MARGIN_M`, stretched forwards along its `direction` by `speed` x
@@ -218,6 +222,20 @@ blackboard = py_trees.blackboard.Client(name="init")
 blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
+
+### Competition server traffic
+
+The `traffic_listener` node (`src/comms/comms/traffic_listener_node.py`) opens a
+WebSocket to the AEAC competition server, which pushes a snapshot of every
+simulated aircraft on the team's active site once a second. Each aircraft in a
+snapshot is published as one `airside_interfaces/Obstacle` on
+`/position_controller/obstacle`.
+
+It needs `AEAC_CONNECTION_TOKEN` (see [Configuration](#configuration)); without
+it the node stays up but idle and logs an error. If the connection drops, or
+goes silent for `RECEIVE_TIMEOUT_S`, it reconnects every `RECONNECT_DELAY_S`;
+in the meantime the position controller keeps avoiding the aircraft where they
+were last reported. Settings are in `src/comms/comms/constants.py`.
 
 ### Triggered image capture
 
