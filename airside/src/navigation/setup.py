@@ -17,6 +17,7 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
+    tests_require=["pytest"],
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
     description="Position control between the engine and MAVROS.",
