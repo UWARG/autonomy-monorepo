@@ -94,7 +94,7 @@ sleep 3
        /mavros/setpoint_raw/global \
        > /artifacts/${label}-rosbag.log 2>&1 &
      bag_pid=\$!
-     python3 /repo/airside/scripts/avoidance/airside_bt_sitl.py \
+     python3 /repo/airside/experiments/obstacle_avoidance/airside_bt_sitl.py \
        --scenario ${scenario} \
        --duration ${scenario_duration} \
        --readiness-timeout ${READINESS_TIMEOUT_S:-180} \

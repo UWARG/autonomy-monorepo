@@ -3,7 +3,7 @@
 **Baseline, not a locked decision:** the completed demo uses **ArduPilot's built-in avoidance
 stack** — the companion computer feeds the flight controller obstacle data over MAVLink and the
 autopilot does the avoiding. This document proves that integration pattern end-to-end in SITL
-(see `airside/scripts/avoidance/`), compares it with companion-planner and PX4 alternatives, and
+(see `airside/experiments/obstacle_avoidance/`), compares it with companion-planner and PX4 alternatives, and
 defines the experiments needed without committing to a particular camera or airframe now.
 
 ---
@@ -66,7 +66,7 @@ Docs: [object avoidance landing page](https://ardupilot.org/copter/docs/common-o
 
 ## 3. What we demonstrated in SITL
 
-Setup (`airside/scripts/avoidance/`): headless ArduCopter 4.5 SITL in Docker; a Python
+Setup (`airside/experiments/obstacle_avoidance/`): headless ArduCopter 4.5 SITL in Docker; a Python
 "bridge" (`avoidance_demo.py`) ray-casts a synthetic 12 m-wide wall 20 m north of home into
 72 body-frame sectors and streams it as `OBSTACLE_DISTANCE` at 10 Hz — byte-for-byte what a
 real depth-camera/LiDAR bridge would send. Parameters: `PRX1_TYPE=2`, `AVOID_ENABLE=7`,
@@ -351,4 +351,4 @@ uses. This belongs in the reliability gates (§8).
 - MAVLink routing between FC ports: <https://ardupilot.org/dev/docs/mavlink-routing-in-ardupilot.html> · companion/router options: <https://ardupilot.org/dev/docs/raspberry-pi-via-mavlink.html>
 - Proximity feed timeout + fail-open behavior: `libraries/AP_Proximity/AP_Proximity_MAV.cpp` (`PROXIMITY_MAV_TIMEOUT_MS`) and `libraries/AC_Avoidance/AP_OADatabase.cpp` (`OA_DB_EXPIRE`) on <https://github.com/ArduPilot/ardupilot/tree/Copter-4.5>
 - Prior WARG implementation: <https://github.com/UWARG/obstacle-avoidance> and the CV-space Confluence page above
-- Demo + logs: `airside/scripts/avoidance/` in this repo
+- Demo and generated logs: `airside/experiments/obstacle_avoidance/` in this repo

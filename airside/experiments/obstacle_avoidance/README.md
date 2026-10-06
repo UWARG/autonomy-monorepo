@@ -6,9 +6,19 @@ to the flight controller as MAVLink `OBSTACLE_DISTANCE` (72 × 5° sectors,
 10 Hz, body frame) — exactly what a real depth-camera or LiDAR bridge would
 send — and ArduPilot's proximity + BendyRuler stack does the avoiding.
 
-See `airside/docs/issue-96-ardupilot-avoidance.md` for the research write-up.
+See `issue-96-ardupilot-avoidance.md` for the research write-up.
 The explicit static imaginary-obstacle flight-test launch and readiness gate
-are documented in `airside/docs/issue-160-static-obstacle-flight-test.md`.
+are documented in `issue-160-static-obstacle-flight-test.md`.
+
+This directory owns the non-package experiment surface: demos, SITL image and
+parameters, runners, harness tests, generated plots, replay page, research
+notes, and the flight-test Compose override. Runtime ROS files remain in their
+packages so installation and `colcon test` discovery continue to work:
+
+- launch: `airside/src/airside_bringup/launch/static_obstacle_flight_test.launch.py`
+- synthetic traffic publisher: `airside/src/engine/engine/synthetic_static_traffic.py`
+- engine unit tests: `airside/src/engine/test/`
+- navigation unit tests: `airside/src/navigation/test/`
 
 ## Files
 
@@ -84,5 +94,5 @@ JSON summary + PASS/FAIL verdict and exits nonzero on FAIL.
 The custom scenario also records planner status, no-path reason, temporary
 waypoint, path-found count, and fail-safe hold count. Run this qualification
 before any physical avoidance test.
-See `airside/docs/issue-96-ardupilot-avoidance.md` for what these results
+See `issue-96-ardupilot-avoidance.md` for what these results
 mean for the real airframe.

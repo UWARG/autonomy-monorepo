@@ -244,5 +244,10 @@ nothing until fresh scan and telemetry have arrived after returning to
 
 Planner state is published as `diagnostic_msgs/DiagnosticArray` on
 `/obstacle_avoidance/diagnostics`. The production scan adapter must honor this
-contract; the synthetic SITL publisher under `scripts/avoidance/` is for
+contract; the synthetic SITL publisher under
+`experiments/obstacle_avoidance/` is for
 qualification only and is not an OAK-D integration.
+
+The #144/#181 research material, SITL runners, qualification harness, plots,
+replay page, and flight-test Compose override are collected in
+[`experiments/obstacle_avoidance/`](experiments/obstacle_avoidance/README.md).

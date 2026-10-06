@@ -87,7 +87,7 @@ A synthetic 12 m wall is streamed to the FC as `OBSTACLE_DISTANCE` (72×5° sect
 exact message a real depth-camera or LiDAR bridge would send — then the drone is commanded
 *through* it five ways.
 
-![Same wall, different command path — plain GUIDED goto flies through; AUTO mission detours around](avoidance_hero.png)
+![Same wall, different command path — plain GUIDED goto flies through; AUTO mission detours around](figures/avoidance_hero.png)
 
 | Command path | Min clearance | Outcome |
 |---|---|---|
@@ -97,7 +97,7 @@ exact message a real depth-camera or LiDAR bridge would send — then the drone 
 | GUIDED velocity stream @ 2 m/s | 0.77 m | ✅ stopped before wall (didn't steer around) |
 | AUTO waypoint mission | 3.79 m | ✅ detoured around, continued |
 
-![Five SITL runs against the wall](avoidance_summary.png)
+![Five SITL runs against the wall](figures/avoidance_summary.png)
 
 **Two Copter 4.5 gotchas to retest on the deployed firmware:**
 
@@ -154,8 +154,8 @@ sensing or a companion planner is actually needed.
 
 ## Links & references
 
-- **In-repo doc (full detail):** `airside/docs/issue-96-ardupilot-avoidance.md` on branch `jz/96-ardupilot-avoidance`
-- **Demo + logs:** `airside/scripts/avoidance/`
+- **In-repo doc (full detail):** `airside/experiments/obstacle_avoidance/issue-96-ardupilot-avoidance.md`
+- **Demo + generated logs:** `airside/experiments/obstacle_avoidance/`
 - GitHub issue: `UWARG/autonomy-monorepo` #96
 - Prior WARG work: `UWARG/obstacle-avoidance` repo + the older *Obstacle Avoidance* page (this page supersedes its direction)
 - ArduPilot: [Object Avoidance](https://ardupilot.org/copter/docs/common-object-avoidance-landing-page.html) ·
@@ -174,6 +174,6 @@ sensing or a companion planner is actually needed.
 ---
 
 *Attachments to upload with this page (drag into the spots above):*
-- `avoidance_hero.png` — fly-through vs detour contrast (`airside/scripts/avoidance/figures/`)
+- `avoidance_hero.png` — fly-through vs detour contrast (`airside/experiments/obstacle_avoidance/figures/`)
 - `avoidance_summary.png` — all five runs
 - `logs/summaries.txt` — raw run verdicts (optional, as evidence)

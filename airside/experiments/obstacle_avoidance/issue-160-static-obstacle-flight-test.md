@@ -25,13 +25,15 @@ flight-test override:
 
 ```bash
 cd airside
-docker compose -f compose.yaml -f compose.flight-test.yaml up --build
+docker compose -f compose.yaml \
+  -f experiments/obstacle_avoidance/compose.flight-test.yaml up --build
 ```
 
 For SITL:
 
 ```bash
-docker compose -f compose.sitl.yaml -f compose.flight-test.yaml up --build
+docker compose -f compose.sitl.yaml \
+  -f experiments/obstacle_avoidance/compose.flight-test.yaml up --build
 ```
 
 The flight-test launch prints `SYNTHETIC STATIC TRAFFIC ACTIVE`. If that text is
@@ -60,7 +62,7 @@ Before going to the field, run:
 ```bash
 ARTIFACT_DIR=/var/snap/docker/common/static-obstacle-readiness-<sha> \
 AIRSIDE_IMAGE=warg/airside:<sha> \
-./airside/scripts/avoidance/run_static_obstacle_flight_readiness.sh
+./airside/experiments/obstacle_avoidance/run_static_obstacle_flight_readiness.sh
 ```
 
 The gate consists only of what this flight test needs:
