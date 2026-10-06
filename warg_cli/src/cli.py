@@ -248,6 +248,11 @@ def info(project: str) -> None:
     for name in selected.commands:
         console.print(f"  - {name}")
 
+    if selected.startup.commands:
+        console.print(f"Startup commands (restart: {selected.startup.restart}):")
+        for name in selected.startup.commands:
+            console.print(f"  - {name}")
+
 
 @app.command()
 def doctor(
