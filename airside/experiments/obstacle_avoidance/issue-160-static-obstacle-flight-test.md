@@ -92,3 +92,26 @@ or physical-obstacle perception is required for this test.
 Passing this test means the synthetic static-obstacle behavior is ready for
 comparison between SITL and the real vehicle. The real AEAC connection remains
 a separate follow-up.
+
+## Post-reorganization verification
+
+Verified on October 5, 2026 against organization commit `842a75e` and image
+`warg/airside:842a75e`:
+
+- both hardware and SITL flight-test Compose combinations passed `docker
+  compose config` with the override at its new path;
+- the Airside Docker image built from scratch and all five ROS packages built;
+- the pure planner passed 19 tests, the experiment harness passed 22 tests,
+  and `colcon test` passed 61 tests with no failures;
+- the readiness aggregate passed all five scenarios, including static obstacle
+  3/3 and the pilot-takeover stop/resume check;
+- the three static runs reached the goal in 22.498 s, 22.408 s, and 22.436 s,
+  with minimum traffic clearances of 1.715 m, 1.721 m, and 1.726 m;
+- all three static runs reported no exclusion breach, zero planner holds, zero
+  global setpoints, zero velocity at the goal, and the position controller as
+  the sole MAVROS setpoint owner.
+
+The machine-local evidence is under
+`/var/snap/docker/common/static-obstacle-readiness-842a75e-organized/`.
+Generated logs, artifacts, and rosbags are intentionally ignored rather than
+committed.
