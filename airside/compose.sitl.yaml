@@ -18,5 +18,7 @@ services:
     volumes:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
+      - ./data:/ros_ws/data
       - ..:/monorepo
     command: ros2 launch engine engine.launch.py
+    stop_grace_period: 45s

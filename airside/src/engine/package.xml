@@ -16,6 +16,10 @@
   <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>rcl_interfaces</depend>
+  <exec_depend>ros2bag</exec_depend>
+  <exec_depend>rosbag2_storage_default_plugins</exec_depend>
   <depend>py_trees</depend>
   <depend>py_trees_ros</depend>
   <depend>py_trees_ros_interfaces</depend>
