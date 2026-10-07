@@ -2,6 +2,7 @@ import json
 
 import pytest
 import yaml
+
 from src.benchmark import Harness, generate, load_suite, polygon
 
 SQUARE = [[0, 0], [10, 0], [10, 10], [0, 10]]
@@ -107,10 +108,11 @@ def test_websocket_exchange():
     import asyncio
     from contextlib import suppress
 
-    from src import benchmark
-    from src.benchmark import listen
     from websockets.client import connect
     from websockets.server import serve as real_serve
+
+    from src import benchmark
+    from src.benchmark import listen
 
     async def run():
         ready = asyncio.Future()
