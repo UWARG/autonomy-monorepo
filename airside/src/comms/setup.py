@@ -1,6 +1,7 @@
 from setuptools import find_packages, setup
 
-package_name = "navigation"
+
+package_name = "comms"
 
 
 setup(
@@ -14,17 +15,17 @@ setup(
         ),
         (f"share/{package_name}", ["package.xml"]),
     ],
-    install_requires=["setuptools"],
+    install_requires=["setuptools", "websocket-client"],
     zip_safe=True,
+    tests_require=["pytest"],
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Position control between the engine and MAVROS.",
+    description="Comm links.",
     license="MIT",
-    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "position_controller = navigation.position_controller_node:main",
-            "aeac_backup_controller = navigation.live_position_controller_node:main",
+            "traffic_listener = comms.traffic_listener_node:main",
+            "telemetry_sender = comms.telemetry_sender_node:main",
         ],
     },
 )

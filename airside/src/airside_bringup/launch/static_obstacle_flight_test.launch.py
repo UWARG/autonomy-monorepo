@@ -34,7 +34,7 @@ def generate_launch_description() -> LaunchDescription:
                 "vertical_keepaway_m", "STATIC_OBSTACLE_VERTICAL_M", "5.0"
             ),
             _float_argument(
-                "horizontal_speed_mps", "FLIGHT_TEST_HORIZONTAL_SPEED_MPS", "1.0"
+                "horizontal_speed_mps", "FLIGHT_TEST_HORIZONTAL_SPEED_MPS", "0.7"
             ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(str(base_launch / "airside.launch.py")),

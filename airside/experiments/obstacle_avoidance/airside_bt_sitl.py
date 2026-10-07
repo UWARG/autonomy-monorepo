@@ -20,6 +20,7 @@ from airside_interfaces.msg import TrafficSnapshot
 from diagnostic_msgs.msg import DiagnosticArray
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from harness_runtime import StableConditionGate
+from pose_speed import horizontal_speed_mps
 from mavros_msgs.msg import GlobalPositionTarget, ParamEvent, RCIn, State
 from mavros_msgs.srv import CommandBool, ParamPull, SetMode
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
@@ -56,6 +57,7 @@ TRANSITION_RECON_SWITCH_S = 45.0
 TRAFFIC_SCENARIOS = {
     "traffic_clear",
     "traffic_static",
+    "traffic_dropout",
     "traffic_pilot_takeover",
 }
 TRAFFIC_OBSTACLE_SCENARIOS = TRAFFIC_SCENARIOS - {"traffic_clear"}
@@ -92,6 +94,11 @@ class AirsideBTSitlScenario(Node):
         self.recon_switch_high = False
         self.manager_process: subprocess.Popen[str] | None = None
         self.controller_process: subprocess.Popen[str] | None = None
+        self.max_observed_horizontal_speed_mps = 0.0
+        self.max_pose_reception_gap_s = 0.0
+        self.observed_speed_sample_count = 0
+        self._last_lapping_pose: tuple[float, float, float] | None = None
+        self._last_lapping_pose_received_s: float | None = None
         self.manager_node_gate = StableConditionGate(MANAGER_STABLE_S)
         self.controller_node_gate = StableConditionGate(CONTROLLER_STABLE_S)
 
@@ -147,7 +154,7 @@ class AirsideBTSitlScenario(Node):
             ),
             self.create_subscription(
                 TrafficSnapshot,
-                "/aeac/traffic",
+                os.environ.get("OBSTACLE_TRAFFIC_TOPIC", "/aeac/traffic"),
                 self._traffic_callback,
                 10,
             ),
@@ -186,6 +193,34 @@ class AirsideBTSitlScenario(Node):
             if self.origin_east_m is None:
                 self.origin_east_m = message.pose.position.x
                 self.origin_north_m = message.pose.position.y
+            if self.latest_diagnostics.get("active") == "true":
+                now_s = time.monotonic()
+                east_m = message.pose.position.x
+                north_m = message.pose.position.y
+                stamp_s = (
+                    message.header.stamp.sec
+                    + message.header.stamp.nanosec / 1e9
+                )
+                if self._last_lapping_pose_received_s is not None:
+                    self.max_pose_reception_gap_s = max(
+                        self.max_pose_reception_gap_s,
+                        now_s - self._last_lapping_pose_received_s,
+                    )
+                self._last_lapping_pose_received_s = now_s
+                current_pose = (east_m, north_m, stamp_s)
+                if self._last_lapping_pose is not None:
+                    speed_mps = horizontal_speed_mps(
+                        self._last_lapping_pose, current_pose
+                    )
+                    if speed_mps is not None:
+                        self.max_observed_horizontal_speed_mps = max(
+                            self.max_observed_horizontal_speed_mps, speed_mps
+                        )
+                        self.observed_speed_sample_count += 1
+                self._last_lapping_pose = current_pose
+            else:
+                self._last_lapping_pose = None
+                self._last_lapping_pose_received_s = None
 
     def _fix_callback(self, message: NavSatFix) -> None:
         with self.lock:
@@ -513,6 +548,12 @@ class AirsideBTSitlScenario(Node):
             f"waypoints_file:={waypoints_path}",
             "-p",
             f"obstacle_avoidance.source:={obstacle_source}",
+            "-p",
+            "obstacle_avoidance.traffic_topic:="
+            + os.environ.get("OBSTACLE_TRAFFIC_TOPIC", "/aeac/traffic"),
+            "-p",
+            "obstacle_avoidance.horizontal_speed_mps:="
+            + os.environ.get("OBSTACLE_HORIZONTAL_SPEED_MPS", "2.0"),
         ]
         if lapping_duration_s is not None:
             command.extend(["-p", f"lapping_duration_s:={lapping_duration_s}"])
@@ -753,10 +794,7 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
                 passed = passed and summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
         if scenario in {"wall", "traffic_static"}:
             passed = passed and summary["planner_hold_count"] == 0
-        if scenario in {
-            "dropout",
-            "frozen",
-        }:
+        if scenario in {"dropout", "frozen", "traffic_dropout"}:
             passed = passed and summary["stop_observed"]
         if scenario in {"pilot_takeover", "traffic_pilot_takeover"}:
             passed = (
@@ -764,6 +802,13 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
                 and summary["stop_observed"]
                 and summary["pilot_resume_observed"]
             )
+    speed_gate = os.environ.get("OBSTACLE_SPEED_GATE_MPS")
+    if speed_gate:
+        passed = passed and summary["max_observed_horizontal_speed_mps"] <= float(
+            speed_gate
+        )
+        passed = passed and summary["observed_speed_sample_count"] > 0
+        passed = passed and summary["max_pose_reception_gap_s"] <= 2.5
     summary["verdict"] = "PASS" if passed else "FAIL"
 
 
@@ -783,6 +828,9 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
         "planner_path_found_count": 0,
         "planner_hold_count": 0,
         "traffic_raw_count": 0,
+        "max_observed_horizontal_speed_mps": 0.0,
+        "max_pose_reception_gap_s": 0.0,
+        "observed_speed_sample_count": 0,
         "diagnostics_count": 0,
         "velocity_count": 0,
         "internal_velocity_count": 0,
@@ -905,22 +953,26 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                         not fault_finished
                         and fault_started_s is None
                         and north_m >= 5.0
-                        and args.scenario in {"dropout", "frozen"}
+                        and args.scenario in {"dropout", "frozen", "traffic_dropout"}
                     ):
                         fault_started_s = now_s
-                        node.scan_mode = args.scenario
+                        if args.scenario != "traffic_dropout":
+                            node.scan_mode = args.scenario
                     if (
                         fault_started_s is not None
                         and not fault_finished
-                        and now_s - fault_started_s >= 1.2
-                        and args.scenario in {"dropout", "frozen"}
+                        and now_s - fault_started_s >= (
+                            4.7 if args.scenario == "traffic_dropout" else 1.2
+                        )
+                        and args.scenario in {"dropout", "frozen", "traffic_dropout"}
                     ):
                         with node.lock:
                             speed = math.sqrt(
                                 sum(component**2 for component in node.last_velocity)
                             )
                         summary["stop_observed"] = speed <= 0.05 and north_m < WALL_NORTH_M
-                        node.scan_mode = "normal"
+                        if args.scenario != "traffic_dropout":
+                            node.scan_mode = "normal"
                         fault_finished = True
 
                     if (
@@ -1027,6 +1079,13 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                     "traffic_raw_count": int(
                         diagnostics.get("traffic_raw_count", "0")
                     ),
+                    "max_observed_horizontal_speed_mps": round(
+                        node.max_observed_horizontal_speed_mps, 3
+                    ),
+                    "max_pose_reception_gap_s": round(
+                        node.max_pose_reception_gap_s, 3
+                    ),
+                    "observed_speed_sample_count": node.observed_speed_sample_count,
                 }
             )
         summary["min_wall_dist_m"] = (
@@ -1064,6 +1123,7 @@ def main() -> int:
             "transition",
             "traffic_clear",
             "traffic_static",
+            "traffic_dropout",
             "traffic_pilot_takeover",
         ],
         required=True,

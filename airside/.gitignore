@@ -2,6 +2,7 @@ build/
 install/
 log/
 data/
+.env
 
 # Obstacle-avoidance experiment output (source and fixtures stay tracked).
 /experiments/obstacle_avoidance/logs/

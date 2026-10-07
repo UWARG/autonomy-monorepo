@@ -19,6 +19,8 @@ setup(
             [
                 "launch/airside.launch.py",
                 "launch/static_obstacle_flight_test.launch.py",
+                "launch/aeac_backup.launch.py",
+                "launch/aeac_bendy_ruler.launch.py",
             ],
         ),
     ],

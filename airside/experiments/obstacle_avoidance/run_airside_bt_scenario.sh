@@ -54,6 +54,8 @@ sleep 3
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-44}" \
     -e ROS_LOCALHOST_ONLY=1 \
     -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    -e OBSTACLE_HORIZONTAL_SPEED_MPS="${OBSTACLE_HORIZONTAL_SPEED_MPS:-2.0}" \
+    -e OBSTACLE_SPEED_GATE_MPS="${OBSTACLE_SPEED_GATE_MPS:-}" \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
     "$airside_image" -lc \

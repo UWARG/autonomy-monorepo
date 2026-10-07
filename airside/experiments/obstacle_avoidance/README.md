@@ -11,9 +11,11 @@ The explicit static imaginary-obstacle flight-test launch and readiness gate
 are documented in `issue-160-static-obstacle-flight-test.md`.
 
 This experiment's `/aeac/traffic` topic is synthetic input for PR #181. It is
-not the live server listener. The independent PR #203 backup publishes live
-server aircraft on `/position_controller/obstacle` and commits them with
-`/position_controller/obstacle_snapshot`.
+not the live server listener. The [primary live AEAC path](aeac-bendy-ruler-flight-test.md)
+publishes complete server events on `/aeac/live_traffic` for this same
+BendyRuler2D lapping planner. The listener also publishes server aircraft on
+`/position_controller/obstacle` with
+`/position_controller/obstacle_snapshot` for the separate A* interface.
 
 This directory owns the non-package experiment surface: demos, SITL image and
 parameters, runners, harness tests, generated plots, replay page, research

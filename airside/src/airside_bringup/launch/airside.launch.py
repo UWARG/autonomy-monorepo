@@ -35,6 +35,13 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 description="Obstacle-aware horizontal velocity limit",
             ),
+            DeclareLaunchArgument(
+                "traffic_topic",
+                default_value=EnvironmentVariable(
+                    "OBSTACLE_TRAFFIC_TOPIC", default_value="/aeac/traffic"
+                ),
+                description="TrafficSnapshot input for BendyRuler traffic mode",
+            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -122,6 +129,9 @@ def generate_launch_description() -> LaunchDescription:
                         "obstacle_avoidance.horizontal_speed_mps": ParameterValue(
                             LaunchConfiguration("horizontal_speed_mps"),
                             value_type=float,
+                        ),
+                        "obstacle_avoidance.traffic_topic": LaunchConfiguration(
+                            "traffic_topic"
                         ),
                     }
                 ],

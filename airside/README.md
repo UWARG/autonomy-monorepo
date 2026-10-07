@@ -72,6 +72,9 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `AEAC_CONNECTION_TOKEN` | unset | Secret used by both live AEAC WebSockets; set only in ignored `airside/.env` |
+| `AEAC_UAV_ID` | unset | Bidder-defined string in outgoing 1 Hz telemetry |
+| `AEAC_OWN_AIRCRAFT_INDEX` | `-1` | Verified server traffic index of this aircraft; live backup fails closed if unset |
 
 ### Networking
 
@@ -251,3 +254,11 @@ qualification only and is not an OAK-D integration.
 The #144/#181 research material, SITL runners, qualification harness, plots,
 replay page, and flight-test Compose override are collected in
 [`experiments/obstacle_avoidance/`](experiments/obstacle_avoidance/README.md).
+
+The primary [live AEAC → BendyRuler2D path](experiments/obstacle_avoidance/aeac-bendy-ruler-flight-test.md)
+uses `compose.aeac-bendy.yaml`. It feeds complete server snapshots to
+`/aeac/live_traffic` and sends this UAV's telemetry at 1 Hz on a separate
+WebSocket. The synthetic static-obstacle launch still uses `/aeac/traffic`.
+The isolated A* launch on this branch is experimental; Honzik's #203 remains
+the separate fallback branch. Neither live path is approved for a physical
+flight until the real-server props-off checks pass.

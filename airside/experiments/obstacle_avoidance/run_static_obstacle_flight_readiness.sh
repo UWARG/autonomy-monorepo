@@ -9,6 +9,11 @@ mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
 export ARTIFACT_DIR="$artifact_dir"
 
+# Command below the 1 m/s first-flight ceiling so SITL tracking transients do
+# not consume the entire speed margin. The harness checks observed GPS speed.
+export OBSTACLE_HORIZONTAL_SPEED_MPS="${OBSTACLE_HORIZONTAL_SPEED_MPS:-0.7}"
+export OBSTACLE_SPEED_GATE_MPS="${OBSTACLE_SPEED_GATE_MPS:-1.0}"
+
 if compgen -G "$artifact_dir/*-summary.json" >/dev/null; then
     echo "artifact directory already contains scenario summaries: $artifact_dir" >&2
     exit 2
