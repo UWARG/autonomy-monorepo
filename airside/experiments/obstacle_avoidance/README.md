@@ -10,6 +10,11 @@ See `issue-96-ardupilot-avoidance.md` for the research write-up.
 The explicit static imaginary-obstacle flight-test launch and readiness gate
 are documented in `issue-160-static-obstacle-flight-test.md`.
 
+This experiment's `/aeac/traffic` topic is synthetic input for PR #181. It is
+not the live server listener. The independent PR #203 backup publishes live
+server aircraft on `/position_controller/obstacle` and commits them with
+`/position_controller/obstacle_snapshot`.
+
 This directory owns the non-package experiment surface: demos, SITL image and
 parameters, runners, harness tests, generated plots, replay page, research
 notes, and the flight-test Compose override. Runtime ROS files remain in their
