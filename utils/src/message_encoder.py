@@ -6,6 +6,10 @@ All messages use the envelope: {"type": "...", "payload": {...}}
 import msgspec
 
 from utils.src.messages import (
+    AeacAckMessage,
+    AeacAckPayload,
+    AeacInfractionMessage,
+    AeacInfractionPayload,
     AttitudeMessage,
     AttitudePayload,
     HealthMessage,
@@ -19,6 +23,8 @@ from utils.src.messages import (
     PositionPayload,
     StatusMessage,
     StatusPayload,
+    TelemetrySentMessage,
+    TelemetrySentPayload,
 )
 
 _encoder = msgspec.json.Encoder()
@@ -75,3 +81,15 @@ def encode_nearby_drones(drones: list[NearbyDronePayload]) -> bytes:
     return _encoder.encode(
         NearbyDronesMessage(payload=NearbyDronesPayload(drones=drones))
     )
+
+
+def encode_telemetry_sent(packet: dict) -> bytes:
+    return _encoder.encode(TelemetrySentMessage(payload=TelemetrySentPayload(packet=packet)))
+
+
+def encode_aeac_ack(payload: AeacAckPayload) -> bytes:
+    return _encoder.encode(AeacAckMessage(payload=payload))
+
+
+def encode_aeac_infraction(payload: AeacInfractionPayload) -> bytes:
+    return _encoder.encode(AeacInfractionMessage(payload=payload))

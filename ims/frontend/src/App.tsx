@@ -1,7 +1,7 @@
 // Grid (lg):
 //   row 1:  Camera (5)   Target (4)    Attitude (3)
-//   row 2:  Connection (3)   Script (5)   Nearby drones (4, spans rows 2-3)
-//   row 3:  Log (8)
+//   row 2:  AEAC telemetry (3)   Script (5)   Nearby drones (4, spans rows 2-3)
+//   row 3:  Connection (3)   Log (5)
 
 import useImsSocket from './hooks/useImsSocket';
 import AttitudeWidget from './widgets/AttitudeWidget';
@@ -10,6 +10,7 @@ import ConnectionWidget from './widgets/ConnectionWidget';
 import NearbyDronesWidget from './widgets/NearbyDronesWidget';
 import ScriptWidget from './widgets/ScriptWidget';
 import TargetWidget from './widgets/TargetWidget';
+import TelemetrySentWidget from './widgets/TelemetrySentWidget';
 import LogWidget from './widgets/LogWidget';
 import HeaderStatus from './widgets/Header';
 
@@ -43,8 +44,15 @@ export default function App() {
         <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
           <AttitudeWidget />
         </div>
-        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-3 lg:h-auto">
-          <ConnectionWidget />
+        <div className="col-span-12 h-[320px] min-h-0 md:col-span-6 lg:col-span-3 lg:h-auto">
+          <TelemetrySentWidget
+            telemetrySent={ims.telemetrySent}
+            receivedAtMs={ims.telemetrySentAtMs}
+            ack={ims.aeacAck}
+            ackAtMs={ims.aeacAckAtMs}
+            infraction={ims.aeacInfraction}
+            connected={ims.connected}
+          />
         </div>
         <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-5 lg:h-auto">
           <ScriptWidget />
@@ -56,7 +64,10 @@ export default function App() {
             stale={ims.nearbyDronesStale}
           />
         </div>
-        <div className="col-span-12 h-[220px] min-h-0 lg:col-span-8 lg:h-auto">
+        <div className="col-span-12 h-[220px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
+          <ConnectionWidget />
+        </div>
+        <div className="col-span-12 h-[220px] min-h-0 md:col-span-7 lg:col-span-5 lg:h-auto">
           <LogWidget />
         </div>
       </main>

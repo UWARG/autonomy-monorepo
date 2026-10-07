@@ -1,0 +1,12 @@
+# Request one bundle of the latest image, GPS location and IMU.
+# A service rather than a topic pair so the reply is reliable and matched to
+# its request (rosbridge subscribes to topics best-effort, which drops large
+# one-off messages).
+---
+# False when an input feed hasn't published yet; message says which.
+bool success
+string message
+std_msgs/Header header
+sensor_msgs/Image image
+Coordinate location
+sensor_msgs/Imu imu

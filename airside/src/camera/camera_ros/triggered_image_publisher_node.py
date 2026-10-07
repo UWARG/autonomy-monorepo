@@ -1,4 +1,4 @@
-"""Publish the latest image, GPS location and IMU on a capture request."""
+"""Serve the latest image, GPS location and IMU on a capture request."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, Imu, NavSatFix
 import message_filters
 
-from airside_interfaces.msg import TriggerImageCapture, TriggeredImageCapture
+from airside_interfaces.srv import CaptureImage
 
 
 class TriggeredImagePublisherNode(Node):
-    """Cache sensor messages and publish one complete bundle per capture request."""
+    """Cache sensor messages and return one complete bundle per capture request."""
 
     def __init__(self):
         super().__init__('triggered_image_publisher')
@@ -44,49 +44,39 @@ class TriggeredImagePublisherNode(Node):
 
 
 
-        self.publisher = self.create_publisher(
-            TriggeredImageCapture, '/TriggeredImageCapture', 10
+        self.service = self.create_service(
+            CaptureImage, '/capture_image', self.capture_callback
         )
-        self.trigger_subscription = self.create_subscription(
-            TriggerImageCapture, '/TriggerImageCapture', self.trigger_callback, 10
-        )
-        self.get_logger().info(
-            'Ready for capture commands on /TriggerImageCapture; '
-            'publishing bundles on /TriggeredImageCapture'
-        )
+        self.get_logger().info('Ready for capture requests on /capture_image')
 
 
-    def trigger_callback(self, msg: TriggerImageCapture):
-        if msg.command != 'capture':
-            self.get_logger().warning(f'Unknown capture command: {msg.command!r}')
-            return
-        self.publish_triggered_image()
-
-    def publish_triggered_image(self):
-        """Send cached data without altering the source image or its timestamp."""
+    def capture_callback(self, request: CaptureImage.Request, response: CaptureImage.Response):
+        """Return cached data without altering the source image or its timestamp."""
 
         frame = self.image_cache.getElemBeforeTime(self.get_clock().now())
         gps = self.gps_cache.getElemBeforeTime(self.get_clock().now())
         imu = self.imu_cache.getElemBeforeTime(self.get_clock().now())
 
-        
-        if frame is None or gps is None or imu is None:
-            self.get_logger().warning(
-                'Capture skipped: waiting for camera, GPS and IMU data. '
-                'Send another trigger when all inputs are available.'
-            )
-            return
+        missing = [
+            name for name, value in (('camera', frame), ('GPS', gps), ('IMU', imu))
+            if value is None
+        ]
+        if missing:
+            response.success = False
+            response.message = f'Waiting for {", ".join(missing)} data'
+            self.get_logger().warning(f'Capture skipped: {response.message}')
+            return response
 
-        message = TriggeredImageCapture()
-        message.header.stamp = self.get_clock().now().to_msg()
-        message.header.frame_id = frame.header.frame_id
-        message.image = frame
-        message.location.lat = gps.latitude
-        message.location.lon = gps.longitude
-        message.location.alt = gps.altitude
-        message.imu = imu
-        self.publisher.publish(message)
-        self.get_logger().info('Published triggered image with GPS and orientation')
+        response.success = True
+        response.header.stamp = self.get_clock().now().to_msg()
+        response.header.frame_id = frame.header.frame_id
+        response.image = frame
+        response.location.lat = gps.latitude
+        response.location.lon = gps.longitude
+        response.location.alt = gps.altitude
+        response.imu = imu
+        self.get_logger().info('Served capture with GPS and orientation')
+        return response
 
 
 def main(args=None):

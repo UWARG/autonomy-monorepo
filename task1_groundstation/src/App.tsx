@@ -11,7 +11,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hasSavedLive, setHasSavedLive] = useState(false);
 
-  const { status, result, capture } = useTriggeredCapture();
+  const { status, result, error, capture } = useTriggeredCapture();
 
   const handleCapture = useCallback(() => {
     setSelectedId(null);
@@ -41,16 +41,14 @@ export default function App() {
     const created: Capture = {
       id: crypto.randomUUID(),
       time: new Date().toISOString(),
-      forwardImageUrl: result.forwardImageUrl,
-      downwardImageUrl: result.downwardImageUrl,
+      imageUrl: result.imageUrl,
     };
     setCaptures((c) => [created, ...c]);
     setHasSavedLive(true);
   }
 
   const selectedCapture = selectedId ? captures.find((c) => c.id === selectedId) ?? null : null;
-  const viewerForward = selectedCapture ? selectedCapture.forwardImageUrl : (result?.forwardImageUrl ?? null);
-  const viewerDownward = selectedCapture ? selectedCapture.downwardImageUrl : (result?.downwardImageUrl ?? null);
+  const viewerImage = selectedCapture ? selectedCapture.imageUrl : (result?.imageUrl ?? null);
   const canSave = !selectedCapture && result !== null && !hasSavedLive;
 
   return (
@@ -66,9 +64,9 @@ export default function App() {
 
         <div className="flex-1 min-h-0">
           <CaptureViewer
-            forwardImageUrl={viewerForward}
-            downwardImageUrl={viewerDownward}
+            imageUrl={viewerImage}
             status={status}
+            error={error}
             onSave={canSave ? handleSaveToHistory : undefined}
           />
         </div>

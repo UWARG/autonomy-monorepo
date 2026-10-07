@@ -25,10 +25,7 @@ export function CaptureHistoryList({ captures, selectedId, onSelect, onDelete }:
                 selectedId === c.id ? 'bg-blue-50 ring-1 ring-blue-200' : 'hover:bg-zinc-50'
               }`}
             >
-              <div className="flex gap-1">
-                <img src={c.forwardImageUrl} alt="Forward" className="w-1/2 h-14 object-cover rounded" />
-                <img src={c.downwardImageUrl} alt="Downward" className="w-1/2 h-14 object-cover rounded" />
-              </div>
+              <img src={c.imageUrl} alt="Capture" className="w-full h-14 object-cover rounded" />
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-zinc-500">{new Date(c.time).toLocaleTimeString()}</span>
                 <button

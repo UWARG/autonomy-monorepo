@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { IMS_WS_URL, RECONNECT_DELAY_MS, STALE_AFTER_MS } from '../constants';
-import type { NearbyDronesMessage } from '../types';
+import type {
+  AeacAckMessage,
+  AeacInfractionMessage,
+  NearbyDronesMessage,
+  TelemetrySentMessage,
+} from '../types';
 
 export interface ImsState {
   connected: boolean;
   nearbyDrones?: NearbyDronesMessage;
+  telemetrySent?: TelemetrySentMessage;
+  /** Date.now() when telemetrySent arrived, so its age doesn't depend on any other clock. */
+  telemetrySentAtMs?: number;
+  aeacAck?: AeacAckMessage;
+  aeacAckAtMs?: number;
+  aeacInfraction?: AeacInfractionMessage;
   /** True until a nearby_drones message arrives, and again if none arrives for STALE_AFTER_MS. */
   nearbyDronesStale: boolean;
 }
@@ -16,7 +27,7 @@ interface Envelope {
 
 /** Subscribes to the IMS relay and keeps the latest message of each type. Reconnects forever. */
 export default function useImsSocket(): ImsState {
-  const [messages, setMessages] = useState<Pick<ImsState, 'connected' | 'nearbyDrones'>>({
+  const [messages, setMessages] = useState<Omit<ImsState, 'nearbyDronesStale'>>({
     connected: false,
   });
   const [stale, setStale] = useState(true);
@@ -43,6 +54,15 @@ export default function useImsSocket(): ImsState {
           lastNearbyAt.current = Date.now();
           setStale(false);
           setMessages((m) => ({ ...m, nearbyDrones: envelope.payload as NearbyDronesMessage }));
+        } else if (envelope.type === 'telemetry_sent') {
+          const telemetrySent = envelope.payload as TelemetrySentMessage;
+          setMessages((m) => ({ ...m, telemetrySent, telemetrySentAtMs: Date.now() }));
+        } else if (envelope.type === 'aeac_ack') {
+          const aeacAck = envelope.payload as AeacAckMessage;
+          setMessages((m) => ({ ...m, aeacAck, aeacAckAtMs: Date.now() }));
+        } else if (envelope.type === 'aeac_infraction') {
+          const aeacInfraction = envelope.payload as AeacInfractionMessage;
+          setMessages((m) => ({ ...m, aeacInfraction }));
         }
       };
 

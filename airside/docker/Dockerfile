@@ -13,6 +13,8 @@ RUN rm /etc/apt/sources.list.d/ros2.sources \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
+    libgl1 \
+    libglib2.0-0 \
     python3-colcon-common-extensions \
     python3-numpy \
     python3-pip \
@@ -32,7 +34,7 @@ RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling pymavlink "websockets>=12.0"
+RUN pip install --upgrade pip packaging hatchling pymavlink
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
@@ -42,7 +44,7 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install "/monorepo/camera[oakd,arducam]" /monorepo/utils
 
 COPY airside/src/ src/
 

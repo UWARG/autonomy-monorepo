@@ -20,11 +20,6 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 description="MAVROS connection URL to ArduPilot",
             ),
-            DeclareLaunchArgument(
-                "aeac_connection_token",
-                default_value=EnvironmentVariable("AEAC_CONNECTION_TOKEN", default_value=""),
-                description="Token from the AEAC connect page (https://aeac.mylonics.com/#/connect)",
-            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -67,7 +62,10 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
-                parameters=[{"port": 9090}],
+                # Above max_message_size rosbridge splits messages into
+                # "fragment" ops, which roslibjs can't reassemble. A raw
+                # 640x480 capture is ~1.2 MB once base64-encoded.
+                parameters=[{"port": 9090, "max_message_size": 10_000_000}],
             ),
             Node(
                 package="rosapi",
@@ -83,19 +81,6 @@ def generate_launch_description() -> LaunchDescription:
                 name="camera_node",
                 output="both",
                 parameters=[{"camera_type": "oakd"}],
-            ),
-            Node(
-                package="camera",
-                executable="downward_camera",
-                name="downward_camera_node",
-                output="both",
-                parameters=[{"camera_type": "arducam"}],
-            ),
-            Node(
-                package="camera",
-                executable="triggered_image_publisher",
-                name="triggered_image_publisher",
-                output="both",
             ),
             Node(
                 package="camera",
@@ -118,15 +103,6 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
-            ),
-            Node(
-                package="aeac_telemetry",
-                executable="telemetry",
-                name="aeac_telemetry_node",
-                output="both",
-                respawn=True,
-                respawn_delay=2.0,
-                parameters=[{"aeac_connection_token": LaunchConfiguration("aeac_connection_token")}],
             ),
         ]
     )

@@ -1,6 +1,6 @@
 /**
  * ROS message shapes as delivered by rosbridge (roslibjs), mirroring
- * airside/src/airside_interfaces/msg/TriggeredImageCapture.msg and its
+ * airside/src/airside_interfaces/srv/CaptureImage.srv (response) and its
  * field types. Field names match the .msg files exactly (snake_case).
  */
 
@@ -25,26 +25,18 @@ export interface RosImu {
   orientation: { x: number; y: number; z: number; w: number };
 }
 
-export interface RosRange {
-  /** metres */
-  range: number;
-  min_range: number;
-  max_range: number;
-}
-
-export interface TriggeredImageCapture {
+export interface CaptureImageResponse {
+  success: boolean;
+  message: string;
   header: { stamp: { sec: number; nanosec: number }; frame_id: string };
-  forward_image: RosImage;
-  downward_image: RosImage;
+  image: RosImage;
   location: RosCoordinate;
   imu: RosImu;
-  range: RosRange;
 }
 
-/** One triggered photo pair, logged for the crew to review while counting deer. */
+/** One triggered photo, logged for the crew to review while counting deer. */
 export type Capture = {
   id: string;
   time: string;
-  forwardImageUrl: string;
-  downwardImageUrl: string;
+  imageUrl: string;
 };

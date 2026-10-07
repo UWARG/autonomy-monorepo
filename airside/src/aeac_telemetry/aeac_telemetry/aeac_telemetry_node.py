@@ -24,7 +24,7 @@ from mavros_msgs.msg import State
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import BatteryState, NavSatFix
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, String
 from websockets.exceptions import ConnectionClosed, InvalidHandshake
 from websockets.sync.client import connect as ws_connect
 
@@ -34,9 +34,10 @@ _GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
 _REL_ALT_TOPIC = "mavros/global_position/rel_alt"
 _STATE_TOPIC = "mavros/state"
 _BATTERY_TOPIC = "mavros/battery"
+# Echo of each packet actually sent to AEAC, for the IMS dashboard.
+_SENT_TOPIC = "aeac/telemetry_sent"
 
 _SEND_HZ = 1.0  # AEAC penalizes packet gaps > 1.1s and < 0.4s
-_RECV_TIMEOUT_S = 0.2
 
 # TODO: no existing source for these yet. Placeholder constants rather than a
 # fabricated derivation from NavSatFix.position_covariance or RC link quality.
@@ -72,6 +73,8 @@ class AeacTelemetryNode(Node):
         self.create_subscription(
             BatteryState, _BATTERY_TOPIC, self._battery_callback, qos_profile_sensor_data
         )
+
+        self._sent_publisher = self.create_publisher(String, _SENT_TOPIC, 10)
 
         self.create_timer(1.0 / _SEND_HZ, self._tick)
         self.get_logger().info("AEAC telemetry node ready - connecting on first tick.")
@@ -126,20 +129,24 @@ class AeacTelemetryNode(Node):
         }
 
     def _drain_events(self) -> None:
-        try:
-            raw = self._ws.recv(timeout=_RECV_TIMEOUT_S)
-        except TimeoutError:
-            return
-        try:
-            message = json.loads(raw)
-        except ValueError:
-            return
-        event = message.get("event")
-        if event == "infraction":
-            self.get_logger().warning(f"AEAC infraction: {message}")
-        elif event == "error":
-            self.get_logger().warning(f"AEAC error: {message.get('message')}")
-        # telemetry_ack and traffic are expected steady-state noise, not logged here.
+        # AEAC sends ~2 messages/s (traffic + telemetry_ack), so read everything
+        # already queued each tick; reading one per tick lets infractions fall
+        # further behind every second. timeout=0 never blocks the 1 Hz timer.
+        while True:
+            try:
+                raw = self._ws.recv(timeout=0)
+            except TimeoutError:
+                return
+            try:
+                message = json.loads(raw)
+            except ValueError:
+                continue
+            event = message.get("event")
+            if event == "infraction":
+                self.get_logger().warning(f"AEAC infraction: {message}")
+            elif event == "error":
+                self.get_logger().warning(f"AEAC error: {message.get('message')}")
+            # telemetry_ack and traffic are expected steady-state noise, not logged here.
 
     def _tick(self) -> None:
         if self._ws is None:
@@ -157,6 +164,9 @@ class AeacTelemetryNode(Node):
 
         try:
             self._ws.send(json.dumps({"action": "telemetry", "data": telemetry}))
+            self._sent_publisher.publish(
+                String(data=json.dumps({"sent_at": time.time(), "payload": telemetry}))
+            )
             self._drain_events()
         except (ConnectionClosed, OSError) as error:
             self.get_logger().warning(f"AEAC connection lost: {error}; will reconnect")

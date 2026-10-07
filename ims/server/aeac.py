@@ -9,13 +9,14 @@ https://aeac.mylonics.com/#/connect
 import asyncio
 import json
 import logging
+import time
 from typing import Callable
 from urllib.parse import quote
 
-from websockets.asyncio.client import connect as ws_connect
+from websockets.asyncio.client import ClientConnection, connect as ws_connect
 from websockets.exceptions import WebSocketException
 
-from utils.src.messages import NearbyDronePayload
+from utils.src.messages import AeacAckPayload, AeacInfractionPayload, NearbyDronePayload
 
 log = logging.getLogger("ims.aeac")
 
@@ -43,16 +44,49 @@ def traffic_to_drones(payload: dict) -> list[NearbyDronePayload]:
     return drones
 
 
+def ack_to_payload(message: dict) -> AeacAckPayload:
+    """Convert an AEAC `telemetry_ack` event (our packet echoed back plus AEAC's checks)."""
+    return AeacAckPayload(
+        unix_time=float(message["unixTime"]),
+        inside_boundary=bool(message["insideBoundary"]),
+        too_close_to_traffic=bool(message["tooCloseToTraffic"]),
+    )
+
+
+# Fields of an `infraction` event that aren't per-type counters.
+_INFRACTION_NON_COUNTERS = {"event", "uavId", "siteId", "last_infraction", "score", "armed_seconds"}
+
+
+def infraction_to_payload(message: dict) -> AeacInfractionPayload:
+    """Convert an AEAC `infraction` event (cumulative counters for this UAV)."""
+    return AeacInfractionPayload(
+        last_infraction=str(message["last_infraction"]),
+        counts={
+            key: value
+            for key, value in message.items()
+            if key not in _INFRACTION_NON_COUNTERS and isinstance(value, int)
+        },
+        armed_seconds=float(message["armed_seconds"]),
+        received_at=time.time(),
+    )
+
+
 async def run_aeac_feed(
     url: str,
     token: str,
     on_drones: Callable[[list[NearbyDronePayload]], None],
+    on_ack: Callable[[AeacAckPayload], None],
+    on_infraction: Callable[[AeacInfractionPayload], None],
+    on_connected: Callable[[ClientConnection], None],
     on_disconnected: Callable[[], None],
 ) -> None:
     """
-    Connects to AEAC and calls on_drones() for every traffic event. Reconnects
-    forever on failure; on_disconnected() runs after every disconnect (clean or
-    not) so a relay's replayed-to-late-joiners cache doesn't look live.
+    Connects to AEAC and calls on_drones() for every traffic event, on_ack()
+    for every acknowledged telemetry packet and on_infraction() for every
+    infraction. Reconnects forever on failure. on_connected() hands over the live connection so the
+    relay can send telemetry on it; on_disconnected() runs after every
+    disconnect (clean or not) so a relay's replayed-to-late-joiners cache
+    doesn't look live.
     """
     separator = "&" if "?" in url else "?"
     full_url = f"{url}{separator}Authorization={quote(token, safe='')}"
@@ -60,13 +94,17 @@ async def run_aeac_feed(
         try:
             async with ws_connect(full_url) as ws:
                 log.info("connected to AEAC")
+                on_connected(ws)
                 async for raw in ws:
                     message = json.loads(raw)
                     event = message.get("event")
                     if event == "traffic":
                         on_drones(traffic_to_drones(message["payload"]))
+                    elif event == "telemetry_ack":
+                        on_ack(ack_to_payload(message))
                     elif event == "infraction":
-                        log.info("[infraction] %s", message)
+                        log.warning("[infraction] %s", message)
+                        on_infraction(infraction_to_payload(message))
                     elif event == "error":
                         log.warning("[error] %s", message.get("message"))
         except (WebSocketException, OSError) as error:
