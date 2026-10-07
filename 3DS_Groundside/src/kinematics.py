@@ -1,9 +1,8 @@
 """Motion model for mock drones."""
 
 import math
-from typing import Tuple
 
-Vector3 = Tuple[float, float, float] #x, y, z
+from src.geometry import Vector3
 
 
 def step_toward(position: Vector3, target: Vector3, speed: float, dt: float) -> Vector3:
