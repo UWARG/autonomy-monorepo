@@ -11,9 +11,9 @@ from .drone import BATTERY_TOPIC, GLOBAL_POSITION_TOPIC, REL_ALT_TOPIC, STATE_TO
 # No message from the drone for this long counts as a lost link.
 LINK_TIMEOUT_S = 2.0
 
-# TODO: placeholders until a real source exists for these.
-_H_ACCURACY_M = 1.0
-_V_ACCURACY_M = 2.0
+_H_ACCURACY_M = 3.0
+_V_ACCURACY_M = 3.0
+# TODO: placeholder until a real source exists for RC link status.
 _RC_LINK_STATUS = 1.0
 
 # ArduPilot modes in which the autopilot, not the pilot, is flying.

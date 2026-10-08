@@ -15,7 +15,7 @@ interface NavSatFix {
 }
 
 /** Plot half-range, fixed rather than auto-fit to traffic. */
-const RANGE_M = 250;
+const RANGE_M = 50;
 
 const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;

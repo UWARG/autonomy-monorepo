@@ -29,10 +29,10 @@ _SENT_TOPIC = "aeac/telemetry_sent"
 
 _SEND_HZ = 1.0  # AEAC penalizes packet gaps > 1.1s and < 0.4s
 
-# TODO: placeholders until a real source exists for these.
-_H_ACCURACY_M = 1.0
-_V_ACCURACY_M = 2.0
+_H_ACCURACY_M = 3.0
+_V_ACCURACY_M = 3.0
 _TELEMETRY_LINK_STATUS = 1.0
+# TODO: placeholder until a real source exists for RC link status.
 _RC_LINK_STATUS = 1.0
 
 

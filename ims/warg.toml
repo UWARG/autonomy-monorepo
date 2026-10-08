@@ -6,7 +6,7 @@ depends_on = ["utils", "camera"]
 [commands]
 setup = "uv sync && pnpm --dir frontend install"
 run = "pnpm --dir frontend dev --host 127.0.0.1 --port 5173"
-relay = "uv run python -m ims.server.relay"
+relay = "cd .. && uv run --project ims python -m ims.server.relay"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
