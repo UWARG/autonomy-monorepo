@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
     ros-humble-rosbridge-suite \
+    ros-humble-rtabmap-ros \
     wget \
   && rm -rf /var/lib/apt/lists/*
 
@@ -44,7 +45,7 @@ FROM dev AS prod
 COPY camera/ /monorepo/camera/
 COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils /monorepo/perception
+RUN pip install "/monorepo/camera[oakd]" /monorepo/utils /monorepo/perception
 
 COPY airside/src/ src/
 
