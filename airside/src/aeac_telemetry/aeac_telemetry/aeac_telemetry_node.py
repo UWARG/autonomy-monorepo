@@ -1,15 +1,5 @@
 """
-Sends real vehicle telemetry directly to the AEAC competition server.
-
-Independent of the IMS relay: telemetry-sending is a 1:1 relationship between
-this vehicle and AEAC, not something that needs fanning out to multiple
-dashboard viewers the way incoming traffic does, so it runs its own AEAC
-connection rather than routing through ims/server.
-
-Payload schema and the 0.4-1.1s packet-timing constraint are taken from
-ims/scripts/aeac_hover_sim.py, which validates this against AEAC's compliance
-checks (boundary/traffic-avoidance) using simulated data before this node
-ever sends anything real.
+Sends vehicle telemetry from MAVROS directly to the AEAC competition server.
 """
 
 from __future__ import annotations
@@ -39,8 +29,7 @@ _SENT_TOPIC = "aeac/telemetry_sent"
 
 _SEND_HZ = 1.0  # AEAC penalizes packet gaps > 1.1s and < 0.4s
 
-# TODO: no existing source for these yet. Placeholder constants rather than a
-# fabricated derivation from NavSatFix.position_covariance or RC link quality.
+# TODO: placeholders until a real source exists for these.
 _H_ACCURACY_M = 1.0
 _V_ACCURACY_M = 2.0
 _TELEMETRY_LINK_STATUS = 1.0
@@ -129,9 +118,7 @@ class AeacTelemetryNode(Node):
         }
 
     def _drain_events(self) -> None:
-        # AEAC sends ~2 messages/s (traffic + telemetry_ack), so read everything
-        # already queued each tick; reading one per tick lets infractions fall
-        # further behind every second. timeout=0 never blocks the 1 Hz timer.
+        # Drain the whole queue each tick (AEAC sends ~2 msg/s); timeout=0 never blocks.
         while True:
             try:
                 raw = self._ws.recv(timeout=0)

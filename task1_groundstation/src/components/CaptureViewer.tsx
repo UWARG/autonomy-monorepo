@@ -8,10 +8,12 @@ type Props = {
 };
 
 export function CaptureViewer({ imageUrl, status, error, onSave }: Props) {
+  const failed = status === 'timeout' || status === 'failed';
+
   if (!imageUrl) {
     return (
-      <div className="flex items-center justify-center h-full text-sm text-zinc-400">
-        No capture yet. Press Capture to request one.
+      <div className={`flex items-center justify-center h-full text-sm ${failed ? 'text-red-500' : 'text-zinc-400'}`}>
+        {failed ? `Capture failed — ${error}.` : 'No capture yet. Press Capture to request one.'}
       </div>
     );
   }
@@ -20,7 +22,7 @@ export function CaptureViewer({ imageUrl, status, error, onSave }: Props) {
     <div className="flex items-center justify-center h-full min-h-0">
       <div className="relative flex items-center justify-center gap-3 h-full w-full">
         <img src={imageUrl} alt="Capture" className="max-h-full max-w-full object-contain rounded" />
-        {(status === 'timeout' || status === 'failed') && (
+        {failed && (
           <p className="absolute top-2 left-2 bg-white/90 text-red-500 text-xs px-2 py-1 rounded shadow">
             Capture failed — {error}.
           </p>

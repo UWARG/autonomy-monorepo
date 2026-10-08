@@ -189,35 +189,28 @@ blackboard.altitude = 0.0
 
 ### Triggered image capture
 
-The `camera` node (in the `camera` package) publishes on `camera/image_raw`,
-selecting a real or simulated driver via the `camera_type` ROS parameter
-(`sim` | `oakd` | `arducam`, default `sim`). The launch file sets it to `oakd`;
-for bench testing without hardware, run the node standalone with
-`ros2 run camera camera --ros-args -p camera_type:=sim`.
+The default launch starts `triggered_image_publisher` (always running, respawned
+on exit), implemented in
+`src/camera/camera_ros/triggered_image_publisher_node.py`. It caches `/camera/image_raw`
+(`sensor_msgs/Image`), `/mavros/global_position/global` (`sensor_msgs/NavSatFix`),
+and `/mavros/imu/data` (`sensor_msgs/Imu`). Sensor topic names can be changed
+using ROS remapping.
 
-The `triggered_image_publisher` node (in the `camera` package, always running,
-respawned on exit) caches the latest message from each input (via
-`message_filters.Cache`) and returns them as one bundle from the
-`/capture_image` service (`airside_interfaces/srv/CaptureImage`):
-
-| Name | Type | Kind | Purpose |
-|---|---|---|---|
-| `/camera/image_raw` | `sensor_msgs/Image` | subscribe | Camera feed |
-| `/mavros/global_position/global` | `sensor_msgs/NavSatFix` | subscribe | GPS fix |
-| `/mavros/imu/data` | `sensor_msgs/Imu` | subscribe | Orientation |
-| `/capture_image` | `airside_interfaces/srv/CaptureImage` | service | Returns image, GPS location and IMU |
+Send a request after all three sensor feeds are available:
 
 ```bash
-ros2 service call /capture_image airside_interfaces/srv/CaptureImage
+ros2 topic pub --once /TriggerImageCapture airside_interfaces/msg/TriggerImageCapture "{command: 'capture'}"
 ```
 
-It's a service rather than a trigger/response topic pair because groundside
-reaches it through rosbridge, which subscribes to topics best-effort and drops
-large one-off messages; service replies are reliable. The response header
-records packaging time; the original image, GPS and IMU timestamps are
-preserved. These are the latest independent readings, not time-synchronized
-measurements. If an input hasn't published yet, the response has
-`success: false` and `message` names what's missing.
+Groundside must subscribe to `/TriggeredImageCapture` with type
+`airside_interfaces/msg/TriggeredImageCapture`. Each accepted request publishes
+one message containing the latest image, GPS coordinates and IMU (including
+orientation). The outer header records packaging time; the original image and
+IMU timestamps are preserved. These are the latest independent readings, not
+time-synchronized measurements. Requests with missing inputs are logged and
+discarded; send another request once the feeds are ready. Other commands are
+ignored.
+
 
 ### ROS integration inside a behavior
 

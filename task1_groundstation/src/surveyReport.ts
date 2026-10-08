@@ -8,16 +8,7 @@ function joinWithAnd(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
-/**
- * Builds the Task 1 survey report text per the AEAC CONOPS §5.2.3 example:
- * "8 deer total in clusters of 2, 2, 3, and 1. ID tags: H7, K4, and 3P.
- * One deer is wearing a hat."
- *
- * Total deer count is derived from the cluster sizes (every deer belongs to
- * exactly one cluster per the spec's 10m-radius definition, solo deer being
- * a cluster of one), so there is one source of truth instead of two numbers
- * that could disagree.
- */
+/** Builds the Task 1 survey report text (CONOPS §5.2.3); total is summed from clusters. */
 export function buildSurveyText(clusters: number[], tags: string[], description: string): string {
   const total = clusters.reduce((sum, n) => sum + n, 0);
 

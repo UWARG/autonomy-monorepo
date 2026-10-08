@@ -1,22 +1,5 @@
 """
-IMS relay: the ground station's single connection to AEAC.
-
-- Fans AEAC traffic out to dashboards. Browsers connect to /client; every
-  traffic update is rebroadcast, and the latest snapshot is replayed to
-  clients that connect later.
-- Sends our own telemetry to AEAC at 1 Hz, built from the drone's MAVROS
-  topics over rosbridge (server/drone.py, server/telemetry.py). Relaying it
-  from the ground means a lost drone link is reported as 'link-lost' instead
-  of AEAC seeing silence. Each sent packet is echoed to dashboards as
-  telemetry_sent, and AEAC's verdicts as aeac_ack / aeac_infraction.
-
-Reads from the environment, or from ims/.env (gitignored):
-    AEAC_CONNECTION_TOKEN  required, from the AEAC connect page
-    ROSBRIDGE_URL          the drone's rosbridge, default ws://127.0.0.1:9090
-    AEAC_UAV_ID            default WARG-01
-
-Run from the monorepo root:
-    python -m ims.server.relay [--host 127.0.0.1] [--port 8765]
+IMS relay: fans AEAC traffic out to dashboards and sends our telemetry to AEAC at 1 Hz.
 """
 
 from __future__ import annotations

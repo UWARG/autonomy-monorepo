@@ -1,5 +1,8 @@
 import ROSLIB from 'roslib';
-import { ROS_URL, RECONNECT_DELAY_MS, MAX_RECONNECT_ATTEMPTS } from './constants.ts';
+
+const ROS_URL = `ws://${window.location.hostname}:9090`;
+const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 export const ros = new ROSLIB.Ros({ url: ROS_URL });
 

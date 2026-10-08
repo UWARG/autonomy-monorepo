@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ROSLIB from 'roslib';
-import { ros } from './ros.js';
+import { ros } from './ros';
 import type { CaptureImageResponse } from './types';
-import { rosImageToDataUrl } from './rosImage';
-import { makeTestImageDataUrl } from './testImage';
 
 const CAPTURE_TIMEOUT_MS = 10000;
 
@@ -15,12 +13,7 @@ export interface CaptureResult {
   orientation: { x: number; y: number; z: number; w: number };
 }
 
-/**
- * Calls the /capture_image service over a direct rosbridge connection (see
- * ros.js). A service rather than a trigger/response topic pair: rosbridge
- * subscribes to topics best-effort, which drops large one-off messages, while
- * service replies are reliable and matched to their request.
- */
+/** Calls /capture_image over rosbridge (a service, since topics drop large messages). */
 export function useTriggeredCapture(onCapture?: (result: CaptureResult) => void) {
   const [status, setStatus] = useState<CaptureStatus>('idle');
   const [result, setResult] = useState<CaptureResult | null>(null);
@@ -47,30 +40,19 @@ export function useTriggeredCapture(onCapture?: (result: CaptureResult) => void)
     setError(null);
 
     let done = false;
-    const finish = (next: CaptureStatus, nextResult: CaptureResult, nextError: string | null) => {
+    const finish = (next: CaptureStatus, nextResult: CaptureResult | null, nextError: string | null) => {
       if (done) return;
       done = true;
       window.clearTimeout(timeoutId);
       statusRef.current = next;
-      onCaptureRef.current?.(nextResult);
+      if (nextResult) onCaptureRef.current?.(nextResult);
       if (!isMountedRef.current) return;
       setResult(nextResult);
       setError(nextError);
       setStatus(next);
     };
 
-    // Without a usable reply, fall back to an obviously-fake test image so the
-    // rest of the app (gallery, survey form) stays usable.
-    const fail = (next: CaptureStatus, reason: string) =>
-      finish(
-        next,
-        {
-          imageUrl: makeTestImageDataUrl(`camera — ${reason}`),
-          location: { lat: 0, lon: 0, alt: 0 },
-          orientation: { x: 0, y: 0, z: 0, w: 1 },
-        },
-        reason,
-      );
+    const fail = (next: CaptureStatus, reason: string) => finish(next, null, reason);
 
     const timeoutId = window.setTimeout(() => fail('timeout', 'no response'), CAPTURE_TIMEOUT_MS);
 
@@ -89,7 +71,7 @@ export function useTriggeredCapture(onCapture?: (result: CaptureResult) => void)
         finish(
           'ready',
           {
-            imageUrl: rosImageToDataUrl(response.image),
+            imageUrl: `data:image/jpeg;base64,${response.image.data}`,
             location: response.location,
             orientation: response.imu.orientation,
           },

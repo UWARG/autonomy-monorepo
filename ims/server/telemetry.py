@@ -1,13 +1,5 @@
 """
-Builds the AEAC telemetry packet (CONOPS 5.2.3 item 3) from the drone's latest
-MAVROS readings.
-
-unixTime is always the ground station's clock, link lost or not: the drone's
-clock can't be trusted to match AEAC's, and mixing two clocks would make the
-timestamp jump. During a link loss the last known position is resent with mode
-'link-lost' and telemetryLinkStatus 0. FLAG: whether AEAC wants that stale
-position paired with a fresh timestamp is unconfirmed; ask
-comp-server@aerialevolution.ca.
+Builds the AEAC telemetry packet from the drone's latest MAVROS readings.
 """
 
 from __future__ import annotations
@@ -16,12 +8,10 @@ import math
 
 from .drone import BATTERY_TOPIC, GLOBAL_POSITION_TOPIC, REL_ALT_TOPIC, STATE_TOPIC
 
-# No message from the drone for this long counts as a lost link. MAVROS
-# publishes position at several Hz and state at 1 Hz.
+# No message from the drone for this long counts as a lost link.
 LINK_TIMEOUT_S = 2.0
 
-# TODO: no existing source for these yet. Placeholder constants rather than a
-# fabricated derivation from NavSatFix.position_covariance or RC link quality.
+# TODO: placeholders until a real source exists for these.
 _H_ACCURACY_M = 1.0
 _V_ACCURACY_M = 2.0
 _RC_LINK_STATUS = 1.0

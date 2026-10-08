@@ -61,10 +61,7 @@ export interface TargetMessage {
   cluster?: number;
 }
 
-/**
- * One aircraft in { "type": "nearby_drones" }.
- * Mirrors NearbyDronePayload in utils/src/messages.py.
- */
+/** One aircraft in { "type": "nearby_drones" }; mirrors NearbyDronePayload. */
 export interface NearbyDrone {
   id: number;
   name: string;
@@ -78,10 +75,7 @@ export interface NearbyDrone {
   vertical_keep_away: number; // meter
 }
 
-/**
- * payload for { "type": "nearby_drones" } — snapshot of all traffic, replaces the previous one.
- * Mirrors NearbyDronesPayload in utils/src/messages.py.
- */
+/** payload for { "type": "nearby_drones" }: full traffic snapshot; mirrors NearbyDronesPayload. */
 export interface NearbyDronesMessage {
   drones: NearbyDrone[];
 }
@@ -95,10 +89,7 @@ export type AeacFlightMode =
   | 'armed-pilot'
   | 'armed-automatic';
 
-/**
- * The packet the relay sent to AEAC, in AEAC's own camelCase schema.
- * Built in ims/server/telemetry.py.
- */
+/** The packet the relay sent to AEAC (camelCase), built in ims/server/telemetry.py. */
 export interface AeacTelemetryPacket {
   uavId: string;
   unixTime: number; // seconds, ground station clock
@@ -113,28 +104,19 @@ export interface AeacTelemetryPacket {
   rcLinkStatus: number; // 0-1
 }
 
-/**
- * payload for { "type": "telemetry_sent" } — one per packet actually sent to AEAC.
- * Mirrors TelemetrySentPayload in utils/src/messages.py.
- */
+/** payload for { "type": "telemetry_sent" }; mirrors TelemetrySentPayload. */
 export interface TelemetrySentMessage {
   packet: AeacTelemetryPacket;
 }
 
-/**
- * payload for { "type": "aeac_ack" } — AEAC's checks on a packet it acknowledged.
- * Mirrors AeacAckPayload in utils/src/messages.py.
- */
+/** payload for { "type": "aeac_ack" }; mirrors AeacAckPayload. */
 export interface AeacAckMessage {
   unix_time: number; // the acknowledged packet's unixTime
   inside_boundary: boolean;
   too_close_to_traffic: boolean;
 }
 
-/**
- * payload for { "type": "aeac_infraction" } — sent by AEAC on each new infraction.
- * Mirrors AeacInfractionPayload in utils/src/messages.py.
- */
+/** payload for { "type": "aeac_infraction" }; mirrors AeacInfractionPayload. */
 export interface AeacInfractionMessage {
   last_infraction: string;
   /** Cumulative per-type counts for this UAV, across sessions. */

@@ -1,8 +1,5 @@
 """
 Async rosbridge client keeping the drone's latest MAVROS readings on the ground.
-
-The relay builds AEAC telemetry from these, so it can keep reporting (as
-link-lost) when the drone's link drops instead of AEAC seeing silence.
 """
 
 from __future__ import annotations
@@ -19,8 +16,7 @@ log = logging.getLogger("ims.drone")
 
 RECONNECT_DELAY_S = 3
 
-# rosbridge-side rate limit per topic: 1 Hz telemetry doesn't need MAVROS's
-# full rates crossing the LTE link.
+# Per-topic rosbridge throttle so MAVROS's full rates don't cross the LTE link.
 THROTTLE_MS = 200
 
 GLOBAL_POSITION_TOPIC = "/mavros/global_position/global"

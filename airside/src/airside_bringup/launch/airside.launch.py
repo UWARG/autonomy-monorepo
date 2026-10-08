@@ -62,9 +62,7 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
-                # Above max_message_size rosbridge splits messages into
-                # "fragment" ops, which roslibjs can't reassemble. A raw
-                # 640x480 capture is ~1.2 MB once base64-encoded.
+                # roslibjs can't reassemble fragments, so keep headroom above a JPEG capture.
                 parameters=[{"port": 9090, "max_message_size": 10_000_000}],
             ),
             Node(

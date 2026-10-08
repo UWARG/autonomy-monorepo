@@ -1,17 +1,9 @@
-/**
- * ROS message shapes as delivered by rosbridge (roslibjs), mirroring
- * airside/src/airside_interfaces/srv/CaptureImage.srv (response) and its
- * field types. Field names match the .msg files exactly (snake_case).
- */
+/** rosbridge shapes of the CaptureImage.srv response; field names match the .msg files. */
 
-export interface RosImage {
+export interface RosCompressedImage {
   header: { stamp: { sec: number; nanosec: number }; frame_id: string };
-  height: number;
-  width: number;
-  encoding: string;
-  is_bigendian: number;
-  step: number;
-  /** base64-encoded raw pixel bytes, as rosbridge encodes uint8[] fields. */
+  format: string;
+  /** base64-encoded JPEG bytes, as rosbridge encodes uint8[] fields. */
   data: string;
 }
 
@@ -29,7 +21,7 @@ export interface CaptureImageResponse {
   success: boolean;
   message: string;
   header: { stamp: { sec: number; nanosec: number }; frame_id: string };
-  image: RosImage;
+  image: RosCompressedImage;
   location: RosCoordinate;
   imu: RosImu;
 }

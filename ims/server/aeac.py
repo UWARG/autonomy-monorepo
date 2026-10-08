@@ -1,9 +1,5 @@
 """
-Async AEAC competition WebSocket client, feeding traffic straight into the relay.
-
-No local socket hop: this runs as a background task inside the relay's own
-event loop rather than as a separate process. AEAC docs:
-https://aeac.mylonics.com/#/connect
+Async AEAC competition WebSocket client, run inside the relay's event loop.
 """
 
 import asyncio
@@ -80,14 +76,7 @@ async def run_aeac_feed(
     on_connected: Callable[[ClientConnection], None],
     on_disconnected: Callable[[], None],
 ) -> None:
-    """
-    Connects to AEAC and calls on_drones() for every traffic event, on_ack()
-    for every acknowledged telemetry packet and on_infraction() for every
-    infraction. Reconnects forever on failure. on_connected() hands over the live connection so the
-    relay can send telemetry on it; on_disconnected() runs after every
-    disconnect (clean or not) so a relay's replayed-to-late-joiners cache
-    doesn't look live.
-    """
+    """Connects to AEAC, dispatches each event to its callback, and reconnects forever."""
     separator = "&" if "?" in url else "?"
     full_url = f"{url}{separator}Authorization={quote(token, safe='')}"
     while True:
