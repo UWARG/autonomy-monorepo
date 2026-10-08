@@ -78,7 +78,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="camera",
                 name="camera_node",
                 output="both",
-                parameters=[{"camera_type": "oakd"}],
+                parameters=[{"camera_type": "arducam"}],
             ),
             Node(
                 package="camera",
