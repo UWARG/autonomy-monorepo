@@ -39,7 +39,7 @@ RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling pymavlink
+RUN pip install --upgrade pip packaging hatchling pymavlink websocket-client
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 

@@ -14,7 +14,15 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", ["launch/airside.launch.py"]),
+        (
+            f"share/{package_name}/launch",
+            [
+                "launch/airside.launch.py",
+                "launch/static_obstacle_flight_test.launch.py",
+                "launch/aeac_backup.launch.py",
+                "launch/aeac_bendy_ruler.launch.py",
+            ],
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

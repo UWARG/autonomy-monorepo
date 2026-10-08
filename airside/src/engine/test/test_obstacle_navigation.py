@@ -227,6 +227,26 @@ class ControllerTests(unittest.TestCase):
             (0.0, 0.0, 0.0),
         )
 
+    def test_traffic_source_can_report_specific_fail_closed_reasons(self) -> None:
+        missing = self.controller.step(
+            now_s=NOW,
+            goal=goal(),
+            telemetry=telemetry(),
+            obstacles=None,
+            missing_obstacles_reason="NO_TRAFFIC",
+        )
+        unhealthy = self.controller.step(
+            now_s=NOW,
+            goal=goal(),
+            telemetry=telemetry(),
+            obstacles=clear_snapshot(healthy=False),
+            obstacle_reason="TRAFFIC_PROTOCOL_ERROR",
+        )
+
+        self.assertEqual(missing.reason, "NO_TRAFFIC")
+        self.assertEqual(unhealthy.reason, "TRAFFIC_PROTOCOL_ERROR")
+        self.assertEqual((missing.east_mps, missing.north_mps), (0.0, 0.0))
+
 
 class ActiveNavigationClockTests(unittest.TestCase):
     def test_holds_and_backward_clock_steps_do_not_consume_timeout(self) -> None:

@@ -19,7 +19,7 @@ uv run python -m obstacle_avoidance
 
 The command-line demo runs the pure planner against a finite wall. The
 ArduCopter qualification scenario is in
-`airside/scripts/avoidance/avoidance_demo.py`.
+`airside/experiments/obstacle_avoidance/avoidance_demo.py`.
 
 ## Safety contract
 

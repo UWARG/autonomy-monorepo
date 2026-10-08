@@ -7,12 +7,20 @@ import py_trees
 from engine.behaviors.navigation.obstacle_aware_fly_to_waypoint import (
     _VELOCITY_TOPIC,
     ObstacleAwareFlyToWaypoint,
+    validate_obstacle_source,
 )
 from engine.obstacle_navigation import NavigationDecision
 from mavros_msgs.msg import State
 
 
 class ObstacleAwareBehaviorLifecycleTests(unittest.TestCase):
+    def test_source_must_be_exactly_scan_or_traffic(self) -> None:
+        self.assertEqual(validate_obstacle_source("traffic"), "traffic")
+        self.assertEqual(validate_obstacle_source("scan"), "scan")
+        for invalid in ("", "auto", "scan+traffic"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                validate_obstacle_source(invalid)
+
     def test_velocity_targets_use_navigation_adapter_not_mavros(self) -> None:
         self.assertEqual(_VELOCITY_TOPIC, "position_controller/velocity_target")
         self.assertNotIn("mavros", _VELOCITY_TOPIC)

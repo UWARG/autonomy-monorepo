@@ -43,7 +43,9 @@ class ObstacleNavigationConfig:
             self.goal_tolerance_m,
         )
         if any(value <= 0.0 for value in positive):
-            raise ValueError("navigation rates, distances, and timeouts must be positive")
+            raise ValueError(
+                "navigation rates, distances, and timeouts must be positive"
+            )
         if self.future_stamp_tolerance_s < 0.0:
             raise ValueError("future stamp tolerance must be non-negative")
         if not self.expected_scan_frame:
@@ -251,7 +253,8 @@ class ObstacleAwareController:
         goal: NavigationGoal,
         telemetry: NavigationTelemetry,
         obstacles: ObstacleSnapshot | None,
-        scan_reason: str | None = None,
+        obstacle_reason: str | None = None,
+        missing_obstacles_reason: str = "NO_SCAN",
     ) -> NavigationDecision:
         """Return the command for one control cycle."""
 
@@ -274,9 +277,9 @@ class ObstacleAwareController:
         ):
             return self.hold("STALE_TELEMETRY")
         if obstacles is None:
-            return self.hold("NO_SCAN")
-        if scan_reason is not None:
-            return self.hold(scan_reason)
+            return self.hold(missing_obstacles_reason)
+        if obstacle_reason is not None:
+            return self.hold(obstacle_reason)
 
         start = Point2D(telemetry.east_m, telemetry.north_m)
         local_goal = Point2D(goal.east_m, goal.north_m)

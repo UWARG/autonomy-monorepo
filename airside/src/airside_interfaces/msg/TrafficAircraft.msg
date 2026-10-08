@@ -1,0 +1,9 @@
+int64 aircraft_index
+string name
+float64 latitude_deg
+float64 longitude_deg
+float64 altitude_agl_m
+float64 speed_mps
+float64 heading_deg_true
+float64 horizontal_keepaway_m
+float64 vertical_keepaway_m

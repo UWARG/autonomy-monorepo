@@ -7,10 +7,16 @@ import time
 
 import py_trees
 import rclpy.node
+from airside_interfaces.msg import TrafficSnapshot
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from mavros_msgs.msg import State
-from obstacle_avoidance import PlannerConfig, Point2D, sector_scan_to_snapshot
+from obstacle_avoidance import (
+    ObstacleSnapshot,
+    PlannerConfig,
+    Point2D,
+    sector_scan_to_snapshot,
+)
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan, NavSatFix, NavSatStatus
 from std_msgs.msg import Float64
@@ -31,15 +37,31 @@ from engine.obstacle_navigation import (
     ScanConversion,
     prepare_sector_scan,
 )
+from engine.traffic_navigation import (
+    TrafficAircraftState,
+    TrafficConversion,
+    TrafficNavigationConfig,
+    TrafficSnapshotState,
+    traffic_to_obstacle_snapshot,
+)
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 _SCAN_TOPIC_DEFAULT = "/obstacle_avoidance/scan"
+_TRAFFIC_TOPIC_DEFAULT = "/aeac/traffic"
 _DIAGNOSTICS_TOPIC = "/obstacle_avoidance/diagnostics"
 _VELOCITY_TOPIC = "position_controller/velocity_target"
 _LOCAL_POSE_TOPIC = "mavros/local_position/pose"
 _GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
 _REL_ALT_TOPIC = "mavros/global_position/rel_alt"
 _STATE_TOPIC = "mavros/state"
+
+
+def validate_obstacle_source(source: str) -> str:
+    """Require one explicit source; there is intentionally no automatic mode."""
+
+    if source not in {"scan", "traffic"}:
+        raise ValueError("obstacle_avoidance.source must be 'scan' or 'traffic'")
+    return source
 
 
 class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
@@ -56,6 +78,9 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
         self._declare_parameters()
+        self._source = validate_obstacle_source(
+            self._parameter_string("obstacle_avoidance.source")
+        )
 
         self._config = ObstacleNavigationConfig(
             control_rate_hz=self._parameter_float("obstacle_avoidance.control_rate_hz"),
@@ -75,9 +100,7 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
                 "obstacle_avoidance.telemetry_freshness_s"
             ),
             goal_tolerance_m=WAYPOINT_ACCEPTANCE_RADIUS_M,
-            expected_scan_frame=self._parameter_string(
-                "obstacle_avoidance.scan_frame"
-            ),
+            expected_scan_frame=self._parameter_string("obstacle_avoidance.scan_frame"),
             guided_mode=GUIDED_MODE,
         )
         planner_config = PlannerConfig(
@@ -90,19 +113,39 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
             clearance_margin_m=self._parameter_float(
                 "obstacle_avoidance.clearance_margin_m"
             ),
-            map_freshness_s=self._config.scan_freshness_s,
+            map_freshness_s=(
+                self._config.scan_freshness_s
+                if self._source == "scan"
+                else self._parameter_float("obstacle_avoidance.traffic_freshness_s")
+            ),
             hysteresis_cost_m=self._parameter_float(
                 "obstacle_avoidance.hysteresis_cost_m"
             ),
         )
         self._controller = ObstacleAwareController(self._config, planner_config)
         self._navigation_clock = ActiveNavigationClock()
+        self._traffic_config = TrafficNavigationConfig(
+            freshness_s=self._parameter_float("obstacle_avoidance.traffic_freshness_s"),
+            prediction_horizon_s=self._parameter_float(
+                "obstacle_avoidance.traffic_prediction_horizon_s"
+            ),
+            maximum_step_m=self._parameter_float(
+                "obstacle_avoidance.traffic_prediction_step_m"
+            ),
+            maximum_predicted_obstacles=int(
+                self._node.get_parameter(
+                    "obstacle_avoidance.maximum_predicted_obstacles"
+                ).value
+            ),
+        )
 
         self._latest_pose: PoseStamped | None = None
         self._latest_fix: NavSatFix | None = None
         self._latest_rel_alt_m: float | None = None
         self._latest_state: State | None = None
         self._latest_scan: ScanConversion | None = None
+        self._latest_traffic: TrafficSnapshotState | None = None
+        self._latest_traffic_conversion: TrafficConversion | None = None
         self._last_scan_source_stamp_s: float | None = None
         self._pose_received_s: float | None = None
         self._fix_received_s: float | None = None
@@ -113,6 +156,7 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         self._active = False
         self._timed_out = False
         self._latest_decision: NavigationDecision | None = None
+        self._source_held = True
 
         self._velocity_pub = self._node.create_publisher(
             TwistStamped, _VELOCITY_TOPIC, 10
@@ -141,12 +185,22 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         self._state_sub = self._node.create_subscription(
             State, _STATE_TOPIC, self._state_callback, 10
         )
-        self._scan_sub = self._node.create_subscription(
-            LaserScan,
-            self._parameter_string("obstacle_avoidance.scan_topic"),
-            self._scan_callback,
-            qos_profile_sensor_data,
-        )
+        self._scan_sub = None
+        self._traffic_sub = None
+        if self._source == "scan":
+            self._scan_sub = self._node.create_subscription(
+                LaserScan,
+                self._parameter_string("obstacle_avoidance.scan_topic"),
+                self._scan_callback,
+                qos_profile_sensor_data,
+            )
+        else:
+            self._traffic_sub = self._node.create_subscription(
+                TrafficSnapshot,
+                self._parameter_string("obstacle_avoidance.traffic_topic"),
+                self._traffic_callback,
+                10,
+            )
         self._control_timer = self._node.create_timer(
             1.0 / self._config.control_rate_hz,
             self._control_cycle,
@@ -154,8 +208,14 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
 
     def _declare_parameters(self) -> None:
         defaults: dict[str, object] = {
+            "obstacle_avoidance.source": "scan",
             "obstacle_avoidance.scan_topic": _SCAN_TOPIC_DEFAULT,
             "obstacle_avoidance.scan_frame": "base_link",
+            "obstacle_avoidance.traffic_topic": _TRAFFIC_TOPIC_DEFAULT,
+            "obstacle_avoidance.traffic_freshness_s": 2.5,
+            "obstacle_avoidance.traffic_prediction_horizon_s": 3.0,
+            "obstacle_avoidance.traffic_prediction_step_m": 1.0,
+            "obstacle_avoidance.maximum_predicted_obstacles": 512,
             "obstacle_avoidance.control_rate_hz": 10.0,
             "obstacle_avoidance.horizontal_speed_mps": 2.0,
             "obstacle_avoidance.vertical_speed_mps": 1.0,
@@ -191,7 +251,9 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
 
     def _state_callback(self, msg: State) -> None:
         now_s = time.monotonic()
-        previous_mode = self._latest_state.mode if self._latest_state is not None else None
+        previous_mode = (
+            self._latest_state.mode if self._latest_state is not None else None
+        )
         self._latest_state = msg
         self._state_received_s = now_s
         if msg.mode == GUIDED_MODE and previous_mode != GUIDED_MODE:
@@ -228,6 +290,32 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         ):
             self._last_scan_source_stamp_s = source_stamp_s
 
+    def _traffic_callback(self, msg: TrafficSnapshot) -> None:
+        received_s = time.monotonic()
+        aircraft = tuple(
+            TrafficAircraftState(
+                aircraft_index=item.aircraft_index,
+                name=item.name,
+                latitude_deg=item.latitude_deg,
+                longitude_deg=item.longitude_deg,
+                altitude_agl_m=item.altitude_agl_m,
+                speed_mps=item.speed_mps,
+                heading_deg_true=item.heading_deg_true,
+                horizontal_keepaway_m=item.horizontal_keepaway_m,
+                vertical_keepaway_m=item.vertical_keepaway_m,
+            )
+            for item in msg.aircraft
+        )
+        self._latest_traffic = TrafficSnapshotState(
+            sequence=msg.sequence,
+            connected=msg.connected,
+            healthy=msg.healthy,
+            reason=msg.reason,
+            own_aircraft_index=msg.own_aircraft_index,
+            aircraft=aircraft,
+            received_s=received_s,
+        )
+
     def initialise(self) -> None:
         try:
             self._waypoint = self.blackboard.get(blackboard_keys.CURRENT_WAYPOINT)
@@ -240,6 +328,7 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         self._active = True
         self._timed_out = False
         self._latest_decision = None
+        self._source_held = True
         if self._guided_entry_s is None:
             self._guided_entry_s = now_s
         self._controller.reset()
@@ -299,23 +388,24 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
             decision = self._controller.hold("MISSING_TELEMETRY")
         else:
             goal = self._local_goal(telemetry)
-            obstacles = None
-            scan_reason = None
-            if self._latest_scan is not None and self._latest_pose is not None:
-                pose = self._latest_pose.pose
-                obstacles = sector_scan_to_snapshot(
-                    self._latest_scan.scan,
-                    sensor_position=Point2D(pose.position.x, pose.position.y),
-                    sensor_heading_rad=telemetry.yaw_enu_rad,
-                    obstacle_radius_m=self._config.obstacle_radius_m,
-                )
-                scan_reason = self._latest_scan.reason
+            obstacles, source_reason = self._obstacles(
+                now_s=now_s,
+                telemetry=telemetry,
+                goal=goal,
+            )
+            source_is_held = obstacles is None or source_reason is not None
+            if self._source_held and not source_is_held:
+                self._controller.planner.reset()
+            self._source_held = source_is_held
             decision = self._controller.step(
                 now_s=now_s,
                 goal=goal,
                 telemetry=telemetry,
                 obstacles=obstacles,
-                scan_reason=scan_reason,
+                obstacle_reason=source_reason,
+                missing_obstacles_reason=(
+                    "NO_SCAN" if self._source == "scan" else "NO_TRAFFIC"
+                ),
             )
 
         self._latest_decision = decision
@@ -334,6 +424,44 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
                 decision.up_mps,
             )
         self._publish_diagnostics(decision, now_s)
+
+    def _obstacles(
+        self,
+        *,
+        now_s: float,
+        telemetry: NavigationTelemetry,
+        goal: NavigationGoal,
+    ) -> tuple[ObstacleSnapshot | None, str | None]:
+        if self._source == "scan":
+            if self._latest_scan is None or self._latest_pose is None:
+                return None, "NO_SCAN"
+            pose = self._latest_pose.pose
+            return (
+                sector_scan_to_snapshot(
+                    self._latest_scan.scan,
+                    sensor_position=Point2D(pose.position.x, pose.position.y),
+                    sensor_heading_rad=telemetry.yaw_enu_rad,
+                    obstacle_radius_m=self._config.obstacle_radius_m,
+                ),
+                self._latest_scan.reason,
+            )
+
+        if self._latest_traffic is None:
+            self._latest_traffic_conversion = None
+            return None, "NO_TRAFFIC"
+        converted = traffic_to_obstacle_snapshot(
+            traffic=self._latest_traffic,
+            now_s=now_s,
+            vehicle_latitude_deg=telemetry.latitude,
+            vehicle_longitude_deg=telemetry.longitude,
+            vehicle_east_m=telemetry.east_m,
+            vehicle_north_m=telemetry.north_m,
+            vehicle_altitude_agl_m=telemetry.relative_altitude_m,
+            goal_altitude_agl_m=goal.relative_altitude_m,
+            config=self._traffic_config,
+        )
+        self._latest_traffic_conversion = converted
+        return converted.snapshot, converted.reason
 
     def _telemetry(self, now_s: float) -> NavigationTelemetry | None:
         if (
@@ -367,6 +495,13 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         ):
             return None
 
+        source_received_s = (
+            self._latest_scan.scan.timestamp_s
+            if self._source == "scan" and self._latest_scan is not None
+            else self._latest_traffic.received_s
+            if self._source == "traffic" and self._latest_traffic is not None
+            else -math.inf
+        )
         required_s = self._guided_entry_s
         fresh_after_guided = required_s is not None and all(
             received_s >= required_s
@@ -375,9 +510,7 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
                 self._fix_received_s,
                 self._altitude_received_s,
                 self._state_received_s,
-                self._latest_scan.scan.timestamp_s
-                if self._latest_scan is not None
-                else -math.inf,
+                source_received_s,
             )
         )
         return NavigationTelemetry(
@@ -412,15 +545,15 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
     @staticmethod
     def _yaw_from_pose(msg: PoseStamped) -> float:
         orientation = msg.pose.orientation
-        sin_yaw = 2.0 * (
-            orientation.w * orientation.z + orientation.x * orientation.y
-        )
+        sin_yaw = 2.0 * (orientation.w * orientation.z + orientation.x * orientation.y)
         cos_yaw = 1.0 - 2.0 * (
             orientation.y * orientation.y + orientation.z * orientation.z
         )
         return math.atan2(sin_yaw, cos_yaw)
 
-    def _publish_velocity(self, east_mps: float, north_mps: float, up_mps: float) -> None:
+    def _publish_velocity(
+        self, east_mps: float, north_mps: float, up_mps: float
+    ) -> None:
         message = TwistStamped()
         message.header.stamp = self._node.get_clock().now().to_msg()
         message.header.frame_id = "map"
@@ -429,14 +562,15 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         message.twist.linear.z = up_mps
         self._velocity_pub.publish(message)
 
-    def _publish_diagnostics(
-        self, decision: NavigationDecision, now_s: float
-    ) -> None:
-        scan_age_s = (
-            now_s - self._latest_scan.scan.timestamp_s
-            if self._latest_scan is not None
-            else math.inf
+    def _publish_diagnostics(self, decision: NavigationDecision, now_s: float) -> None:
+        source_received_s = (
+            self._latest_scan.scan.timestamp_s
+            if self._source == "scan" and self._latest_scan is not None
+            else self._latest_traffic.received_s
+            if self._source == "traffic" and self._latest_traffic is not None
+            else None
         )
+        traffic_conversion = self._latest_traffic_conversion
         status = DiagnosticStatus()
         status.name = "obstacle_aware_waypoint"
         status.hardware_id = "airside"
@@ -448,22 +582,51 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
         status.message = decision.reason or decision.planner_status
         values = {
             "active": str(self._active).lower(),
+            "obstacle_source": self._source,
             "planner_status": decision.planner_status,
             "reason": decision.reason or "",
-            "scan_age_s": f"{scan_age_s:.6f}",
+            "source_age_s": self._format_age(now_s, source_received_s),
+            "traffic_connected": str(
+                self._latest_traffic.connected
+                if self._latest_traffic is not None
+                else False
+            ).lower(),
+            "traffic_healthy": str(
+                self._latest_traffic.healthy
+                if self._latest_traffic is not None
+                else False
+            ).lower(),
+            "traffic_sequence": str(
+                self._latest_traffic.sequence if self._latest_traffic is not None else 0
+            ),
+            "traffic_raw_count": str(
+                traffic_conversion.raw_aircraft_count
+                if traffic_conversion is not None
+                else 0
+            ),
+            "traffic_relevant_count": str(
+                traffic_conversion.relevant_aircraft_count
+                if traffic_conversion is not None
+                else 0
+            ),
+            "traffic_predicted_circle_count": str(
+                traffic_conversion.predicted_circle_count
+                if traffic_conversion is not None
+                else 0
+            ),
             "pose_age_s": self._format_age(now_s, self._pose_received_s),
             "fix_age_s": self._format_age(now_s, self._fix_received_s),
             "altitude_age_s": self._format_age(now_s, self._altitude_received_s),
             "state_age_s": self._format_age(now_s, self._state_received_s),
-            "minimum_clearance_m": self._format_optional(
-                decision.minimum_clearance_m
-            ),
+            "minimum_clearance_m": self._format_optional(decision.minimum_clearance_m),
             "goal_distance_m": self._format_optional(decision.goal_distance_m),
             "path_found_count": str(decision.path_found_count),
             "hold_count": str(decision.hold_count),
             "active_navigation_s": f"{self._navigation_clock.elapsed_s:.6f}",
         }
-        status.values = [KeyValue(key=key, value=value) for key, value in values.items()]
+        status.values = [
+            KeyValue(key=key, value=value) for key, value in values.items()
+        ]
         message = DiagnosticArray()
         message.header.stamp = self._node.get_clock().now().to_msg()
         message.status = [status]
