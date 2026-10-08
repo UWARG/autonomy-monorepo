@@ -6,10 +6,7 @@ from src.geometry import Vector3
 
 
 def step_toward(position: Vector3, target: Vector3, speed: float, dt: float) -> Vector3:
-    """Move `position` in a straight line toward `target` at `speed` (m/s) for `dt` seconds.
-
-    Returns `target` exactly if it is reachable within this step.
-    """
+    """Move toward `target` at `speed` m/s for `dt` s, stopping exactly on it."""
     if speed < 0:
         raise ValueError(f"speed must be non-negative, got {speed}")
     if dt < 0:

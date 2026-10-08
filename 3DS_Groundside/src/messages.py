@@ -25,7 +25,7 @@ class MessageType(str, Enum):
 
 
 class MissionState(str, Enum):
-    """Mission states reported in DRONE_STATE. Only IDLE drones are available for new tasks."""
+    """Mission states in DRONE_STATE. Only IDLE drones take new tasks."""
 
     IDLE = "IDLE"
     MOVING = "MOVING"
@@ -44,7 +44,7 @@ class LocationCommand:
 def make_message(
     msg_type: MessageType, drone_id: str, payload: dict[str, Any]
 ) -> dict[str, Any]:
-    """Wrap `payload` in the common message envelope, stamped with the current time."""
+    """Wrap `payload` in the message envelope with the current timestamp."""
     return {
         "type": msg_type.value,
         "drone_id": drone_id,
@@ -72,11 +72,7 @@ def drone_state(
     position: Vector3,
     orientation: Vector3,
 ) -> dict[str, Any]:
-    """Build the 1 Hz DRONE_STATE telemetry message.
-
-    `position` is (x, y, z) in metres and `orientation` is (roll, pitch, yaw) in radians.
-    `task_id` is None before the first command.
-    """
+    """Build DRONE_STATE. Position (x, y, z) in m; orientation in rad."""
     x, y, z = position
     roll, pitch, yaw = orientation
     return make_message(
@@ -96,15 +92,12 @@ def drone_state(
 
 
 def encode(message: dict[str, Any]) -> str:
-    """Serialize an outgoing message to JSON.
-
-    Raises ValueError if the message contains NaN or infinity, which are not valid JSON.
-    """
+    """Serialize to JSON; raises ValueError on NaN or infinity."""
     return json.dumps(message, allow_nan=False)
 
 
 def _as_finite_float(value: Any) -> float | None:
-    """Return `value` as a float if it is a finite real number (not a bool), otherwise None."""
+    """`value` as a float if it is a finite number (not a bool), else None."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     if not math.isfinite(value):
@@ -113,11 +106,7 @@ def _as_finite_float(value: Any) -> float | None:
 
 
 def parse_location_command(raw: str | bytes, drone_id: str) -> LocationCommand | None:
-    """Parse a LOCATION_COMMAND addressed to `drone_id`.
-
-    Returns None if `raw` is not valid JSON, is a different message type, is addressed to
-    another drone, or has a missing or invalid field.
-    """
+    """Parse a LOCATION_COMMAND for `drone_id`, or return None if it is invalid."""
     try:
         message = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError):

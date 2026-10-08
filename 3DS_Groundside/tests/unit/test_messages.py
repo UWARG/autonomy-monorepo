@@ -19,22 +19,7 @@ from src.messages import (
     parse_location_command,
     register,
 )
-
-
-def _location_command(**payload_overrides: Any) -> dict[str, Any]:
-    """A valid LOCATION_COMMAND for drone-03, matching the ticket's example."""
-    payload: dict[str, Any] = {
-        "task_id": "task-17",
-        "target": {"x": 30.0, "y": 20.0, "z": 15.0},
-        "orientation": {"yaw": 1.57},
-    }
-    payload.update(payload_overrides)
-    return {
-        "type": "LOCATION_COMMAND",
-        "drone_id": "drone-03",
-        "timestamp": 1790293201.800,
-        "payload": payload,
-    }
+from tests.fakes import LocationCommandFactory
 
 
 def test_make_message_has_envelope_and_current_timestamp() -> None:
@@ -127,16 +112,18 @@ def test_encode_rejects_non_finite_numbers(bad_value: float) -> None:
         encode(message)
 
 
-def test_parse_valid_location_command() -> None:
-    raw = json.dumps(_location_command())
+def test_parse_valid_location_command(location_command: LocationCommandFactory) -> None:
+    raw = json.dumps(location_command())
 
     assert parse_location_command(raw, "drone-03") == LocationCommand(
         task_id="task-17", target=(30.0, 20.0, 15.0), yaw=1.57
     )
 
 
-def test_parse_accepts_bytes_and_integer_coordinates() -> None:
-    raw = json.dumps(_location_command(target={"x": 30, "y": 20, "z": 15})).encode()
+def test_parse_accepts_bytes_and_integer_coordinates(
+    location_command: LocationCommandFactory,
+) -> None:
+    raw = json.dumps(location_command(target={"x": 30, "y": 20, "z": 15})).encode()
 
     command = parse_location_command(raw, "drone-03")
 
@@ -145,9 +132,9 @@ def test_parse_accepts_bytes_and_integer_coordinates() -> None:
 
 
 def test_parse_rejects_command_for_another_drone(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, location_command: LocationCommandFactory
 ) -> None:
-    raw = json.dumps(_location_command())
+    raw = json.dumps(location_command())
 
     with caplog.at_level(logging.DEBUG, logger="src.messages"):
         assert parse_location_command(raw, "drone-01") is None
@@ -155,8 +142,10 @@ def test_parse_rejects_command_for_another_drone(
     assert "addressed to 'drone-03'" in caplog.text
 
 
-def test_parse_rejects_other_message_types() -> None:
-    message = _location_command()
+def test_parse_rejects_other_message_types(
+    location_command: LocationCommandFactory,
+) -> None:
+    message = location_command()
     message["type"] = "DRONE_STATE"
 
     assert parse_location_command(json.dumps(message), "drone-03") is None
@@ -182,17 +171,17 @@ def test_parse_rejects_malformed_json(raw: Any) -> None:
     ],
 )
 def test_parse_rejects_missing_or_invalid_fields(
-    payload_overrides: dict[str, Any],
+    payload_overrides: dict[str, Any], location_command: LocationCommandFactory
 ) -> None:
-    raw = json.dumps(_location_command(**payload_overrides))
+    raw = json.dumps(location_command(**payload_overrides))
 
     assert parse_location_command(raw, "drone-03") is None
 
 
-def test_parse_rejects_non_finite_numbers() -> None:
+def test_parse_rejects_non_finite_numbers(
+    location_command: LocationCommandFactory,
+) -> None:
     # Python's json accepts NaN/Infinity literals, so these can reach the parser.
-    raw = json.dumps(
-        _location_command(target={"x": float("nan"), "y": 20.0, "z": 15.0})
-    )
+    raw = json.dumps(location_command(target={"x": float("nan"), "y": 20.0, "z": 15.0}))
 
     assert parse_location_command(raw, "drone-03") is None
