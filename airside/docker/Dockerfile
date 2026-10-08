@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
+    ros-humble-imu-filter-madgwick \
     ros-humble-rosbridge-suite \
     ros-humble-rtabmap-ros \
     wget \

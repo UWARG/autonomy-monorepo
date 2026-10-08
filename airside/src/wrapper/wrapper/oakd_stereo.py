@@ -4,6 +4,8 @@ OAK-D stereo node for rtabmap_sync/stereo_sync.
 Publishes the rectified left/right mono images and their CameraInfo on the
 topics stereo_sync subscribes to:
     left/image_rect, right/image_rect, left/camera_info, right/camera_info
+and the raw IMU (no orientation) on imu/data_raw, rotated into the left camera
+frame so it shares that frame's TF.
 
 OakDStereo implements the shared camera.src.abstract_camera.AbstractCamera
 interface so it reuses its capture thread, retries and shutdown logic.
@@ -19,7 +21,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, Imu
 
 from camera.src.abstract_camera import AbstractCamera
 
@@ -27,6 +29,7 @@ from camera.src.abstract_camera import AbstractCamera
 OAKD_STEREO_DEFAULT_WIDTH = 640
 OAKD_STEREO_DEFAULT_HEIGHT = 400
 MAX_SYNC_ATTEMPTS = 10
+IMU_RATE_HZ = 200
 
 
 @dataclass
@@ -40,6 +43,25 @@ class StereoFrame:
     right: np.ndarray
     timestamp: float
     sequence_num: int
+
+
+@dataclass
+class ImuSample:
+    """One IMU reading in the left camera frame.
+
+    timestamp is in epoch seconds, on the same clock as StereoFrame.timestamp.
+    """
+
+    timestamp: float
+    accel: np.ndarray  # m/s^2
+    gyro: np.ndarray  # rad/s
+
+
+def _epoch_seconds(device_ts) -> float:
+    """Convert a depthai host-synced timestamp (steady clock) to epoch seconds."""
+    import depthai as dai
+
+    return time.time() - (dai.Clock.now() - device_ts).total_seconds()
 
 
 class OakDStereo(AbstractCamera):
@@ -58,6 +80,8 @@ class OakDStereo(AbstractCamera):
         self._pipeline = None
         self._left_queue = None
         self._right_queue = None
+        self._imu_queue = None
+        self._imu_to_left: np.ndarray | None = None
         self._intrinsics: np.ndarray | None = None
         self._baseline_m: float | None = None
 
@@ -97,7 +121,20 @@ class OakDStereo(AbstractCamera):
             self._left_queue = stereo.rectifiedLeft.createOutputQueue(maxSize=4, blocking=False)
             self._right_queue = stereo.rectifiedRight.createOutputQueue(maxSize=4, blocking=False)
 
+            imu = self._pipeline.create(dai.node.IMU)
+            imu.enableIMUSensor(
+                [dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW], IMU_RATE_HZ
+            )
+            imu.setBatchReportThreshold(1)
+            imu.setMaxBatchReports(10)
+            self._imu_queue = imu.out.createOutputQueue(maxSize=50, blocking=False)
+
             calib = self._pipeline.getDefaultDevice().readCalibration()
+            # Rotation from the IMU chip's axes into the left camera's optical axes.
+            # Rectification adds a further rotation of usually under a degree; ignored.
+            self._imu_to_left = np.array(
+                calib.getImuToCameraExtrinsics(dai.CameraBoardSocket.CAM_B)
+            )[:3, :3]
             # Rectification reprojects both images onto the right camera's
             # intrinsics (same convention as depthai-ros), with no distortion.
             self._intrinsics = np.array(
@@ -124,8 +161,6 @@ class OakDStereo(AbstractCamera):
             return None
 
         try:
-            import depthai as dai
-
             queues = [self._left_queue, self._right_queue]
             msgs = [q.get() for q in queues]
 
@@ -145,13 +180,10 @@ class OakDStereo(AbstractCamera):
 
             left_msg, right_msg = msgs
 
-            # getTimestamp() is on the host steady clock; convert to epoch seconds
-            capture_age_s = (dai.Clock.now() - left_msg.getTimestamp()).total_seconds()
-
             return StereoFrame(
                 left=left_msg.getCvFrame(),
                 right=right_msg.getCvFrame(),
-                timestamp=time.time() - capture_age_s,
+                timestamp=_epoch_seconds(left_msg.getTimestamp()),
                 sequence_num=left_msg.getSequenceNum(),
             )
 
@@ -159,17 +191,39 @@ class OakDStereo(AbstractCamera):
             logging.error(f"OAK-D stereo frame capture failed: {e}")
             return None
 
+    def get_imu_samples(self) -> list[ImuSample]:
+        """Return all IMU readings received since the last call, without blocking."""
+        if self._imu_queue is None:
+            return []
+
+        samples = []
+        msg = self._imu_queue.tryGet()
+        while msg is not None:
+            for packet in msg.packets:
+                a, g = packet.acceleroMeter, packet.gyroscope
+                samples.append(ImuSample(
+                    timestamp=_epoch_seconds(g.getTimestamp()),
+                    # BNO086 raw accel reports gravity's pull (down); ROS expects the
+                    # reaction (up, +9.81 when level), so negate. Verified on an OAK-D Pro.
+                    accel=-(self._imu_to_left @ np.array([a.x, a.y, a.z])),
+                    gyro=self._imu_to_left @ np.array([g.x, g.y, g.z]),
+                ))
+            msg = self._imu_queue.tryGet()
+        return samples
+
     def close_camera(self) -> None:
         if self._pipeline is not None:
             self._pipeline.stop()
             self._pipeline = None
             self._left_queue = None
             self._right_queue = None
+            self._imu_queue = None
             logging.info("OAK-D stereo pipeline stopped")
 
 
 class OakDStereoNode(Node):
     PUBLISH_HZ = 30.0
+    IMU_POLL_HZ = 100.0
     LEFT_FRAME_ID = "oak_left_camera_optical_frame"
     RIGHT_FRAME_ID = "oak_right_camera_optical_frame"
 
@@ -184,6 +238,7 @@ class OakDStereoNode(Node):
         self._right_image_pub = self.create_publisher(Image, "right/image_rect", 10)
         self._left_info_pub = self.create_publisher(CameraInfo, "left/camera_info", 10)
         self._right_info_pub = self.create_publisher(CameraInfo, "right/camera_info", 10)
+        self._imu_pub = self.create_publisher(Imu, "imu/data_raw", 100)
 
         self._left_info = self._make_camera_info(self.LEFT_FRAME_ID, baseline_m=0.0)
         self._right_info = self._make_camera_info(
@@ -191,6 +246,8 @@ class OakDStereoNode(Node):
         )
         self._last_sequence_num = -1
         self.create_timer(1.0 / self.PUBLISH_HZ, self._publish_frame)
+        # Drains every reading queued since the last tick, so nothing is dropped
+        self.create_timer(1.0 / self.IMU_POLL_HZ, self._publish_imu)
 
         self.get_logger().info(
             f"OAK-D stereo node ready - {self._camera.width}x{self._camera.height}, "
@@ -241,6 +298,21 @@ class OakDStereoNode(Node):
         self._right_image_pub.publish(self._make_image(frame.right, self.RIGHT_FRAME_ID, stamp))
         self._left_info_pub.publish(self._left_info)
         self._right_info_pub.publish(self._right_info)
+
+    def _publish_imu(self) -> None:
+        for sample in self._camera.get_imu_samples():
+            msg = Imu()
+            msg.header.stamp = Time(nanoseconds=int(sample.timestamp * 1e9)).to_msg()
+            msg.header.frame_id = self.LEFT_FRAME_ID
+            # No orientation from the raw sensors; imu_filter_madgwick adds it
+            msg.orientation_covariance[0] = -1.0
+            msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z = (
+                float(v) for v in sample.gyro
+            )
+            msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z = (
+                float(v) for v in sample.accel
+            )
+            self._imu_pub.publish(msg)
 
     def destroy_node(self) -> None:
         self._camera.stop()

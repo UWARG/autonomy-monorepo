@@ -12,6 +12,8 @@ _RC_BRIDGE_MAVLINK_URL = f"udpin:127.0.0.1:{_RC_BRIDGE_PORT}"
 # OAK-D stereo -> stereo_sync -> stereo_odometry / rtabmap
 _STEREO_NAMESPACE = "stereo"
 _RGBD_IMAGE_TOPIC = f"/{_STEREO_NAMESPACE}/rgbd_image"
+# OAK-D raw IMU (imu/data_raw) -> imu_filter_madgwick -> imu/data with orientation
+_IMU_TOPIC = f"/{_STEREO_NAMESPACE}/imu/data"
 _RTABMAP_DATABASE_PATH = "/ros_ws/data/rtabmap.db"
 
 
@@ -113,6 +115,21 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[{"approx_sync": False}],
             ),
             Node(
+                package="imu_filter_madgwick",
+                executable="imu_filter_madgwick_node",
+                name="imu_filter",
+                namespace=_STEREO_NAMESPACE,
+                output="screen",
+                parameters=[
+                    {
+                        # OAK-D has no magnetometer; orientation comes from gyro + gravity
+                        "use_mag": False,
+                        "publish_tf": False,
+                        "world_frame": "enu",
+                    }
+                ],
+            ),
+            Node(
                 package="rtabmap_odom",
                 executable="stereo_odometry",
                 name="stereo_odometry",
@@ -122,10 +139,11 @@ def generate_launch_description() -> LaunchDescription:
                         "frame_id": "base_link",
                         "subscribe_rgbd": True,
                         "approx_sync": False,
+                        "wait_imu_to_init": True,
                         "Odom/ResetCountdown": "1"
                     }
                 ],
-                remappings=[("rgbd_image", _RGBD_IMAGE_TOPIC)],
+                remappings=[("rgbd_image", _RGBD_IMAGE_TOPIC), ("imu", _IMU_TOPIC)],
             ),
             Node(
                 package="rtabmap_slam",
@@ -138,13 +156,14 @@ def generate_launch_description() -> LaunchDescription:
                         "subscribe_rgbd": True,
                         "subscribe_depth": False,
                         "approx_sync": False,
+                        "wait_imu_to_init": True,
                         "database_path": _RTABMAP_DATABASE_PATH,
                         # RTAB-Map parameters are strings
                         "Grid/3D": "true",
                         "Grid/CellSize": "0.1",
                     }
                 ],
-                remappings=[("rgbd_image", _RGBD_IMAGE_TOPIC)],
+                remappings=[("rgbd_image", _RGBD_IMAGE_TOPIC), ("imu", _IMU_TOPIC)],
                 arguments=["-d"],  # start a fresh map each launch
             ),
             Node(
