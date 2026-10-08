@@ -12,6 +12,8 @@ services:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
       ROS_LOG_DIR: /ros_ws/log/ros
+      AEAC_CONNECTION_TOKEN: ${AEAC_CONNECTION_TOKEN:-}
+      AEAC_WEBSOCKET_URL: ${AEAC_WEBSOCKET_URL:-}
     devices:
       - /dev/serial0:/dev/serial0
       - /dev/ttyAMA0:/dev/ttyAMA0

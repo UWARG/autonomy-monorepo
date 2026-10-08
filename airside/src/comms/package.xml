@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>navigation</name>
+  <name>comms</name>
   <version>0.1.0</version>
-  <description>Position control between the engine and MAVROS.</description>
+  <description>Comm links.</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
@@ -11,8 +11,7 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
-  <depend>mavros_msgs</depend>
-  <depend>sensor_msgs</depend>
+  <exec_depend>python3-websocket</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

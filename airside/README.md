@@ -14,6 +14,7 @@ airside/
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages
 │   ├── camera/               # camera, triggered_image_publisher
+│   ├── comms/                # traffic_listener (competition server)
 │   ├── engine/               # manager (behavior-tree mission), rc_bridge, heartbeat + mission config
 │   └── navigation/           # position_controller
 └── warg.toml
@@ -72,6 +73,8 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `AEAC_CONNECTION_TOKEN` | unset | Team connection token for the AEAC competition server. Secret: set it in `airside/.env` |
+| `AEAC_WEBSOCKET_URL` | competition server | Overrides the competition server's WebSocket URL |
 
 ### Networking
 
@@ -115,12 +118,45 @@ command, which puts the FCU in LAND.
 
 Behaviors never command MAVROS setpoints directly. They publish where they
 want to go to the always-running `position_controller` node, which forwards
-each target to MAVROS.
+each target to MAVROS, steering around other aircraft on the way.
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|
 | `/position_controller/target` | `airside_interfaces/Coordinate` | subscribe | Target `lat`, `lon` and relative `alt` (m) |
+| `/position_controller/obstacle` | `airside_interfaces/Obstacle` | subscribe | One aircraft to keep away from, keyed by `aircraft_index` |
+| `/mavros/global_position/global` | `sensor_msgs/NavSatFix` | subscribe | The drone's own position, for obstacle avoidance |
 | `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
+
+##### Obstacle avoidance
+
+Each `Obstacle` message replaces the previous one with the same
+`aircraft_index`; until the next one arrives the obstacle stays frozen where it
+was last reported. The messages come from `traffic_listener` (see
+[Competition server traffic](#competition-server-traffic)).
+
+Every obstacle gets a keep-away zone: a circle of `horizontal_keep_away` plus
+`KEEP_AWAY_MARGIN_M`, stretched forwards along its `direction` by `speed` x
+`FORWARD_ZONE_LOOKAHEAD_S` (at most `FORWARD_ZONE_MAX_EXTENSION_M`), so the side
+it is flying towards is kept clearer than the side it is leaving. Zones are
+horizontal only and apply at every altitude.
+
+For each target, the planner (`src/navigation/navigation/visibility_graph.py`)
+checks the whole straight line to it. If that is clear the target is forwarded
+untouched. Otherwise it places corner points around every zone, joins up the
+drone, the target and the corners that can see each other without crossing a
+zone, and finds the shortest way through with A*. The setpoint sent is the first
+corner on that path, so the drone turns as soon as a zone is in its way, however
+far off. Special cases:
+
+- Drone already inside a zone: it flies straight out of it.
+- Target inside a zone: it waits at the edge of the zone, as close to the target
+  as allowed.
+- No way through: it holds position.
+
+A path is only re-planned when a target arrives, so behaviors must keep
+publishing their target while flying.
+
+All tuning constants are in `src/navigation/navigation/constants.py`.
 
 #### Adding a behavior
 
@@ -186,6 +222,20 @@ blackboard = py_trees.blackboard.Client(name="init")
 blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
+
+### Competition server traffic
+
+The `traffic_listener` node (`src/comms/comms/traffic_listener_node.py`) opens a
+WebSocket to the AEAC competition server, which pushes a snapshot of every
+simulated aircraft on the team's active site once a second. Each aircraft in a
+snapshot is published as one `airside_interfaces/Obstacle` on
+`/position_controller/obstacle`.
+
+It needs `AEAC_CONNECTION_TOKEN` (see [Configuration](#configuration)); without
+it the node stays up but idle and logs an error. If the connection drops, or
+goes silent for `RECEIVE_TIMEOUT_S`, it reconnects every `RECONNECT_DELAY_S`;
+in the meantime the position controller keeps avoiding the aircraft where they
+were last reported. Settings are in `src/comms/comms/constants.py`.
 
 ### Triggered image capture
 

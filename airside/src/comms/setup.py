@@ -1,7 +1,7 @@
 from setuptools import find_packages, setup
 
 
-package_name = "navigation"
+package_name = "comms"
 
 
 setup(
@@ -20,11 +20,11 @@ setup(
     tests_require=["pytest"],
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Position control between the engine and MAVROS.",
+    description="Comm links.",
     license="MIT",
     entry_points={
         "console_scripts": [
-            "position_controller = navigation.position_controller_node:main",
+            "traffic_listener = comms.traffic_listener_node:main",
         ],
     },
 )
