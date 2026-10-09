@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
-
-LocationCommandFactory = Callable[..., dict[str, Any]]
+from typing import Any
 
 
 class FakeClock:

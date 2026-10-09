@@ -53,16 +53,9 @@ class FleetConfig:
                 raise ValueError(
                     f"{name} must be a positive finite number, got {value}"
                 )
-        if not math.isfinite(self.spacing) or self.spacing < 0:
-            raise ValueError(
-                f"spacing must be a non-negative number, got {self.spacing}"
-            )
-        if not math.isfinite(self.altitude):
-            raise ValueError(f"altitude must be finite, got {self.altitude}")
-        if self.log_level not in LOG_LEVELS:
-            raise ValueError(
-                f"log_level must be one of {LOG_LEVELS}, got {self.log_level}"
-            )
+        for name in ("spacing", "altitude"):
+            if not math.isfinite(getattr(self, name)):
+                raise ValueError(f"{name} must be finite, got {getattr(self, name)}")
         try:
             parse_uri(self.url)
         except InvalidURI as error:
@@ -235,7 +228,6 @@ def main() -> int:
     config = parse_args()
     _configure_logging(config.log_level)
     return run_fleet(config, multiprocessing.Event())
-
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from websockets.exceptions import InvalidURI
 
 from src.geometry import Vector3
 from src.messages import LocationCommand, MissionState
-from src.mock_drone import MockDrone, _next_deadline
+from src.mock_drone import MockDrone
 from tests.fakes import FakeClock
 
 
@@ -233,10 +233,7 @@ def test_state_message_reports_yaw_from_command(fake_clock: FakeClock) -> None:
         {"speed": math.inf},
         {"report_period": 0.0},
         {"report_period": math.nan},
-        {"reconnect_min_delay": 0.0},
-        {"reconnect_max_delay": math.inf},
         {"start_position": (math.nan, 0.0, 0.0)},
-        {"reconnect_min_delay": 5.0, "reconnect_max_delay": 1.0},
     ],
 )
 def test_invalid_constructor_arguments_raise(kwargs: dict[str, Any]) -> None:
@@ -251,16 +248,6 @@ def test_malformed_url_raises_instead_of_retrying() -> None:
     drone = MockDrone("drone-03", (0.0, 0.0, 0.0), speed=2.0)
 
     with pytest.raises(InvalidURI):
-        asyncio.run(asyncio.wait_for(drone.run("ws//localhost:8765"), 2.0))
-
-
-@pytest.mark.parametrize(
-    ("previous", "now", "expected"),
-    [
-        (10.0, 10.2, 11.0),  # on schedule: one period after the last deadline
-        (10.0, 10.9, 11.0),  # running late but within the period: keep the schedule
-        (10.0, 15.0, 15.0),  # paused for several periods: restart instead of bursting
-    ],
-)
-def test_next_deadline(previous: float, now: float, expected: float) -> None:
-    assert _next_deadline(previous, 1.0, now) == expected
+        asyncio.run(
+            asyncio.wait_for(drone.run("ws//localhost:8765", lambda: False), 2.0)
+        )

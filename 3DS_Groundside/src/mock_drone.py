@@ -31,10 +31,6 @@ RECONNECT_MIN_DELAY_S = 1.0
 RECONNECT_MAX_DELAY_S = 10.0
 
 
-def _never() -> bool:
-    return False
-
-
 class _DroneLogAdapter(logging.LoggerAdapter):
     """Prefixes every log line with the drone's ID."""
 
@@ -67,26 +63,14 @@ class MockDrone:
         speed: float,
         report_period: float = 1.0,
         clock: Callable[[], float] = time.monotonic,
-        reconnect_min_delay: float = RECONNECT_MIN_DELAY_S,
-        reconnect_max_delay: float = RECONNECT_MAX_DELAY_S,
     ) -> None:
         """`speed` is in m/s. `clock` drives the simulated flight only; reports are
         always sent every `report_period` real seconds."""
-        for name, value in (
-            ("speed", speed),
-            ("report_period", report_period),
-            ("reconnect_min_delay", reconnect_min_delay),
-            ("reconnect_max_delay", reconnect_max_delay),
-        ):
+        for name, value in (("speed", speed), ("report_period", report_period)):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError(
                     f"{name} must be a positive finite number, got {value}"
                 )
-        if reconnect_min_delay > reconnect_max_delay:
-            raise ValueError(
-                f"reconnect_min_delay ({reconnect_min_delay}) must not exceed "
-                f"reconnect_max_delay ({reconnect_max_delay})"
-            )
         if not all(math.isfinite(v) for v in start_position):
             raise ValueError(f"start_position must be finite, got {start_position}")
 
@@ -94,8 +78,6 @@ class MockDrone:
         self._speed = speed
         self._report_period = report_period
         self._clock = clock
-        self._reconnect_min_delay = reconnect_min_delay
-        self._reconnect_max_delay = reconnect_max_delay
         self._log = _DroneLogAdapter(logger, {"drone_id": drone_id})
 
         self._position = start_position
@@ -174,14 +156,14 @@ class MockDrone:
             (0.0, 0.0, self._command.yaw if self._command else 0.0),
         )
 
-    async def run(self, url: str, should_stop: Callable[[], bool] = _never) -> None:
+    async def run(self, url: str, should_stop: Callable[[], bool]) -> None:
         """Run until `should_stop()`, reconnecting with backoff. Stopping can take up to
         one `report_period`. A malformed `url` raises InvalidURI."""
-        delay = self._reconnect_min_delay
+        delay = RECONNECT_MIN_DELAY_S
         while not should_stop():
             try:
                 async with connect(url) as websocket:
-                    delay = self._reconnect_min_delay
+                    delay = RECONNECT_MIN_DELAY_S
                     await self._run_session(websocket, should_stop)
             except InvalidURI:
                 raise
@@ -200,7 +182,7 @@ class MockDrone:
                 )
 
             await _sleep_unless_stopped(delay, should_stop)
-            delay = min(delay * 2, self._reconnect_max_delay)
+            delay = min(delay * 2, RECONNECT_MAX_DELAY_S)
 
     async def _run_session(
         self, websocket: ClientConnection, should_stop: Callable[[], bool]
@@ -243,14 +225,10 @@ class MockDrone:
         while not should_stop():
             self.update()
             await websocket.send(encode(self.state_message()))
-            deadline = _next_deadline(deadline, self._report_period, time.monotonic())
+            # Step from the last deadline so the rate doesn't drift, but restart from
+            # now if we fell behind (e.g. a pause) rather than sending a burst.
+            deadline = max(deadline + self._report_period, time.monotonic())
             await asyncio.sleep(deadline - time.monotonic())
-
-
-def _next_deadline(previous: float, period: float, now: float) -> float:
-    """One period after `previous` (no drift), or `now` if we fell behind (no burst)."""
-    deadline = previous + period
-    return max(deadline, now)
 
 
 async def _sleep_unless_stopped(

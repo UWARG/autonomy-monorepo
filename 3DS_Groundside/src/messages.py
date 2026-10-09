@@ -96,12 +96,12 @@ def encode(message: dict[str, Any]) -> str:
     return json.dumps(message, allow_nan=False)
 
 
-def _as_finite_float(value: Any) -> float | None:
-    """`value` as a float if it is a finite number (not a bool), else None."""
+def _finite(value: Any) -> float:
+    """`value` as a float, or raise unless it is a finite number (bools aren't)."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
+        raise TypeError(f"not a number: {value!r}")
     if not math.isfinite(value):
-        return None
+        raise ValueError(f"not finite: {value!r}")
     return float(value)
 
 
@@ -109,51 +109,20 @@ def parse_location_command(raw: str | bytes, drone_id: str) -> LocationCommand |
     """Parse a LOCATION_COMMAND for `drone_id`, or return None if it is invalid."""
     try:
         message = json.loads(raw)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        logger.debug("%s: ignoring message that is not valid JSON", drone_id)
+        if message["type"] != MessageType.LOCATION_COMMAND:
+            raise ValueError(f"not a LOCATION_COMMAND: {message['type']!r}")
+        if message["drone_id"] != drone_id:
+            raise ValueError(f"addressed to {message['drone_id']!r}")
+        payload = message["payload"]
+        task_id = payload["task_id"]
+        if not isinstance(task_id, str) or not task_id:
+            raise ValueError(f"invalid task_id: {task_id!r}")
+        target = payload["target"]
+        position = (_finite(target["x"]), _finite(target["y"]), _finite(target["z"]))
+        yaw = _finite(payload["orientation"]["yaw"])
+    except (ValueError, KeyError, TypeError) as error:
+        # json and Unicode decode errors are ValueErrors; KeyError/TypeError cover
+        # missing fields and values of the wrong JSON type.
+        logger.debug("%s: ignoring message (%r): %r", drone_id, error, raw)
         return None
-
-    if not isinstance(message, dict):
-        logger.debug("%s: ignoring message that is not a JSON object", drone_id)
-        return None
-    if message.get("type") != MessageType.LOCATION_COMMAND:
-        logger.debug("%s: ignoring message of type %r", drone_id, message.get("type"))
-        return None
-    if message.get("drone_id") != drone_id:
-        logger.debug(
-            "%s: ignoring command addressed to %r", drone_id, message.get("drone_id")
-        )
-        return None
-
-    payload = message.get("payload")
-    if not isinstance(payload, dict):
-        logger.debug("%s: ignoring command with missing payload", drone_id)
-        return None
-
-    task_id = payload.get("task_id")
-    target = payload.get("target")
-    orientation = payload.get("orientation")
-    if not isinstance(task_id, str) or not task_id:
-        logger.debug("%s: ignoring command with invalid task_id %r", drone_id, task_id)
-        return None
-    if not isinstance(target, dict) or not isinstance(orientation, dict):
-        logger.debug(
-            "%s: ignoring command %s with missing target/orientation", drone_id, task_id
-        )
-        return None
-
-    x = _as_finite_float(target.get("x"))
-    y = _as_finite_float(target.get("y"))
-    z = _as_finite_float(target.get("z"))
-    yaw = _as_finite_float(orientation.get("yaw"))
-    if x is None or y is None or z is None or yaw is None:
-        logger.debug(
-            "%s: ignoring command %s with invalid target %r or orientation %r",
-            drone_id,
-            task_id,
-            target,
-            orientation,
-        )
-        return None
-
-    return LocationCommand(task_id=task_id, target=(x, y, z), yaw=yaw)
+    return LocationCommand(task_id=task_id, target=position, yaw=yaw)

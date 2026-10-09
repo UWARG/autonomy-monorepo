@@ -10,21 +10,23 @@ from typing import Any, Callable
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
+from src import mock_drone
 from src.mock_drone import MockDrone
-from tests.fakes import LocationCommandFactory
+from tests.fakes import make_location_command
 
 Handler = Callable[[ServerConnection], Awaitable[None]]
 
 
+@pytest.fixture(autouse=True)
+def _fast_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mock_drone, "RECONNECT_MIN_DELAY_S", 0.05)
+    monkeypatch.setattr(mock_drone, "RECONNECT_MAX_DELAY_S", 0.05)
+
+
 def _fast_drone() -> MockDrone:
-    """A drone that reports every 50 ms and reconnects quickly, to keep tests short."""
+    """A drone that reports every 50 ms, to keep tests short."""
     return MockDrone(
-        "drone-01",
-        start_position=(0.0, 0.0, 15.0),
-        speed=10.0,
-        report_period=0.05,
-        reconnect_min_delay=0.05,
-        reconnect_max_delay=0.05,
+        "drone-01", start_position=(0.0, 0.0, 15.0), speed=10.0, report_period=0.05
     )
 
 
@@ -47,9 +49,7 @@ def _payloads(received: list[dict[str, Any]], msg_type: str) -> list[dict[str, A
     return [m["payload"] for m in received if m["type"] == msg_type]
 
 
-def test_drone_registers_acks_flies_and_returns_to_idle(
-    location_command: LocationCommandFactory,
-) -> None:
+def test_drone_registers_acks_flies_and_returns_to_idle() -> None:
     received: list[dict[str, Any]] = []
 
     async def scenario() -> None:
@@ -59,7 +59,9 @@ def test_drone_registers_acks_flies_and_returns_to_idle(
             received.append(json.loads(await websocket.recv()))  # REGISTER
             target = {"x": 3.0, "y": 4.0, "z": 15.0}
             for task_id in ("task-1", "task-2"):
-                command = location_command("drone-01", task_id=task_id, target=target)
+                command = make_location_command(
+                    "drone-01", task_id=task_id, target=target
+                )
                 await websocket.send(json.dumps(command))
 
             seen_arrived = False
@@ -94,9 +96,7 @@ def test_drone_registers_acks_flies_and_returns_to_idle(
     assert arrived["position"] == {"x": 3.0, "y": 4.0, "z": 15.0}
 
 
-def test_drone_reregisters_and_continues_mission_after_disconnect(
-    location_command: LocationCommandFactory,
-) -> None:
+def test_drone_reregisters_and_continues_mission_after_disconnect() -> None:
     received: list[dict[str, Any]] = []
     connections = 0
 
@@ -111,7 +111,9 @@ def test_drone_reregisters_and_continues_mission_after_disconnect(
             if connections == 1:
                 # Start a 5 m flight (0.5 s), then drop the drone mid-flight.
                 target = {"x": 3.0, "y": 4.0, "z": 15.0}
-                command = location_command("drone-01", task_id="task-1", target=target)
+                command = make_location_command(
+                    "drone-01", task_id="task-1", target=target
+                )
                 await websocket.send(json.dumps(command))
                 async for raw in websocket:
                     message = json.loads(raw)
