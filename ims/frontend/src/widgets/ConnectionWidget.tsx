@@ -1,17 +1,19 @@
-import type { ConnectionMessage, ConnectionStatus } from '../types';
+import { useSyncExternalStore } from 'react';
+import type { LinkStatus } from '../link';
+import { getLinkSnapshot, subscribeLink } from '../link';
 
 const DASH = '\u2014';
 
-const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
+const STATUS_PILL: Record<LinkStatus, { className: string; label: string }> = {
   active: { className: 'pill-ok', label: 'ACTIVE' },
   degraded: { className: 'pill-warn', label: 'DEGRADED' },
   lost: { className: 'pill-bad', label: 'LOST' },
 };
 
-const STATUS_SUMMARY: Record<ConnectionStatus, string> = {
+const STATUS_SUMMARY: Record<LinkStatus, string> = {
   active: 'MAVLink heartbeat nominal',
-  degraded: 'Heartbeat irregular \u2014 check link quality',
-  lost: 'No heartbeat \u2014 drone unreachable',
+  degraded: 'Heartbeat irregular — check link quality',
+  lost: 'No heartbeat — drone unreachable',
 };
 
 function Row({
@@ -31,43 +33,52 @@ function Row({
   );
 }
 
-export default function ConnectionWidget({
-  connection,
-}: {
-  connection?: ConnectionMessage;
-}) {
-  const pill = connection
-    ? STATUS_PILL[connection.status]
-    : { className: 'pill', label: 'NO DATA' };
+export default function ConnectionWidget() {
+  const { status, connected, armed, mode, heartbeatHz } = useSyncExternalStore(
+    subscribeLink,
+    getLinkSnapshot,
+  );
 
-  const summary = connection
-    ? STATUS_SUMMARY[connection.status]
+  const pill = status
+    ? STATUS_PILL[status]
+    : { className: 'pill bg-edge text-ink-3', label: 'NO DATA' };
+
+  const summary = status
+    ? STATUS_SUMMARY[status]
     : 'Awaiting first heartbeat';
 
   return (
     <section className="widget flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
       <header className="flex items-center justify-between gap-4">
         <h2 className="widget-label">Connection</h2>
-        <span
-          className={`${pill.className} ${connection ? '' : 'bg-edge text-ink-3'}`}
-        >
+        <span className={`${pill.className} ${status ? '' : 'bg-edge text-ink-3'}`}>
           <span
-            className={`status-dot ${connection ? 'bg-current' : 'bg-ink-3'}`}
+            className={`status-dot ${status ? 'bg-current' : 'bg-ink-3'}`}
             aria-hidden="true"
           />
           {pill.label}
         </span>
       </header>
 
-      <p className={`mt-2 text-[13px] ${connection ? 'text-ink-2' : 'text-ink-3'}`}>
+      <p className={`mt-2 text-[13px] ${status ? 'text-ink-2' : 'text-ink-3'}`}>
         {summary}
       </p>
 
       <dl className="mt-3 flex flex-col gap-1.5">
-        <Row label="Transport" value={connection?.transport ?? DASH} />
+        <Row label="Mode" value={mode ?? DASH} />
+        <Row
+          label="Armed"
+          value={armed == null ? DASH : armed ? 'ARMED' : 'DISARMED'}
+          tone={armed == null ? 'text-ink-3' : armed ? 'text-ok' : 'text-ink'}
+        />
+        <Row
+          label="MAVROS"
+          value={connected == null ? DASH : connected ? 'connected' : 'disconnected'}
+          tone={connected === false ? 'text-warn' : 'text-ink'}
+        />
         <Row
           label="Heartbeat"
-          value={connection ? `${connection.heartbeatHz.toFixed(1)} Hz` : DASH}
+          value={heartbeatHz != null ? `${heartbeatHz.toFixed(1)} Hz` : DASH}
         />
       </dl>
     </section>
