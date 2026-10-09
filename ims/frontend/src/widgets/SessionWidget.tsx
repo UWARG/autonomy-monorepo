@@ -13,7 +13,7 @@ import {
   stopRecording,
   subscribeSession,
 } from '../session';
-import { RECORDED_TOPICS } from '../constants';
+import { RECORDED_TOPICS, REPLAY_TOPICS } from '../constants';
 
 const DASH = '\u2014';
 
@@ -345,8 +345,9 @@ export default function SessionWidget() {
           </div>
 
           <p className="mt-2 text-[11px] text-ink-3">
-            Replay only republishes the topics the recorder tracks, onto their original names;
-            everything else — setpoints, /cmd_vel, RC, unknown topics — is blocked and counted.
+            Replay republishes only {REPLAY_TOPICS.join(', ')} — telemetry nothing but this
+            dashboard consumes. Topics that feed flight behaviour (state, global position, IMU)
+            and the target log are recorded, but never republished.
           </p>
           {player.error && <p className="mt-1 text-[11px] text-bad">{player.error}</p>}
         </div>

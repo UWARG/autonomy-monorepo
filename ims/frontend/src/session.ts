@@ -249,15 +249,23 @@ export function getSessionSnapshot(): SessionSnapshot {
 // Topic discovery
 // ---------------------------------------------------------------------------
 
-/** Topics currently advertised on the ROS graph, with their message types. */
+/**
+ * Topics currently advertised on the ROS graph, with their message types.
+ *
+ * Built with the `new Promise` constructor rather than `Promise.withResolvers`
+ * (ES2024) on purpose: Vite's build target is baseline-widely-available
+ * (Chrome 111 / Firefox 114 / Safari 16.4) and the dashboard has no error
+ * boundary, so a 2024-only built-in would blank the whole page instead of
+ * showing the rosapi error on an older ground-station browser.
+ */
 export function getTopicTypes(): Promise<SessionTopic[]> {
-  const { promise, resolve, reject } = Promise.withResolvers<SessionTopic[]>();
-  ros.getTopics(
-    (result: { topics: string[]; types: string[] }) =>
-      resolve(result.topics.map((name, i) => ({ name, type: result.types[i] }))),
-    (error: unknown) => reject(error instanceof Error ? error : new Error(String(error))),
-  );
-  return promise;
+  return new Promise<SessionTopic[]>((resolve, reject) => {
+    ros.getTopics(
+      (result: { topics: string[]; types: string[] }) =>
+        resolve(result.topics.map((name, i) => ({ name, type: result.types[i] }))),
+      (error: unknown) => reject(error instanceof Error ? error : new Error(String(error))),
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -345,8 +353,9 @@ export async function startRecording(
   }
 
   const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
+  const headerLine = JSON.stringify(header);
   try {
-    await sink.write(JSON.stringify(header));
+    await sink.write(headerLine);
   } catch (err) {
     await sink.abort();
     recError = `Could not write session header: ${String(err)}`;
@@ -363,7 +372,8 @@ export async function startRecording(
 
   recStartedAt = startedAt;
   recFrames = 0;
-  recBytes = 0;
+  // The header line and its newline are already in the file the sink is writing.
+  recBytes = utf8Length(headerLine) + 1;
   recSink = sink;
   recSubs = subs;
   recError = notice;
@@ -393,7 +403,9 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
   } catch {
     return; // un-serializable payload (should not happen for rosbridge JSON)
   }
-  const bytes = utf8Length(line);
+  // Both sinks write one line plus a newline per frame, so the framing byte is
+  // part of the file (and of the buffer the cap bounds).
+  const bytes = utf8Length(line) + 1;
   if (sink.kind === 'memory' && recBytes + bytes > MEMORY_BUFFER_LIMIT_BYTES) {
     void stopRecording(
       `Memory buffer limit (${MEMORY_BUFFER_LIMIT_MIB} MiB) reached — recording stopped. ` +
@@ -421,6 +433,10 @@ export async function stopRecording(reason?: string): Promise<Recording | null> 
   for (const topic of recSubs) topic.unsubscribe();
   recSubs = [];
   if (reason) recError = reason;
+  // Read the counters before awaiting: finalizing a file can outlive the start
+  // of a new capture, which must neither be described by these numbers nor have
+  // its `lastRecording` overwritten by them.
+  const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
   pushRecorder(true);
 
   let blob: Blob | null = null;
@@ -429,9 +445,11 @@ export async function stopRecording(reason?: string): Promise<Recording | null> 
   } catch (err) {
     recError = `Could not finalize session file: ${String(err)}`;
   }
-  const recording: Recording = { blob, fileName: recFileName, frames: recFrames, bytes: recBytes };
-  recLast = recording;
-  pushRecorder(true);
+  const recording: Recording = { blob, ...finished };
+  if (recSink == null) {
+    recLast = recording;
+    pushRecorder(true);
+  }
   return recording;
 }
 
@@ -446,6 +464,8 @@ let playerPubs = new Map<string, ROSLIB.Topic<unknown>>();
 let playerTimer: number | null = null;
 let playerStartWall = 0;
 let playerNext = 0;
+/** True between a pause and the play that resumes it, so resume can keep `playerNext`. */
+let playerPaused = false;
 let pubCount = 0;
 let blockedCount = 0;
 let lastPlayerEmit = 0;
@@ -475,6 +495,7 @@ export async function loadSessionFile(file: File): Promise<void> {
   try {
     const frames = parseSession(await file.text());
     stopPlayback();
+    playerPaused = false;
     playerFrames = frames.frames;
     playerNext = 0;
     pubCount = 0;
@@ -548,15 +569,26 @@ export function playSession(): void {
     );
   }
 
-  const cursor = snapshot.player.cursorMs >= snapshot.player.durationMs ? 0 : snapshot.player.cursorMs;
-  // At cursor 0 nothing has been published yet, so the frame at exactly 0 belongs.
-  playerNext = playerFrames.findIndex((frame) => (cursor > 0 ? frame.t > cursor : frame.t >= cursor));
-  if (playerNext === -1) playerNext = playerFrames.length;
-  pubCount = 0;
-  blockedCount = 0;
-  playerStartWall = Date.now();
+  // Resuming keeps `playerNext`, which already points at the first frame not
+  // yet published — reseeking from the cursor would silently drop every frame
+  // that came due between the last tick and the pause.
+  const resuming = playerPaused;
+  playerPaused = false;
+  const cursor =
+    resuming || snapshot.player.cursorMs < snapshot.player.durationMs
+      ? snapshot.player.cursorMs
+      : 0;
+  if (!resuming) {
+    // At cursor 0 nothing has been published yet, so the frame at exactly 0 belongs.
+    playerNext = playerFrames.findIndex((frame) =>
+      cursor > 0 ? frame.t > cursor : frame.t >= cursor,
+    );
+    if (playerNext === -1) playerNext = playerFrames.length;
+    pubCount = 0;
+    blockedCount = 0;
+  }
+  playerStartWall = Date.now() - cursor / snapshot.player.speed;
   emit({ player: { ...snapshot.player, cursorMs: cursor, playing: true, error: null } });
-  if (cursor > 0) playerStartWall -= cursor / snapshot.player.speed;
   playerTimer = window.setInterval(tick, PLAY_TICK_MS);
   tick();
 }
@@ -600,6 +632,7 @@ export function pausePlayback(): void {
   if (playerTimer == null) return;
   const cursor = elapsedMs();
   stopPlayback();
+  playerPaused = true;
   emit({ player: { ...snapshot.player, cursorMs: Math.min(cursor, snapshot.player.durationMs) } });
 }
 
@@ -616,6 +649,7 @@ export function stopPlayback(): void {
 /** Restart playback from the beginning; no-op while stopped at zero. */
 export function rewindSession(): void {
   stopPlayback();
+  playerPaused = false;
   playerNext = 0;
   pubCount = 0;
   blockedCount = 0;
