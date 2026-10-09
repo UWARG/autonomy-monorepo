@@ -443,7 +443,9 @@ export async function stopRecording(reason?: string): Promise<Recording | null> 
   try {
     blob = await sink.close();
   } catch (err) {
-    recError = `Could not finalize session file: ${String(err)}`;
+    // Same ownership rule as the counters: a finalize that outlives the start of
+    // a new capture must not report its failure against that capture.
+    if (recSink == null) recError = `Could not finalize session file: ${String(err)}`;
   }
   const recording: Recording = { blob, ...finished };
   if (recSink == null) {
@@ -614,7 +616,19 @@ function tick(): void {
       publisher.publish(frame.msg);
       pubCount += 1;
     } catch (err) {
-      emit({ player: { ...snapshot.player, error: `Publish failed on ${frame.topic}: ${String(err)}` } });
+      // Treat a failed publish like a pause: keep `playerNext` (minus the frame
+      // that just failed, so it is retried) instead of leaving a stale cursor
+      // for the next Play to reseek from, which would republish frames already
+      // sent and drop this one.
+      playerNext -= 1;
+      playerPaused = true;
+      emit({
+        player: {
+          ...snapshot.player,
+          cursorMs: elapsed,
+          error: `Publish failed on ${frame.topic}: ${String(err)}`,
+        },
+      });
       stopPlayback();
       return;
     }
