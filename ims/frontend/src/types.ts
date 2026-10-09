@@ -1,5 +1,7 @@
 /**
- * Wire payloads mirror utils/src/messages.py. Envelope: { "type": "<tag>", "payload": {...} }.
+ * Payload shapes the widgets consume. The envelope form described the deleted
+ * WebSocket contract (utils/src/messages.py); live data now arrives as ROS
+ * messages over rosbridge and the widgets map those into these shapes.
  */
 
 export type ConnectionStatus = 'active' | 'degraded' | 'lost';
@@ -14,8 +16,8 @@ export interface ConnectionMessage {
 }
 
 /**
- * payload for { "type": "attitude" }
- * Mirrors AttitudePayload in utils/src/messages.py (the wire contract).
+ * Attitude in the widgets' own terms; AttitudeWidget derives it from
+ * geometry_msgs/PoseStamped.
  */
 export interface AttitudeMessage {
   /** radians;  */
@@ -38,8 +40,7 @@ export interface CameraMessage {
 }
 
 /**
- * payload for { "type": "position" } — the drone's global position.
- * Mirrors PositionPayload in utils/src/messages.py.
+ * Global position; TargetWidget reads sensor_msgs/NavSatFix instead.
  */
 export interface PositionMessage {
   /** degrees */
