@@ -30,7 +30,10 @@ interface MavrosState {
   mode: string;
 }
 
-/** heartbeat_node publishes at 1 Hz, so a few seconds of silence is a dead link. */
+/**
+ * heartbeat_node publishes at 1 Hz and mavros republishes /mavros/state at the
+ * same order, so a few seconds of silence on either one is a dead source.
+ */
 const SILENCE_MS = 3000;
 /** Window the heartbeat rate is averaged over. */
 const RATE_WINDOW_MS = 5000;
@@ -59,27 +62,36 @@ let ticker: number | null = null;
 function sample(): LinkSnapshot {
   const now = Date.now();
   beats = beats.filter((at) => now - at <= RATE_WINDOW_MS);
-  const newest = Math.max(beats.length ? beats[beats.length - 1] : 0, lastStateAt);
-  if (newest === 0) return EMPTY;
+  // Nothing has ever arrived: report "no data" rather than a verdict, so a
+  // dashboard that never reached rosbridge does not read as a lost aircraft.
+  if (lastBeatAt === 0 && lastStateAt === 0) return EMPTY;
 
   const span = beats.length > 1 ? beats[beats.length - 1] - beats[0] : 0;
   const heartbeatHz = span > 0 ? ((beats.length - 1) * 1000) / span : null;
+  const newest = Math.max(lastBeatAt, lastStateAt);
   const silent = now - newest > SILENCE_MS;
-  // /mavros/state only proves MAVROS is up; the heartbeat is the aircraft-side
-  // liveness beacon, so its silence degrades the link even while state keeps
-  // arriving. Age is taken from the last beat, not from `beats`, because the
-  // rate window empties long before SILENCE_MS and heartbeatHz then reads null.
-  const heartbeatStale = now - lastBeatAt > SILENCE_MS;
+  // The two sources are aged separately because neither is evidence for the
+  // other: /heartbeat proves the aircraft is being heard (heartbeat_node is
+  // independent of mavros), /mavros/state proves MAVROS is up. Silence on
+  // either degrades the link; silence on both is what makes it lost. Age comes
+  // from the stored receipt time, not from `beats`, which is pruned to
+  // RATE_WINDOW_MS for the rate estimate and holds nothing beyond that window.
+  const heartbeatStale = lastBeatAt === 0 || now - lastBeatAt > SILENCE_MS;
+  const stateStale = lastStateAt === 0 || now - lastStateAt > SILENCE_MS;
+  // A stale state message is dropped rather than rendered: mode, armed and
+  // connected must not be shown as current when the FCU has stopped talking.
+  const live = stateStale ? null : state;
   const degraded =
-    state?.connected === false ||
     heartbeatStale ||
+    stateStale ||
+    live?.connected === false ||
     (heartbeatHz != null && heartbeatHz < DEGRADED_HZ);
 
   return {
     status: silent ? 'lost' : degraded ? 'degraded' : 'active',
-    connected: state?.connected ?? null,
-    armed: state?.armed ?? null,
-    mode: state?.mode ?? null,
+    connected: live?.connected ?? null,
+    armed: live?.armed ?? null,
+    mode: live?.mode ?? null,
     heartbeatHz,
   };
 }
@@ -120,9 +132,6 @@ function start(): void {
     refresh();
   });
 
-  // A beacon that never arrives must age from the start of the subscription,
-  // not from 0.
-  lastBeatAt = Date.now();
   started = [stateTopic, heartbeatTopic];
   ticker = window.setInterval(refresh, TICK_MS);
 }

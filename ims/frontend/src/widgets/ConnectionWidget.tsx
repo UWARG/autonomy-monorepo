@@ -69,7 +69,7 @@ export default function ConnectionWidget() {
         <Row
           label="Armed"
           value={armed == null ? DASH : armed ? 'ARMED' : 'DISARMED'}
-          tone={armed ? 'text-ok' : 'text-ink'}
+          tone={armed == null ? 'text-ink-3' : armed ? 'text-ok' : 'text-ink'}
         />
         <Row
           label="MAVROS"

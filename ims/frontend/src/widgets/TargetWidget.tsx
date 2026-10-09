@@ -33,6 +33,11 @@ const TRAIL_MAX = 600;
 
 const PLOT_HALF_RANGE_M = 60;
 
+/** mavros republishes the fix at ~5 Hz, so this much silence means it stopped. */
+const FIX_STALE_AFTER_MS = 5000;
+/** Re-evaluated on a timer so a stopped feed is noticed without new messages. */
+const TICK_MS = 1000;
+
 const DASH = '\u2014';
 
 const R_EARTH_M = 6_371_000;
@@ -73,6 +78,8 @@ const CENTER = VIEW / 2;
 
 export default function TargetWidget() {
   const [fix, setFix] = useState<Fix | null>(null);
+  const [fixAt, setFixAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [target, setTarget] = useState<TargetMsg | null>(null);
   const [trail, setTrail] = useState<TrailSample[]>([]);
 
@@ -89,33 +96,41 @@ export default function TargetWidget() {
     });
 
     fixTopic.subscribe((message) => {
+      const at = Date.now();
       setFix(message);
+      setFixAt(at);
       setTrail((prev) =>
-        [...prev, { lat: message.latitude, lon: message.longitude, t: Date.now() }].slice(
-          -TRAIL_MAX,
-        ),
+        [...prev, { lat: message.latitude, lon: message.longitude, t: at }].slice(-TRAIL_MAX),
       );
     });
     targetTopic.subscribe(setTarget);
 
+    const ticker = window.setInterval(() => setNow(Date.now()), TICK_MS);
     return () => {
+      window.clearInterval(ticker);
       fixTopic.unsubscribe();
       targetTopic.unsubscribe();
     };
   }, []);
 
-  const haveDrone = fix != null;
-  const haveTarget = !!(fix && target);
+  // A frozen panel is worse than an empty one: once the feed stops, the last
+  // fix (and the trail it anchors) is dropped rather than drawn as current.
+  const stale = fix != null && now - fixAt > FIX_STALE_AFTER_MS;
+  const live = stale ? null : fix;
+
+  const haveDrone = live != null;
+  const haveTarget = !!(live && target);
 
   const distance = haveTarget
-    ? haversineM(fix.latitude, fix.longitude, target.location.lat, target.location.lon)
+    ? haversineM(live.latitude, live.longitude, target.location.lat, target.location.lon)
     : null;
   const bearing = haveTarget
-    ? bearingDeg(fix.latitude, fix.longitude, target.location.lat, target.location.lon)
+    ? bearingDeg(live.latitude, live.longitude, target.location.lat, target.location.lon)
     : null;
 
-  const newestT = trail.length ? trail[trail.length - 1].t : 0;
-  const cutoff = newestT - TRAIL_WINDOW_S * 1000;
+  // Wall-clock window, so a stopped feed lets the trail expire instead of
+  // pinning it to the last sample received.
+  const cutoff = now - TRAIL_WINDOW_S * 1000;
   const recentTrail = trail.filter((s) => s.t >= cutoff);
 
   const scale = (CENTER - 24) / PLOT_HALF_RANGE_M; // px per metre
@@ -127,8 +142,8 @@ export default function TargetWidget() {
 
   let targetPt: { x: number; y: number } | null = null;
   let targetClamped = false;
-  if (fix && target) {
-    const o = enuOffsetM(fix.latitude, fix.longitude, target.location.lat, target.location.lon);
+  if (live && target) {
+    const o = enuOffsetM(live.latitude, live.longitude, target.location.lat, target.location.lon);
     const range = Math.hypot(o.east, o.north);
     if (range > PLOT_HALF_RANGE_M) {
       const k = PLOT_HALF_RANGE_M / range;
@@ -139,16 +154,18 @@ export default function TargetWidget() {
     }
   }
 
-  const trailPts = fix
+  const trailPts = live
     ? recentTrail.map((p) => {
-        const o = enuOffsetM(fix.latitude, fix.longitude, p.lat, p.lon);
+        const o = enuOffsetM(live.latitude, live.longitude, p.lat, p.lon);
         return project(o.east, o.north);
       })
     : [];
 
-  const targetPill = target
-    ? { className: 'pill-accent', label: `${target.colour || 'TARGET'} · DETECTED` }
-    : { className: 'pill bg-edge text-ink-3', label: 'NO TARGET' };
+  const targetPill = stale
+    ? { className: 'pill-warn', label: 'STALE' }
+    : target
+      ? { className: 'pill-accent', label: `${target.colour || 'TARGET'} · DETECTED` }
+      : { className: 'pill bg-edge text-ink-3', label: 'NO TARGET' };
 
   return (
     <section
@@ -165,7 +182,7 @@ export default function TargetWidget() {
         <div className="flex items-baseline gap-2">
           <h2 className="widget-label">Position / Target</h2>
           <span className="font-mono text-[11px] text-ink-3">
-            {fix ? `${fix.latitude.toFixed(5)}, ${fix.longitude.toFixed(5)}` : DASH}
+            {live ? `${live.latitude.toFixed(5)}, ${live.longitude.toFixed(5)}` : DASH}
           </span>
         </div>
         <span className={targetPill.className}>{targetPill.label}</span>
@@ -263,7 +280,7 @@ export default function TargetWidget() {
           <div className="flex flex-col items-end">
             <span className="widget-label">Altitude AMSL</span>
             <span className="font-mono text-sm font-semibold tabular-nums text-ink">
-              {fix ? `${fix.altitude.toFixed(1)} m` : DASH}
+              {live ? `${live.altitude.toFixed(1)} m` : DASH}
             </span>
           </div>
           <div className="flex flex-col items-end">
