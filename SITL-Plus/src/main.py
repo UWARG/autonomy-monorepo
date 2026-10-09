@@ -19,7 +19,7 @@ from pymavlink.rotmat import Vector3
 from scipy.spatial.transform import Rotation as R
 
 import constants
-import sensor_ports
+import sensor_config as sensor_ports
 import state
 from camera import Camera
 from iris import Iris
