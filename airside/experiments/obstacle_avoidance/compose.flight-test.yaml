@@ -12,6 +12,5 @@ services:
       STATIC_OBSTACLE_KEEP_AWAY_M: ${STATIC_OBSTACLE_KEEP_AWAY_M:-5.0}
       STATIC_OBSTACLE_VERTICAL_M: ${STATIC_OBSTACLE_VERTICAL_M:-5.0}
       FLIGHT_TEST_HORIZONTAL_SPEED_MPS: ${FLIGHT_TEST_HORIZONTAL_SPEED_MPS:-0.7}
-      # Long enough for several laps; end the test by switching to LOITER.
-      LAPPING_DURATION_S: ${LAPPING_DURATION_S:-600.0}
+      LAPPING_DURATION_S: ${LAPPING_DURATION_S:-120.0}
     command: ros2 launch airside_bringup static_obstacle_flight_test.launch.py
