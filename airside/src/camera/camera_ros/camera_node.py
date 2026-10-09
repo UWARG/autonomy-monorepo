@@ -67,12 +67,12 @@ class CameraNode(Node):
             msg.height = self.HEIGHT
             msg.width = self.WIDTH
             msg.step = self.WIDTH * 3
-            msg.data = bytes(self.HEIGHT * self.WIDTH * 3)
+            msg.data.frombytes(bytes(self.HEIGHT * self.WIDTH * 3))
         else:
             msg.height = frame.rgb.shape[0]
             msg.width = frame.rgb.shape[1]
             msg.step = frame.rgb.shape[1] * 3
-            msg.data = frame.rgb.tobytes()
+            msg.data.frombytes(frame.rgb.tobytes())
 
         self._publisher.publish(msg)
         self._frame_id += 1

@@ -1,18 +1,16 @@
-import { useEffect, useState } from 'react';
-import ROSLIB from 'roslib';
-import { ros } from '../ros.js';
-import { enuOffsetM, haversineM } from '../geo';
-import type { NearbyDronesMessage, PositionMessage } from '../types';
+import { useEffect } from 'react';
+import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import useOwnPosition from '../hooks/useOwnPosition';
+import { R_EARTH_M, enuOffsetM, haversineM, toDeg, toRad } from '../geo';
+import type { NearbyDronesMessage } from '../types';
 
 const DASH = '—';
 
-const GLOBAL_POSITION_TOPIC = 'mavros/global_position/global';
+const MAX_NATIVE_ZOOM = 19; // deepest Esri World Imagery level that is reliably populated
 
-interface NavSatFix {
-  latitude: number;
-  longitude: number;
-  altitude: number;
-}
+/** White outline so labels stay readable over satellite imagery. */
+const HALO = { stroke: 'white', strokeWidth: 2, paintOrder: 'stroke' } as const;
 
 /** Plot half-range, fixed rather than auto-fit to traffic. */
 const RANGE_M = 50;
@@ -21,6 +19,38 @@ const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;
 const EDGE_MARGIN = 24;
 const MAX_LABEL_CHARS = 10;
+
+/** Keeps the satellite map aligned with the radar: centred on the origin, `halfM` metres to each edge. */
+function LockToRadar({ lat, lon, halfM }: { lat: number; lon: number; halfM: number }) {
+  const map = useMap();
+
+  // Zoom depends only on the radar's size and range, so refit only on resize:
+  // any zoom change resets the tile layer, which reloads every tile and flashes.
+  useEffect(() => {
+    const fitZoom = () => {
+      map.invalidateSize({ animate: false });
+      const c = map.getCenter();
+      const dLat = toDeg(halfM / R_EARTH_M);
+      const dLon = toDeg(halfM / (R_EARTH_M * Math.cos(toRad(c.lat))));
+      const zoom = map.getBoundsZoom([
+        [c.lat - dLat, c.lng - dLon],
+        [c.lat + dLat, c.lng + dLon],
+      ]);
+      map.setView(c, zoom, { animate: false });
+    };
+    fitZoom();
+    const observer = new ResizeObserver(fitZoom);
+    observer.observe(map.getContainer());
+    return () => observer.disconnect();
+  }, [map, halfM]);
+
+  // Position updates only pan, which keeps the tiles already loaded.
+  useEffect(() => {
+    map.panTo([lat, lon], { animate: false });
+  }, [map, lat, lon]);
+
+  return null;
+}
 
 export default function NearbyDronesWidget({
   nearby,
@@ -31,20 +61,7 @@ export default function NearbyDronesWidget({
   connected: boolean;
   stale: boolean;
 }) {
-  const [position, setPosition] = useState<PositionMessage>();
-
-  useEffect(() => {
-    const fixTopic = new ROSLIB.Topic<NavSatFix>({
-      ros,
-      name: GLOBAL_POSITION_TOPIC,
-      messageType: 'sensor_msgs/NavSatFix',
-    });
-    const onFix = (msg: NavSatFix) => {
-      setPosition({ lat: msg.latitude, lon: msg.longitude, alt: msg.altitude });
-    };
-    fixTopic.subscribe(onFix);
-    return () => fixTopic.unsubscribe(onFix);
-  }, []);
+  const position = useOwnPosition();
 
   const drones = nearby?.drones ?? [];
 
@@ -98,10 +115,38 @@ export default function NearbyDronesWidget({
       </header>
 
       <div
-        className="relative mt-3 flex-1 min-h-0 aspect-square w-full mx-auto overflow-hidden rounded-lg"
+        className="relative mt-3 flex-1 min-h-0 aspect-square max-w-full self-center overflow-hidden rounded-lg"
         style={{ background: 'var(--nd-map)' }}
       >
-        <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="h-full w-full">
+        {origin && (
+          // Own stacking context so Leaflet's high pane z-indexes stay under the radar.
+          <div className="absolute inset-0 z-0">
+            <MapContainer
+              center={[origin.lat, origin.lon]}
+              zoom={18}
+              zoomSnap={0}
+              maxZoom={22}
+              zoomControl={false}
+              dragging={false}
+              scrollWheelZoom={false}
+              doubleClickZoom={false}
+              touchZoom={false}
+              boxZoom={false}
+              keyboard={false}
+              className="h-full w-full"
+              style={{ background: 'var(--nd-map)' }}
+            >
+              <TileLayer
+                url="/tiles/{z}/{x}/{y}"
+                maxNativeZoom={MAX_NATIVE_ZOOM}
+                maxZoom={22}
+                attribution="Tiles &copy; Esri"
+              />
+              <LockToRadar lat={origin.lat} lon={origin.lon} halfM={CENTER / scale} />
+            </MapContainer>
+          </div>
+        )}
+        <svg viewBox={`0 0 ${VIEW} ${VIEW}`} className="pointer-events-none absolute inset-0 z-[1] h-full w-full">
           {[0.25, 0.5, 0.75].map((f) => (
             <g key={f} stroke="var(--nd-grid)" strokeWidth="0.5">
               <line x1={VIEW * f} y1="0" x2={VIEW * f} y2={VIEW} />
@@ -111,7 +156,7 @@ export default function NearbyDronesWidget({
 
           <g transform={`translate(${VIEW - 16} 14)`}>
             <path d="M0 -6 l3 6 l-6 0 z" fill="var(--nd-ink3)" />
-            <text x="6" y="2" fontSize="8" fill="var(--nd-ink3)">N</text>
+            <text x="6" y="2" fontSize="8" fill="var(--nd-ink3)" {...HALO}>N</text>
           </g>
 
           <circle
@@ -122,7 +167,7 @@ export default function NearbyDronesWidget({
             stroke="var(--nd-grid)"
             strokeWidth="0.75"
           />
-          <text x="6" y={VIEW - 6} fontSize="7" fill="var(--nd-ink3)">
+          <text x="6" y={VIEW - 6} fontSize="7" fill="var(--nd-ink3)" {...HALO}>
             {RANGE_M} m radius
           </text>
 
@@ -157,13 +202,13 @@ export default function NearbyDronesWidget({
                     transform={`translate(${x} ${y}) rotate(${drone.direction})`}
                     fill="var(--nd-traffic)"
                   />
-                  <text x={x + 7} y={y - 3} fontSize="7" fill="var(--nd-ink3)">
+                  <text x={x + 7} y={y - 3} fontSize="7" fill="var(--nd-ink3)" {...HALO}>
                     {label}
                   </text>
-                  <text x={x + 7} y={y + 5} fontSize="6" fill="var(--nd-ink3)">
+                  <text x={x + 7} y={y + 5} fontSize="6" fill="var(--nd-ink3)" {...HALO}>
                     {Math.round(range)} m
                   </text>
-                  <text x={x + 7} y={y + 11} fontSize="6" fill="var(--nd-ink3)">
+                  <text x={x + 7} y={y + 11} fontSize="6" fill="var(--nd-ink3)" {...HALO}>
                     {Math.round(drone.alt)} m alt
                   </text>
                 </g>
@@ -187,7 +232,7 @@ export default function NearbyDronesWidget({
           </g>
 
           {!drones.length && (
-            <text x={CENTER} y={CENTER + 14} textAnchor="middle" fontSize="10" fill="var(--nd-ink3)">
+            <text x={CENTER} y={CENTER + 14} textAnchor="middle" fontSize="10" fill="var(--nd-ink3)" {...HALO}>
               {noFeed ? 'No traffic data' : 'No nearby drones'}
             </text>
           )}
