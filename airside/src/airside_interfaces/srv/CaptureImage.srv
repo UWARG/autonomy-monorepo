@@ -1,0 +1,9 @@
+# Request one bundle of the latest image, GPS location and IMU.
+---
+# False when an input feed hasn't published yet; message says which.
+bool success
+string message
+std_msgs/Header header
+sensor_msgs/CompressedImage image
+Coordinate location
+sensor_msgs/Imu imu

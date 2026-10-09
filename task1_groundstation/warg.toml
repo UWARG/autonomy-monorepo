@@ -1,0 +1,11 @@
+name = "task1_groundstation"
+description = "Task 1 ground station — capture, annotate and describe targets over rosbridge."
+
+[commands]
+setup = "pnpm install"
+run = "pnpm dev --host 127.0.0.1 --port 5174"
+lint = "pnpm lint"
+ci-lint = "npx --yes pnpm@10 install --frozen-lockfile && npx --yes pnpm@10 lint"
+
+[ci]
+pr = ["ci-lint"]

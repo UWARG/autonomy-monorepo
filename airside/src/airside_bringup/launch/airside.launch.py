@@ -62,7 +62,8 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
-                parameters=[{"port": 9090}],
+                # roslibjs can't reassemble fragments, so keep headroom above a JPEG capture.
+                parameters=[{"port": 9090, "max_message_size": 10_000_000}],
             ),
             Node(
                 package="rosapi",
@@ -77,6 +78,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="camera",
                 name="camera_node",
                 output="both",
+                parameters=[{"camera_type": "arducam"}],
             ),
             Node(
                 package="camera",

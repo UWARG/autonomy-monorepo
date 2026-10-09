@@ -5,14 +5,16 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-lc"]
 
 ARG ROS_SNAPSHOT=2026-08-07
-COPY airside/docker/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+COPY airside/docker/ros-snapshots.gpg /usr/share/keyrings/ros-snapshots.gpg
 RUN rm /etc/apt/sources.list.d/ros2.sources \
-  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.asc\n' \
+  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.gpg\n' \
      "${ROS_SNAPSHOT}" > /etc/apt/sources.list.d/ros2-snapshot.sources
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
+    libgl1 \
+    libglib2.0-0 \
     python3-colcon-common-extensions \
     python3-numpy \
     python3-pip \
@@ -42,7 +44,7 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install "/monorepo/camera[oakd,arducam]" /monorepo/utils
 
 COPY airside/src/ src/
 
