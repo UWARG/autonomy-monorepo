@@ -1,10 +1,17 @@
 services:
   airside:
     environment:
+      # Pinned to the midpoint of the first lap leg (waypoints 1 -> 2 in
+      # src/engine/config/waypoints.yaml). Set both to empty strings to anchor
+      # at the first armed position instead.
+      STATIC_OBSTACLE_LAT: ${STATIC_OBSTACLE_LAT-43.4339558}
+      STATIC_OBSTACLE_LON: ${STATIC_OBSTACLE_LON--80.5777818}
       STATIC_OBSTACLE_EAST_M: ${STATIC_OBSTACLE_EAST_M:-0.0}
-      STATIC_OBSTACLE_NORTH_M: ${STATIC_OBSTACLE_NORTH_M:-20.0}
-      STATIC_OBSTACLE_ALTITUDE_M: ${STATIC_OBSTACLE_ALTITUDE_M:-15.0}
+      STATIC_OBSTACLE_NORTH_M: ${STATIC_OBSTACLE_NORTH_M:-0.0}
+      STATIC_OBSTACLE_ALTITUDE_M: ${STATIC_OBSTACLE_ALTITUDE_M:-10.0}
       STATIC_OBSTACLE_KEEP_AWAY_M: ${STATIC_OBSTACLE_KEEP_AWAY_M:-5.0}
       STATIC_OBSTACLE_VERTICAL_M: ${STATIC_OBSTACLE_VERTICAL_M:-5.0}
       FLIGHT_TEST_HORIZONTAL_SPEED_MPS: ${FLIGHT_TEST_HORIZONTAL_SPEED_MPS:-0.7}
+      # Long enough for several laps; end the test by switching to LOITER.
+      LAPPING_DURATION_S: ${LAPPING_DURATION_S:-600.0}
     command: ros2 launch airside_bringup static_obstacle_flight_test.launch.py

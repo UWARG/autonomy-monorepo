@@ -25,8 +25,19 @@ class SyntheticStaticTrafficConfig:
     vertical_keepaway_m: float = 5.0
     publish_rate_hz: float = 1.0
     include_obstacle: bool = True
+    # When both are set, the obstacle is pinned here instead of offset from
+    # the first armed position.
+    latitude_deg: float | None = None
+    longitude_deg: float | None = None
 
     def __post_init__(self) -> None:
+        if (self.latitude_deg is None) != (self.longitude_deg is None):
+            raise ValueError("obstacle latitude and longitude must be set together")
+        if self.latitude_deg is not None and not (
+            -90.0 < self.latitude_deg < 90.0
+            and math.isfinite(self.longitude_deg)
+        ):
+            raise ValueError("obstacle latitude/longitude must be a valid coordinate")
         numeric = (
             self.east_offset_m,
             self.north_offset_m,
@@ -75,9 +86,14 @@ class SyntheticStaticTrafficNode(Node):
             "vertical_keepaway_m": 5.0,
             "publish_rate_hz": 1.0,
             "include_obstacle": True,
+            # Empty string means "not set"; see SyntheticStaticTrafficConfig.
+            "latitude_deg": "",
+            "longitude_deg": "",
         }
         for name, default in defaults.items():
             self.declare_parameter(name, default)
+        latitude = str(self.get_parameter("latitude_deg").value).strip()
+        longitude = str(self.get_parameter("longitude_deg").value).strip()
         self._config = SyntheticStaticTrafficConfig(
             east_offset_m=float(self.get_parameter("east_offset_m").value),
             north_offset_m=float(self.get_parameter("north_offset_m").value),
@@ -90,6 +106,8 @@ class SyntheticStaticTrafficNode(Node):
             ),
             publish_rate_hz=float(self.get_parameter("publish_rate_hz").value),
             include_obstacle=bool(self.get_parameter("include_obstacle").value),
+            latitude_deg=float(latitude) if latitude else None,
+            longitude_deg=float(longitude) if longitude else None,
         )
         self._fix: NavSatFix | None = None
         self._relative_altitude_m: float | None = None
@@ -164,12 +182,21 @@ class SyntheticStaticTrafficNode(Node):
             return
 
         if self._origin is None:
-            self._origin = (fix.latitude, fix.longitude)
-            self.get_logger().warning(
-                "Synthetic origin fixed at first armed position; obstacle is "
-                f"{self._config.east_offset_m:.1f}m east / "
-                f"{self._config.north_offset_m:.1f}m north."
-            )
+            if self._config.latitude_deg is not None:
+                self._origin = (self._config.latitude_deg, self._config.longitude_deg)
+                self.get_logger().warning(
+                    "Synthetic obstacle pinned at "
+                    f"{self._origin[0]:.7f}, {self._origin[1]:.7f} "
+                    f"({self._config.east_offset_m:.1f}m east / "
+                    f"{self._config.north_offset_m:.1f}m north of it)."
+                )
+            else:
+                self._origin = (fix.latitude, fix.longitude)
+                self.get_logger().warning(
+                    "Synthetic origin fixed at first armed position; obstacle is "
+                    f"{self._config.east_offset_m:.1f}m east / "
+                    f"{self._config.north_offset_m:.1f}m north."
+                )
 
         self._sequence += 1
         message = self._new_snapshot(healthy=True, reason="")

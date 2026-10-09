@@ -14,10 +14,13 @@ server. The separate [live AEAC launch](aeac-bendy-ruler-flight-test.md) uses
 `/position_controller/obstacle` with an atomic snapshot status for the A*
 interface.
 
-The test publishes the same static obstacle data used by the SITL scenario:
+The flight-test override pins the static obstacle on the lap path:
 
-- 20 m north and 0 m east of the first valid armed GPS position
-- 15 m AGL
+- 43.4339558, -80.5777818: the midpoint of waypoints 1 -> 2 in
+  `src/engine/config/waypoints.yaml` (set `STATIC_OBSTACLE_LAT` and
+  `STATIC_OBSTACLE_LON` to empty strings to restore the SITL scenario's
+  20 m north of the first valid armed GPS position, at 15 m AGL)
+- 10 m AGL, matching the waypoint altitude
 - 5 m horizontal keep-away
 - 5 m vertical keep-away
 - zero speed
@@ -50,18 +53,22 @@ not present, do not proceed with the test.
 Defaults can be changed through these environment variables:
 
 ```text
+STATIC_OBSTACLE_LAT=43.4339558
+STATIC_OBSTACLE_LON=-80.5777818
 STATIC_OBSTACLE_EAST_M=0.0
-STATIC_OBSTACLE_NORTH_M=20.0
-STATIC_OBSTACLE_ALTITUDE_M=15.0
+STATIC_OBSTACLE_NORTH_M=0.0
+STATIC_OBSTACLE_ALTITUDE_M=10.0
 STATIC_OBSTACLE_KEEP_AWAY_M=5.0
 STATIC_OBSTACLE_VERTICAL_M=5.0
 FLIGHT_TEST_HORIZONTAL_SPEED_MPS=0.7
+LAPPING_DURATION_S=600.0
 ```
 
 The waypoint file must place the lapping path through or near the imaginary
-obstacle. The synthetic publisher anchors its coordinate at the first valid
-armed GPS position, so the pilot must not arm until the aircraft is at the
-agreed launch point.
+obstacle. If the waypoints change, update the pinned coordinate to match. When
+the pin is unset, the synthetic publisher anchors its coordinate at the first
+valid armed GPS position, so the pilot must not arm until the aircraft is at
+the agreed launch point.
 
 ## Readiness gate
 

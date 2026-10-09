@@ -36,6 +36,9 @@ def generate_launch_description() -> LaunchDescription:
             _float_argument(
                 "horizontal_speed_mps", "FLIGHT_TEST_HORIZONTAL_SPEED_MPS", "0.7"
             ),
+            # Empty = offset from the first armed position instead of pinned.
+            _float_argument("obstacle_latitude_deg", "STATIC_OBSTACLE_LAT", ""),
+            _float_argument("obstacle_longitude_deg", "STATIC_OBSTACLE_LON", ""),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(str(base_launch / "airside.launch.py")),
                 launch_arguments={
@@ -68,6 +71,14 @@ def generate_launch_description() -> LaunchDescription:
                         "vertical_keepaway_m": ParameterValue(
                             LaunchConfiguration("vertical_keepaway_m"),
                             value_type=float,
+                        ),
+                        "latitude_deg": ParameterValue(
+                            LaunchConfiguration("obstacle_latitude_deg"),
+                            value_type=str,
+                        ),
+                        "longitude_deg": ParameterValue(
+                            LaunchConfiguration("obstacle_longitude_deg"),
+                            value_type=str,
                         ),
                     }
                 ],

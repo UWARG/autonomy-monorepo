@@ -48,3 +48,27 @@ def test_coordinate_offsets_preserve_signs() -> None:
 def test_invalid_configuration_is_rejected(override: dict[str, float]) -> None:
     with pytest.raises(ValueError):
         SyntheticStaticTrafficConfig(**override)
+
+
+def test_pinned_coordinate_is_optional() -> None:
+    assert SyntheticStaticTrafficConfig().latitude_deg is None
+
+    config = SyntheticStaticTrafficConfig(
+        latitude_deg=43.4339558, longitude_deg=-80.5777818
+    )
+
+    assert (config.latitude_deg, config.longitude_deg) == (43.4339558, -80.5777818)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"latitude_deg": 43.0},
+        {"longitude_deg": -80.0},
+        {"latitude_deg": 91.0, "longitude_deg": -80.0},
+        {"latitude_deg": 43.0, "longitude_deg": math.inf},
+    ],
+)
+def test_invalid_pinned_coordinate_is_rejected(override: dict[str, float]) -> None:
+    with pytest.raises(ValueError):
+        SyntheticStaticTrafficConfig(**override)
