@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  type Recording,
   type SessionTopic,
   canStreamToFile,
   getSessionSnapshot,
@@ -38,8 +37,14 @@ function download(blob: Blob, fileName: string): void {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = fileName;
+  // Firefox/Safari read the blob asynchronously after the click, so the URL
+  // cannot be revoked in the same tick; keep the anchor attached until then.
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    anchor.remove();
+  }, 0);
 }
 
 function Row({ label, value, tone = 'text-ink' }: { label: string; value: string; tone?: string }) {
@@ -96,7 +101,6 @@ export default function SessionWidget() {
   const [graphError, setGraphError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(RECORDED_TOPICS));
   const [streamToFile, setStreamToFile] = useState(true);
-  const [lastRecording, setLastRecording] = useState<Recording | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refreshTopics = () => {
@@ -125,14 +129,19 @@ export default function SessionWidget() {
   };
 
   const onStart = async () => {
-    setLastRecording(null);
     await startRecording(selectedTopics, { toFile: streamToFile });
   };
 
   const onStop = async () => {
-    const recording = await stopRecording();
-    if (recording) setLastRecording(recording);
+    await stopRecording();
   };
+
+  const onDownload = () => {
+    const finished = recorder.lastRecording;
+    if (finished?.blob) download(finished.blob, finished.fileName);
+  };
+
+  const { lastRecording } = recorder;
 
   const replayable = player.header != null && player.totalFrames > 0;
   const progress = player.durationMs > 0 ? Math.min(1, player.cursorMs / player.durationMs) : 0;
@@ -217,7 +226,7 @@ export default function SessionWidget() {
             {lastRecording?.blob && (
               <button
                 type="button"
-                onClick={() => download(lastRecording.blob!, lastRecording.fileName)}
+                onClick={onDownload}
                 className="rounded-md border border-edge bg-accent-dim px-3 py-2 text-[13px] font-semibold text-accent"
               >
                 Download
@@ -237,10 +246,10 @@ export default function SessionWidget() {
             />
           </dl>
 
-          {(recorder.error || (lastRecording && !lastRecording.blob)) && (
-            <p className="mt-2 text-[11px] text-warn">
-              {recorder.error ??
-                `Saved ${lastRecording!.frames} frames to ${lastRecording!.fileName}`}
+          {recorder.error && <p className="mt-2 text-[11px] text-warn">{recorder.error}</p>}
+          {!recorder.error && lastRecording && !lastRecording.blob && (
+            <p className="mt-2 text-[11px] text-ink-3">
+              Saved {lastRecording.frames.toLocaleString()} frames to {lastRecording.fileName}
             </p>
           )}
         </div>
@@ -336,8 +345,8 @@ export default function SessionWidget() {
           </div>
 
           <p className="mt-2 text-[11px] text-ink-3">
-            Frames replay onto their original topics; command topics (setpoints, /cmd_vel, RC)
-            are blocked.
+            Replay only republishes the topics the recorder tracks, onto their original names;
+            everything else — setpoints, /cmd_vel, RC, unknown topics — is blocked and counted.
           </p>
           {player.error && <p className="mt-1 text-[11px] text-bad">{player.error}</p>}
         </div>

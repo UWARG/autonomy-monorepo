@@ -3,9 +3,11 @@ export const RECONNECT_DELAY_MS = 3000;
 export const MAX_RECONNECT_ATTEMPTS = 10;
 
 /**
- * Scalar telemetry recorded by default. Image topics (`camera/image_raw` at
- * 50 Hz) are deliberately excluded — they are megabytes per second and do not
- * survive JSONL serialization cleanly.
+ * Scalar telemetry recorded by default, and the only topics replay may publish
+ * (see {@link isReplayableTopic}). Image topics (`camera/image_raw` at 50 Hz)
+ * are deliberately excluded — they are megabytes per second and do not survive
+ * JSONL serialization cleanly. Anything else can still be recorded, but replay
+ * refuses it.
  */
 export const RECORDED_TOPICS: string[] = [
   '/heartbeat',
@@ -17,9 +19,9 @@ export const RECORDED_TOPICS: string[] = [
 ];
 
 /**
- * Replay must never publish to a topic matching these: they command the
- * vehicle, so replaying a recorded one could move a live aircraft. Blocked
- * frames are counted and surfaced, not silently dropped.
+ * Second line of defence behind {@link isReplayableTopic}: these command the
+ * vehicle, so a recorded frame on one must never be published. Blocked frames
+ * are counted and surfaced, not silently dropped.
  */
 export const COMMAND_TOPIC_PATTERNS: RegExp[] = [
   /(^|\/)setpoint/i, // mavros/setpoint_raw/*, mavros/setpoint_position/*
@@ -32,3 +34,13 @@ export const COMMAND_TOPIC_PATTERNS: RegExp[] = [
 
 export const isCommandTopic = (name: string): boolean =>
   COMMAND_TOPIC_PATTERNS.some((re) => re.test(name));
+
+/**
+ * Replay publishes an allowlist, not a blocklist: a session file is JSON from
+ * disk and may name any topic, so a deny-list can only ever be a guess (it
+ * already missed `/mavros/actuator_control`, which MAVROS turns into
+ * SET_ACTUATOR_CONTROL_TARGET). Only the telemetry the dashboard itself tracks
+ * is republished; every other topic is counted as blocked.
+ */
+export const isReplayableTopic = (name: string): boolean =>
+  RECORDED_TOPICS.includes(name) && !isCommandTopic(name);

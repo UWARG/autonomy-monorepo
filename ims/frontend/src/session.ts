@@ -15,10 +15,39 @@
  */
 import ROSLIB from 'roslib';
 import { ros } from './ros.js';
-import { ROS_URL, isCommandTopic } from './constants.ts';
+import { ROS_URL, isReplayableTopic } from './constants.ts';
 
 /** Bump when the frame/header shape changes; old files are then rejected. */
 export const SESSION_VERSION = 1;
+
+/**
+ * Byte cap for the in-memory sink. A session streaming to a real file is
+ * unbounded; a buffered one lives in the tab, so an unattended capture has to
+ * end before the tab dies with it. Reaching the cap stops the recording with
+ * the buffer intact and downloadable.
+ */
+const MEMORY_BUFFER_LIMIT_MIB = 64;
+const MEMORY_BUFFER_LIMIT_BYTES = MEMORY_BUFFER_LIMIT_MIB * 1024 * 1024;
+
+/**
+ * UTF-8 length without allocating an encoded copy — these run once per frame
+ * and feed the size the UI reports, which has to be file size, not UTF-16.
+ */
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.codePointAt(i);
+    if (code === undefined) break; // cannot happen while i < length
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code < 0x10000) bytes += 3;
+    else {
+      bytes += 4;
+      i++; // surrogate pair
+    }
+  }
+  return bytes;
+}
 
 export interface SessionTopic {
   name: string;
@@ -68,6 +97,8 @@ export interface RecorderSnapshot {
   bytes: number;
   sinkKind: SinkKind | null;
   topics: SessionTopic[];
+  /** Last finished capture, kept so the UI can still offer a download. */
+  lastRecording: Recording | null;
   error: string | null;
 }
 
@@ -178,6 +209,7 @@ const EMPTY_RECORDER: RecorderSnapshot = {
   bytes: 0,
   sinkKind: null,
   topics: [],
+  lastRecording: null,
   error: null,
 };
 
@@ -239,6 +271,7 @@ let recError: string | null = null;
 let recSink: SessionSink | null = null;
 let recSubs: ROSLIB.Topic[] = [];
 let recFileName = '';
+let recLast: Recording | null = null;
 let lastRecEmit = 0;
 
 function pushRecorder(force = false): void {
@@ -255,6 +288,7 @@ function pushRecorder(force = false): void {
       bytes: recBytes,
       sinkKind: recSink?.kind ?? null,
       topics: snapshot.recorder.topics,
+      lastRecording: recLast,
       error: recError,
     },
   });
@@ -333,6 +367,7 @@ export async function startRecording(
   recSink = sink;
   recSubs = subs;
   recError = notice;
+  recLast = null;
   emit({
     recorder: {
       recording: true,
@@ -342,13 +377,15 @@ export async function startRecording(
       bytes: 0,
       sinkKind: sink.kind,
       topics,
+      lastRecording: null,
       error: recError,
     },
   });
 }
 
 function onFrame(topicName: string, msg: unknown, startedAt: number): void {
-  if (!recSink) return;
+  const sink = recSink;
+  if (!sink) return;
   const frame: SessionFrame = { t: Date.now() - startedAt, topic: topicName, msg };
   let line: string;
   try {
@@ -356,21 +393,34 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
   } catch {
     return; // un-serializable payload (should not happen for rosbridge JSON)
   }
+  const bytes = utf8Length(line);
+  if (sink.kind === 'memory' && recBytes + bytes > MEMORY_BUFFER_LIMIT_BYTES) {
+    void stopRecording(
+      `Memory buffer limit (${MEMORY_BUFFER_LIMIT_MIB} MiB) reached — recording stopped. ` +
+        'Download the session, then record again.',
+    );
+    return;
+  }
   recFrames += 1;
-  recBytes += line.length; // JSON payloads are ASCII-dominant
-  void recSink.write(line).catch((err) => {
+  recBytes += bytes;
+  void sink.write(line).catch((err) => {
     recError = `Session file write failed: ${String(err)}`;
     pushRecorder(true);
   });
   pushRecorder();
 }
 
-export async function stopRecording(): Promise<Recording | null> {
+/**
+ * Stop capturing and hand the session back. `reason` is shown as the recorder
+ * error; the memory cap uses it to explain a stop the user did not ask for.
+ */
+export async function stopRecording(reason?: string): Promise<Recording | null> {
   const sink = recSink;
   if (!sink) return null;
   recSink = null;
   for (const topic of recSubs) topic.unsubscribe();
   recSubs = [];
+  if (reason) recError = reason;
   pushRecorder(true);
 
   let blob: Blob | null = null;
@@ -378,9 +428,11 @@ export async function stopRecording(): Promise<Recording | null> {
     blob = await sink.close();
   } catch (err) {
     recError = `Could not finalize session file: ${String(err)}`;
-    pushRecorder(true);
   }
-  return { blob, fileName: recFileName, frames: recFrames, bytes: recBytes };
+  const recording: Recording = { blob, fileName: recFileName, frames: recFrames, bytes: recBytes };
+  recLast = recording;
+  pushRecorder(true);
+  return recording;
 }
 
 // ---------------------------------------------------------------------------
@@ -515,7 +567,9 @@ function tick(): void {
 
   while (playerNext < playerFrames.length && playerFrames[playerNext].t <= elapsed) {
     const frame = playerFrames[playerNext++];
-    if (isCommandTopic(frame.topic)) {
+    // Allowlist, not blocklist: anything the recorder did not track — including
+    // a command topic a session file names freely — is refused, not published.
+    if (!isReplayableTopic(frame.topic)) {
       blockedCount += 1;
       continue;
     }
