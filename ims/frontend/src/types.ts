@@ -7,7 +7,7 @@
 export type ConnectionStatus = 'active' | 'degraded' | 'lost';
 
 /**
- * payload for { "type": "connection" }
+ * Link state as the Connection panel and header strip present it.
  */
 export interface ConnectionMessage {
   status: ConnectionStatus;
@@ -30,7 +30,7 @@ export interface AttitudeMessage {
 }
 
 /**
- * payload for { "type": "camera" }
+ * Camera frame metadata for the Camera panel (no pixels).
  */
 export interface CameraMessage {
   src?: string;
@@ -40,7 +40,8 @@ export interface CameraMessage {
 }
 
 /**
- * Global position; TargetWidget reads sensor_msgs/NavSatFix instead.
+ * Global position, currently supplied to TargetWidget as a prop; #191 wires the
+ * widget to sensor_msgs/NavSatFix, which does not carry this shape.
  */
 export interface PositionMessage {
   /** degrees */
@@ -50,9 +51,9 @@ export interface PositionMessage {
 }
 
 /**
- * payload for { "type": "target" }
+ * A detected target for the Position / Target panel.
  *
- * PROVISIONAL 
+ * PROVISIONAL
  */
 export interface TargetMessage {
   /** degrees */
@@ -63,19 +64,10 @@ export interface TargetMessage {
 }
 
 /**
- * payload for { "type": "status" } — mission/script state.
- *
+ * Mission/script state for the Mission Script panel.
  */
 export interface StatusMessage {
   task: string;
   state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
   text: string;
-}
-
-/**
- * payload for { "type": "log" }
- *
- */
-export interface LogMessage {
-  message: string;
 }
