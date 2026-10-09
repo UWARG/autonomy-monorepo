@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import ROSLIB from 'roslib';
 import { ros } from '../ros.js';
+import { TOPICS } from '../topics';
 
 type LogEntry = {
   topic: string;
@@ -20,7 +21,7 @@ export default function LogWidget() {
       setEntries((prev) => [...prev, { topic: name, raw: message, t: Date.now() }].slice(-LOG_MAX));
     };
 
-    const TOPIC_NAMES = ['/heartbeat'];
+    const TOPIC_NAMES = [TOPICS.heartbeat.name];
     ros.getTopics(
       ({ topics: allTopics, types }) => {
         for (const name of TOPIC_NAMES) {

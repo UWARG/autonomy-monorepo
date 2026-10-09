@@ -52,6 +52,7 @@ const listeners = new Set<() => void>();
 let beats: number[] = [];
 let state: MavrosState | null = null;
 let lastStateAt = 0;
+let lastBeatAt = 0;
 let started: { unsubscribe(): void }[] = [];
 let ticker: number | null = null;
 
@@ -64,7 +65,15 @@ function sample(): LinkSnapshot {
   const span = beats.length > 1 ? beats[beats.length - 1] - beats[0] : 0;
   const heartbeatHz = span > 0 ? ((beats.length - 1) * 1000) / span : null;
   const silent = now - newest > SILENCE_MS;
-  const degraded = state?.connected === false || (heartbeatHz != null && heartbeatHz < DEGRADED_HZ);
+  // /mavros/state only proves MAVROS is up; the heartbeat is the aircraft-side
+  // liveness beacon, so its silence degrades the link even while state keeps
+  // arriving. Age is taken from the last beat, not from `beats`, because the
+  // rate window empties long before SILENCE_MS and heartbeatHz then reads null.
+  const heartbeatStale = now - lastBeatAt > SILENCE_MS;
+  const degraded =
+    state?.connected === false ||
+    heartbeatStale ||
+    (heartbeatHz != null && heartbeatHz < DEGRADED_HZ);
 
   return {
     status: silent ? 'lost' : degraded ? 'degraded' : 'active',
@@ -106,10 +115,14 @@ function start(): void {
     refresh();
   });
   heartbeatTopic.subscribe(() => {
-    beats.push(Date.now());
+    lastBeatAt = Date.now();
+    beats.push(lastBeatAt);
     refresh();
   });
 
+  // A beacon that never arrives must age from the start of the subscription,
+  // not from 0.
+  lastBeatAt = Date.now();
   started = [stateTopic, heartbeatTopic];
   ticker = window.setInterval(refresh, TICK_MS);
 }
@@ -124,6 +137,7 @@ function stop(): void {
   beats = [];
   state = null;
   lastStateAt = 0;
+  lastBeatAt = 0;
   link = EMPTY;
 }
 

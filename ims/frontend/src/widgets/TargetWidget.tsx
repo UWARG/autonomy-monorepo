@@ -261,7 +261,7 @@ export default function TargetWidget() {
         </div>
         <div className="flex items-baseline gap-4">
           <div className="flex flex-col items-end">
-            <span className="widget-label">Altitude</span>
+            <span className="widget-label">Altitude AMSL</span>
             <span className="font-mono text-sm font-semibold tabular-nums text-ink">
               {fix ? `${fix.altitude.toFixed(1)} m` : DASH}
             </span>

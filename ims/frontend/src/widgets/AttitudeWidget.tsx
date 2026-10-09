@@ -2,6 +2,7 @@ import type { AttitudeMessage } from '../types';
 import { useEffect, useState } from 'react';
 import ROSLIB from 'roslib';
 import { ros } from '../ros.js'
+import { TOPICS } from '../topics';
 
 const DASH = '\u2014';
 const DEG = 180 / Math.PI;
@@ -135,8 +136,8 @@ export default function AttitudeWidget() {
   useEffect(() => {
     const poseTopic = new ROSLIB.Topic<PoseStamped>({
       ros,
-      name: '/mavros/local_position/pose',
-      messageType: 'geometry_msgs/PoseStamped',
+      name: TOPICS.localPose.name,
+      messageType: TOPICS.localPose.type,
     });
 
     const onPose = (message: PoseStamped) => {

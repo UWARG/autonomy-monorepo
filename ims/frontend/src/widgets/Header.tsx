@@ -60,7 +60,7 @@ export default function HeaderStatus() {
       <Stat
         label="Armed"
         value={armed == null ? DASH : armed ? 'YES' : 'NO'}
-        tone={armed ? 'text-ok' : 'text-ink-3'}
+        tone={armed == null ? 'text-ink-3' : armed ? 'text-ok' : 'text-ink'}
       />
     </div>
   );
