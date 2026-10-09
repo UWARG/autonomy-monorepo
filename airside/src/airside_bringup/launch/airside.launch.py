@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 # Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
 # where the RC bridge listens for RC_CHANNELS.
@@ -19,6 +20,27 @@ def generate_launch_description() -> LaunchDescription:
                     "FCU_URL", default_value="serial:///dev/serial0:115200"
                 ),
                 description="MAVROS connection URL to ArduPilot",
+            ),
+            DeclareLaunchArgument(
+                "obstacle_source",
+                default_value=EnvironmentVariable(
+                    "OBSTACLE_SOURCE", default_value="scan"
+                ),
+                description="Exactly one obstacle source: traffic or scan",
+            ),
+            DeclareLaunchArgument(
+                "horizontal_speed_mps",
+                default_value=EnvironmentVariable(
+                    "OBSTACLE_HORIZONTAL_SPEED_MPS", default_value="2.0"
+                ),
+                description="Obstacle-aware horizontal velocity limit",
+            ),
+            DeclareLaunchArgument(
+                "traffic_topic",
+                default_value=EnvironmentVariable(
+                    "OBSTACLE_TRAFFIC_TOPIC", default_value="/aeac/traffic"
+                ),
+                description="TrafficSnapshot input for BendyRuler traffic mode",
             ),
             Node(
                 package="mavros",
@@ -101,6 +123,20 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
+                parameters=[
+                    {
+                        "obstacle_avoidance.source": LaunchConfiguration(
+                            "obstacle_source"
+                        ),
+                        "obstacle_avoidance.horizontal_speed_mps": ParameterValue(
+                            LaunchConfiguration("horizontal_speed_mps"),
+                            value_type=float,
+                        ),
+                        "obstacle_avoidance.traffic_topic": LaunchConfiguration(
+                            "traffic_topic"
+                        ),
+                    }
+                ],
             ),
         ]
     )

@@ -1,6 +1,5 @@
 from setuptools import find_packages, setup
 
-
 package_name = "navigation"
 
 
@@ -21,9 +20,11 @@ setup(
     maintainer_email="uwarg@uwaterloo.ca",
     description="Position control between the engine and MAVROS.",
     license="MIT",
+    tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "position_controller = navigation.position_controller_node:main",
+            "aeac_backup_controller = navigation.live_position_controller_node:main",
         ],
     },
 )

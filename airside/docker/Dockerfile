@@ -1,10 +1,10 @@
 FROM ros:humble-ros-base AS dev
 
 ENV DEBIAN_FRONTEND=noninteractive
+ARG ROS_SNAPSHOT=2026-08-07
 
 SHELL ["/bin/bash", "-lc"]
 
-ARG ROS_SNAPSHOT=2026-08-07
 COPY airside/docker/ros-snapshots.gpg /usr/share/keyrings/ros-snapshots.gpg
 RUN rm /etc/apt/sources.list.d/ros2.sources \
   && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.gpg\n' \
@@ -25,6 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-ros2bag \
+    ros-humble-rosbag2-storage-default-plugins \
     ros-humble-rosbridge-suite \
     wget \
   && rm -rf /var/lib/apt/lists/*
@@ -34,7 +37,7 @@ RUN /opt/ros/humble/lib/mavros/install_geographiclib_datasets.sh
 RUN if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then rosdep init; fi \
   && rosdep update --rosdistro humble
 
-RUN pip install --upgrade pip packaging hatchling pymavlink
+RUN pip install --upgrade pip packaging hatchling pymavlink websocket-client
 
 RUN echo "source /opt/ros/humble/setup.bash" >> /etc/bash.bashrc
 
@@ -43,8 +46,12 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
+COPY obstacle-avoidance/ /monorepo/obstacle-avoidance/
 COPY utils/ /monorepo/utils/
-RUN pip install "/monorepo/camera[oakd,arducam]" /monorepo/utils
+RUN pip install \
+    "/monorepo/camera[oakd,arducam]" \
+    /monorepo/obstacle-avoidance \
+    /monorepo/utils
 
 COPY airside/src/ src/
 
@@ -53,7 +60,8 @@ RUN source /opt/ros/humble/setup.bash \
   && colcon build --symlink-install
 
 COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh \
+  && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

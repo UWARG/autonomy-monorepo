@@ -31,3 +31,6 @@ path = "target_tracking"
 
 [projects.task1_groundstation]
 path = "task1_groundstation"
+
+[projects.obstacle-avoidance]
+path = "obstacle-avoidance"

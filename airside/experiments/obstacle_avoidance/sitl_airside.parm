@@ -1,0 +1,15 @@
+# ArduCopter SITL defaults for the airside-owned avoidance path.
+#
+# The airside behavior tree owns obstacle handling and sends GUIDED velocity;
+# ArduPilot proximity and native avoidance must not add a second command owner.
+PRX1_TYPE 0
+AVOID_ENABLE 0
+OA_TYPE 0
+
+# Ensure MAVROS receives the telemetry needed by the behavior and test driver.
+SR0_EXT_STAT 5
+SR0_EXTRA1 10
+SR0_EXTRA2 10
+SR0_EXTRA3 5
+SR0_POSITION 10
+SR0_RAW_SENS 5
