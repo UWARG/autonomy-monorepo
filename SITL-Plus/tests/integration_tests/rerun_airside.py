@@ -13,7 +13,7 @@ import numpy as np
 from pymavlink import mavutil
 
 import constants
-import sensor_config as sensor_ports
+import sensor_ports
 
 logging.basicConfig(level=logging.INFO)
 PORT = 5761

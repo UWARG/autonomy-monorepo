@@ -7,7 +7,6 @@ license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 dependencies = [
-    "pyyaml>=6.0",
     "black>=25.11.0",
     "numpy>=2.0.2",
     "opencv-python>=4.13.0.92",
