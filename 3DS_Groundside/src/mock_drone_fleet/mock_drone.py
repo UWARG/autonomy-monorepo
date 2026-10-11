@@ -13,8 +13,8 @@ from typing import Any, Callable
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import InvalidURI, WebSocketException
 
-from src.mock_drone_fleet.geometry import Vector3
-from src.mock_drone_fleet.kinematics import step_toward
+from src.mock_drone_fleet.geometry import GeoPosition
+from src.mock_drone_fleet.kinematics import step_toward_geo
 from src.mock_drone_fleet.messages import (
     LocationCommand,
     MissionState,
@@ -45,9 +45,9 @@ class _DroneLogAdapter(logging.LoggerAdapter):
 class _Leg:
     """A straight-line flight from `start_position` at `start_time` to `target`."""
 
-    start_position: Vector3
+    start_position: GeoPosition
     start_time: float
-    target: Vector3
+    target: GeoPosition
 
 
 class MockDrone:
@@ -60,7 +60,7 @@ class MockDrone:
     def __init__(
         self,
         drone_id: str,
-        start_position: Vector3,
+        start_position: GeoPosition,
         speed: float,
         report_period: float = 1.0,
         clock: Callable[[], float] = time.monotonic,
@@ -81,7 +81,7 @@ class MockDrone:
         self._clock = clock
         self._log = _DroneLogAdapter(logger, {"drone_id": drone_id})
 
-        self._position = start_position
+        self._position = GeoPosition(*start_position)
         self._command: LocationCommand | None = None
         self._mission_state = MissionState.IDLE
         self._leg: _Leg | None = None
@@ -91,7 +91,7 @@ class MockDrone:
         return self._drone_id
 
     @property
-    def position(self) -> Vector3:
+    def position(self) -> GeoPosition:
         return self._position
 
     @property
@@ -138,7 +138,7 @@ class MockDrone:
         if self._leg is None:
             return  # IDLE or ARRIVED: nothing moves until the next command
         elapsed = self._clock() - self._leg.start_time
-        self._position = step_toward(
+        self._position = step_toward_geo(
             self._leg.start_position, self._leg.target, self._speed, elapsed
         )
         if self._position == self._leg.target:

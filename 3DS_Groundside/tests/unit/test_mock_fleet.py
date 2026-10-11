@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from src.mock_drone_fleet.geometry import GeoPosition, to_local
 from src.mock_drone_fleet.mock_fleet import (
     FleetConfig,
     drone_ids,
@@ -28,11 +29,16 @@ def test_drone_ids_widen_padding_so_they_still_sort() -> None:
     assert len(set(ids)) == 120
 
 
-def test_start_positions_are_spread_along_x_at_altitude() -> None:
-    assert start_positions(3, spacing=5.0, altitude=15.0) == [
-        (0.0, 0.0, 15.0),
-        (5.0, 0.0, 15.0),
-        (10.0, 0.0, 15.0),
+def test_start_positions_are_spaced_east_of_home_at_altitude() -> None:
+    home = GeoPosition(43.4723, -80.5449, 0.0)
+
+    positions = start_positions(3, home, spacing=5.0, altitude=15.0)
+
+    offsets = [to_local(home, p) for p in positions]
+    assert offsets == [
+        pytest.approx((0.0, 0.0, 15.0), abs=1e-6),
+        pytest.approx((5.0, 0.0, 15.0), abs=1e-6),
+        pytest.approx((10.0, 0.0, 15.0), abs=1e-6),
     ]
 
 

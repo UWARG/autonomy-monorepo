@@ -25,7 +25,7 @@ def make_location_command(
     """A valid LOCATION_COMMAND dict; keyword arguments override payload fields."""
     payload: dict[str, Any] = {
         "task_id": "task-17",
-        "target": {"x": 30.0, "y": 20.0, "z": 15.0},
+        "target": {"latitude": 43.4725, "longitude": -80.5447, "altitude": 15.0},
         "orientation": {"yaw": 1.57},
     }
     payload.update(payload_overrides)

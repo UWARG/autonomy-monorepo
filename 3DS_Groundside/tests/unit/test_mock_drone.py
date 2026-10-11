@@ -8,20 +8,36 @@ from typing import Any
 import pytest
 from websockets.exceptions import InvalidURI
 
-from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.geometry import GeoPosition, Vector3, from_local, to_local
 from src.mock_drone_fleet.messages import LocationCommand, MissionState
 from src.mock_drone_fleet.mock_drone import MockDrone
 from tests.fakes import FakeClock
 
+HOME = GeoPosition(43.4723, -80.5449, 0.0)
+METRES = 1e-4  # tolerance when comparing positions in metres
+
+
+def _at(east: float, north: float, up: float) -> GeoPosition:
+    """The position this many metres east/north/up of HOME, so tests read in metres."""
+    return from_local(HOME, (east, north, up))
+
+
+def _metres(position: GeoPosition) -> Vector3:
+    """`position` as (east, north, up) metres from HOME."""
+    return to_local(HOME, position)
+
 
 def _drone(clock: FakeClock) -> MockDrone:
     return MockDrone(
-        "drone-03", start_position=(0.0, 0.0, 15.0), speed=2.0, clock=clock
+        "drone-03", start_position=_at(0.0, 0.0, 15.0), speed=2.0, clock=clock
     )
 
 
+DEFAULT_TARGET = _at(30.0, 40.0, 15.0)  # 50 m away along a 3-4-5 triangle
+
+
 def _command(
-    task_id: str = "task-17", target: Vector3 = (30.0, 40.0, 15.0)
+    task_id: str = "task-17", target: GeoPosition = DEFAULT_TARGET
 ) -> LocationCommand:
     return LocationCommand(task_id=task_id, target=target, yaw=1.57)
 
@@ -31,7 +47,11 @@ def test_new_drone_is_idle_with_no_task(fake_clock: FakeClock) -> None:
 
     assert payload["mission_state"] == "IDLE"
     assert payload["task_id"] is None
-    assert payload["position"] == {"x": 0.0, "y": 0.0, "z": 15.0}
+    assert payload["position"] == {
+        "latitude": HOME.latitude,
+        "longitude": HOME.longitude,
+        "altitude": 15.0,
+    }
 
 
 def test_idle_drone_accepts_command_and_starts_moving(fake_clock: FakeClock) -> None:
@@ -48,11 +68,13 @@ def test_moving_drone_rejects_new_command_and_keeps_current_task(
     drone = _drone(fake_clock)
     drone.handle_command(_command("task-17"))
 
-    assert drone.handle_command(_command("task-18", target=(0.0, 0.0, 15.0))) is False
+    assert (
+        drone.handle_command(_command("task-18", target=_at(0.0, 0.0, 15.0))) is False
+    )
     assert drone.task_id == "task-17"
     fake_clock.advance(1.0)
     drone.update()  # still flies toward task-17's target, not task-18's
-    assert drone.position == pytest.approx((1.2, 1.6, 15.0))
+    assert _metres(drone.position) == pytest.approx((1.2, 1.6, 15.0), abs=METRES)
 
 
 def test_resent_current_command_is_reacknowledged_without_restarting(
@@ -67,18 +89,18 @@ def test_resent_current_command_is_reacknowledged_without_restarting(
     fake_clock.advance(1.0)
     drone.update()
     # 2 s of flight in total, so the leg was not restarted by the resend.
-    assert drone.position == pytest.approx((2.4, 3.2, 15.0))
+    assert _metres(drone.position) == pytest.approx((2.4, 3.2, 15.0), abs=METRES)
 
 
 def test_resent_finished_command_is_reacknowledged_without_flying_again(
     fake_clock: FakeClock,
 ) -> None:
     drone = _drone(fake_clock)
-    drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0)))
+    drone.handle_command(_command("task-17", target=_at(2.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()  # ARRIVED
 
-    assert drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0))) is True
+    assert drone.handle_command(_command("task-17", target=_at(2.0, 0.0, 15.0))) is True
 
     fake_clock.advance(1.0)
     drone.update()
@@ -92,30 +114,32 @@ def test_reused_task_id_with_different_target_is_rejected_while_moving(
     drone.handle_command(_command("task-17"))
 
     with caplog.at_level(logging.WARNING, logger="src.mock_drone_fleet.mock_drone"):
-        reused = _command("task-17", target=(0.0, 0.0, 15.0))
+        reused = _command("task-17", target=_at(0.0, 0.0, 15.0))
         assert drone.handle_command(reused) is False
 
     assert "drone-03: rejecting task-17: task ID reused" in caplog.text
     fake_clock.advance(1.0)
     drone.update()  # still flying to the original target
-    assert drone.position == pytest.approx((1.2, 1.6, 15.0))
+    assert _metres(drone.position) == pytest.approx((1.2, 1.6, 15.0), abs=METRES)
 
 
 def test_reused_task_id_with_different_target_is_rejected_after_finishing(
     fake_clock: FakeClock,
 ) -> None:
     drone = _drone(fake_clock)
-    drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0)))
+    drone.handle_command(_command("task-17", target=_at(2.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()  # ARRIVED
 
-    assert drone.handle_command(_command("task-17", target=(9.0, 0.0, 15.0))) is False
+    assert (
+        drone.handle_command(_command("task-17", target=_at(9.0, 0.0, 15.0))) is False
+    )
     assert drone.mission_state is MissionState.ARRIVED
 
 
 def test_arrived_drone_accepts_new_command(fake_clock: FakeClock) -> None:
     drone = _drone(fake_clock)
-    drone.handle_command(_command(target=(1.0, 0.0, 15.0)))
+    drone.handle_command(_command(target=_at(1.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()
     assert drone.mission_state is MissionState.ARRIVED
@@ -132,7 +156,7 @@ def test_position_follows_elapsed_time_at_speed(fake_clock: FakeClock) -> None:
     drone.update()
 
     # 2 m along the 3-4-5 direction toward (30, 40).
-    assert drone.position == pytest.approx((1.2, 1.6, 15.0))
+    assert _metres(drone.position) == pytest.approx((1.2, 1.6, 15.0), abs=METRES)
     assert drone.mission_state is MissionState.MOVING
 
 
@@ -149,8 +173,10 @@ def test_position_does_not_depend_on_how_often_update_is_called(
     rarely.update()
 
     # 5 m after 2.5 s either way, with no error building up between updates.
-    assert rarely.position == pytest.approx((3.0, 4.0, 15.0))
-    assert often.position == pytest.approx(rarely.position)
+    assert _metres(rarely.position) == pytest.approx((3.0, 4.0, 15.0), abs=METRES)
+    assert _metres(often.position) == pytest.approx(
+        _metres(rarely.position), abs=METRES
+    )
 
 
 def test_drone_does_not_move_until_update_is_called(fake_clock: FakeClock) -> None:
@@ -159,7 +185,7 @@ def test_drone_does_not_move_until_update_is_called(fake_clock: FakeClock) -> No
 
     fake_clock.advance(5.0)
 
-    assert drone.position == (0.0, 0.0, 15.0)
+    assert drone.position == _at(0.0, 0.0, 15.0)
 
 
 def test_idle_drone_does_not_move(fake_clock: FakeClock) -> None:
@@ -168,13 +194,13 @@ def test_idle_drone_does_not_move(fake_clock: FakeClock) -> None:
     fake_clock.advance(10.0)
     drone.update()
 
-    assert drone.position == (0.0, 0.0, 15.0)
+    assert drone.position == _at(0.0, 0.0, 15.0)
     assert drone.mission_state is MissionState.IDLE
 
 
 def test_drone_stays_arrived_until_the_next_command(fake_clock: FakeClock) -> None:
     drone = _drone(fake_clock)
-    drone.handle_command(_command(target=(3.0, 0.0, 15.0)))
+    drone.handle_command(_command(target=_at(3.0, 0.0, 15.0)))
 
     fake_clock.advance(1.0)  # 2 m of 3 m
     drone.update()
@@ -182,7 +208,7 @@ def test_drone_stays_arrived_until_the_next_command(fake_clock: FakeClock) -> No
     fake_clock.advance(1.0)  # reaches target
     drone.update()
     assert drone.mission_state is MissionState.ARRIVED
-    assert drone.position == (3.0, 0.0, 15.0)
+    assert drone.position == _at(3.0, 0.0, 15.0)
 
     # Every later report repeats ARRIVED, so groundside can't miss it.
     for _ in range(5):
@@ -190,24 +216,24 @@ def test_drone_stays_arrived_until_the_next_command(fake_clock: FakeClock) -> No
         drone.update()
         assert drone.mission_state is MissionState.ARRIVED
         assert drone.task_id == "task-17"
-        assert drone.position == (3.0, 0.0, 15.0)
+        assert drone.position == _at(3.0, 0.0, 15.0)
 
     assert drone.handle_command(_command("task-18")) is True
 
 
 def test_next_leg_starts_from_where_previous_leg_ended(fake_clock: FakeClock) -> None:
     drone = _drone(fake_clock)
-    drone.handle_command(_command(target=(4.0, 0.0, 15.0)))
+    drone.handle_command(_command(target=_at(4.0, 0.0, 15.0)))
     fake_clock.advance(2.0)
     drone.update()  # ARRIVED at (4, 0, 15)
 
     # Wait a while; the new leg's timing starts when the command arrives.
     fake_clock.advance(30.0)
-    drone.handle_command(_command("task-18", target=(4.0, 10.0, 15.0)))
+    drone.handle_command(_command("task-18", target=_at(4.0, 10.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()
 
-    assert drone.position == pytest.approx((4.0, 2.0, 15.0))
+    assert _metres(drone.position) == pytest.approx((4.0, 2.0, 15.0), abs=METRES)
 
 
 def test_state_message_reports_yaw_from_command(fake_clock: FakeClock) -> None:
@@ -240,7 +266,7 @@ def test_invalid_constructor_arguments_raise(kwargs: dict[str, Any]) -> None:
 
 
 def test_malformed_url_raises_instead_of_retrying() -> None:
-    drone = MockDrone("drone-03", (0.0, 0.0, 0.0), speed=2.0)
+    drone = MockDrone("drone-03", HOME, speed=2.0)
 
     with pytest.raises(InvalidURI):
         asyncio.run(

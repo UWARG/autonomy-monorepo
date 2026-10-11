@@ -21,12 +21,19 @@ from typing import Any
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from src.mock_drone_fleet.geometry import GeoPosition, from_local
 from src.mock_drone_fleet.messages import (
     MessageType,
     MissionState,
     encode,
     make_message,
 )
+from src.mock_drone_fleet.mock_fleet import (
+    DEFAULT_HOME_LATITUDE,
+    DEFAULT_HOME_LONGITUDE,
+)
+
+DEFAULT_HOME = GeoPosition(DEFAULT_HOME_LATITUDE, DEFAULT_HOME_LONGITUDE, 0.0)
 
 logger = logging.getLogger("fake_groundside")
 
@@ -58,8 +65,10 @@ class FakeGroundside:
         area: float = 50.0,
         altitude: float = 15.0,
         seed: int | None = None,
+        home: GeoPosition = DEFAULT_HOME,
     ) -> None:
-        """Targets are random points in a square of side `area` m at `altitude` m."""
+        """Targets are random points up to `area` m north and east of `home`, at
+        `altitude` m above takeoff."""
         if not command_interval > 0:  # 0 would busy-loop the command loop
             raise ValueError(
                 f"command_interval must be positive, got {command_interval}"
@@ -67,6 +76,7 @@ class FakeGroundside:
         self._command_interval = command_interval
         self._area = area
         self._altitude = altitude
+        self._home = home
         self._rng = random.Random(seed)
         self._task_ids = (f"task-{n}" for n in itertools.count(1))
         self.completed_tasks: list[tuple[str, str]] = []  # (drone_id, task_id)
@@ -115,13 +125,13 @@ class FakeGroundside:
             state = payload["mission_state"]
             p = payload["position"]
             logger.info(
-                "%s %-7s %-8s (%6.1f, %6.1f, %6.1f)",
+                "%s %-7s %-8s (%.6f, %.6f, %5.1f m)",
                 drone_id,
                 state,
                 payload["task_id"],
-                p["x"],
-                p["y"],
-                p["z"],
+                p["latitude"],
+                p["longitude"],
+                p["altitude"],
             )
             # ARRIVED repeats every report until the next command; count it once.
             newly_arrived = (state, payload["task_id"]) != (
@@ -154,10 +164,14 @@ class FakeGroundside:
     ) -> None:
         """Send a LOCATION_COMMAND to a random target and mark it assigned."""
         task_id = next(self._task_ids)
+        east = self._rng.uniform(0.0, self._area)
+        north = self._rng.uniform(0.0, self._area)
+        point = from_local(self._home, (east, north, self._altitude))
         target = {
-            "x": round(self._rng.uniform(0.0, self._area), 1),
-            "y": round(self._rng.uniform(0.0, self._area), 1),
-            "z": self._altitude,
+            # 7 decimal places of a degree is about 1 cm.
+            "latitude": round(point.latitude, 7),
+            "longitude": round(point.longitude, 7),
+            "altitude": point.altitude,
         }
         payload = {
             "task_id": task_id,
@@ -181,14 +195,17 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--command-interval", type=float, default=3.0)
-    parser.add_argument("--area", type=float, default=50.0)
-    parser.add_argument("--altitude", type=float, default=15.0)
+    parser.add_argument("--home-latitude", type=float, default=DEFAULT_HOME_LATITUDE)
+    parser.add_argument("--home-longitude", type=float, default=DEFAULT_HOME_LONGITUDE)
+    parser.add_argument("--area", type=float, default=50.0, help="m")
+    parser.add_argument("--altitude", type=float, default=15.0, help="m above takeoff")
     parser.add_argument("--seed", type=int, default=None)
     args = parser.parse_args()
 
     try:
+        home = GeoPosition(args.home_latitude, args.home_longitude, 0.0)
         groundside = FakeGroundside(
-            args.command_interval, args.area, args.altitude, args.seed
+            args.command_interval, args.area, args.altitude, args.seed, home
         )
     except ValueError as error:
         parser.error(str(error))

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.geometry import GeoPosition, Vector3
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class LocationCommand:
     """A validated LOCATION_COMMAND payload."""
 
     task_id: str
-    target: Vector3
+    target: GeoPosition
     yaw: float
 
 
@@ -69,11 +69,10 @@ def drone_state(
     drone_id: str,
     task_id: str | None,
     mission_state: MissionState,
-    position: Vector3,
+    position: GeoPosition,
     orientation: Vector3,
 ) -> dict[str, Any]:
-    """Build DRONE_STATE. Position (x, y, z) in m; orientation in rad."""
-    x, y, z = position
+    """Build DRONE_STATE. Orientation is (roll, pitch, yaw) in radians."""
     roll, pitch, yaw = orientation
     return make_message(
         MessageType.DRONE_STATE,
@@ -81,7 +80,11 @@ def drone_state(
         {
             "task_id": task_id,
             "mission_state": mission_state.value,
-            "position": {"x": float(x), "y": float(y), "z": float(z)},
+            "position": {
+                "latitude": float(position.latitude),
+                "longitude": float(position.longitude),
+                "altitude": float(position.altitude),
+            },
             "orientation": {
                 "roll": float(roll),
                 "pitch": float(pitch),
@@ -96,12 +99,13 @@ def encode(message: dict[str, Any]) -> str:
     return json.dumps(message, allow_nan=False)
 
 
-def _finite(value: Any) -> float:
-    """`value` as a float, or raise unless it is a finite number (bools aren't)."""
+def _finite(value: Any, limit: float = math.inf) -> float:
+    """`value` as a float, or raise unless it is a finite number (bools aren't)
+    within ±`limit`."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise TypeError(f"not a number: {value!r}")
-    if not math.isfinite(value):
-        raise ValueError(f"not finite: {value!r}")
+    if not math.isfinite(value) or abs(value) > limit:
+        raise ValueError(f"out of range: {value!r}")
     return float(value)
 
 
@@ -118,7 +122,11 @@ def parse_location_command(raw: str | bytes, drone_id: str) -> LocationCommand |
         if not isinstance(task_id, str) or not task_id:
             raise ValueError(f"invalid task_id: {task_id!r}")
         target = payload["target"]
-        position = (_finite(target["x"]), _finite(target["y"]), _finite(target["z"]))
+        position = GeoPosition(
+            latitude=_finite(target["latitude"], limit=90.0),
+            longitude=_finite(target["longitude"], limit=180.0),
+            altitude=_finite(target["altitude"]),
+        )
         yaw = _finite(payload["orientation"]["yaw"])
     except (ValueError, KeyError, TypeError) as error:
         # json and Unicode decode errors are ValueErrors; KeyError/TypeError cover

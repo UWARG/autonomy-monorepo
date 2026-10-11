@@ -68,7 +68,7 @@ def test_repeated_arrived_reports_count_the_task_once() -> None:
         "payload": {
             "task_id": "task-1",
             "mission_state": "ARRIVED",
-            "position": {"x": 1.0, "y": 2.0, "z": 15.0},
+            "position": {"latitude": 43.0, "longitude": -80.0, "altitude": 15.0},
             "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
         },
     }

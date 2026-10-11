@@ -2,7 +2,7 @@
 
 import math
 
-from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.geometry import GeoPosition, Vector3, from_local, to_local
 
 
 def step_toward(position: Vector3, target: Vector3, speed: float, dt: float) -> Vector3:
@@ -27,3 +27,18 @@ def step_toward(position: Vector3, target: Vector3, speed: float, dt: float) -> 
         position[1] + dy * scale,
         position[2] + dz * scale,
     )
+
+
+def step_toward_geo(
+    start: GeoPosition, target: GeoPosition, speed: float, dt: float
+) -> GeoPosition:
+    """Move from `start` toward `target` in a straight line at `speed` m/s for `dt` s.
+
+    Works in metres east/north/up around `start`, and returns `target` exactly once
+    it is reached.
+    """
+    local_target = to_local(start, target)
+    offset = step_toward((0.0, 0.0, 0.0), local_target, speed, dt)
+    if offset is local_target:  # step_toward hands back `target` itself on arrival
+        return target
+    return from_local(start, offset)

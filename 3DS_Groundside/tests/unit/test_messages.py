@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from src.mock_drone_fleet.geometry import GeoPosition
 from src.mock_drone_fleet.messages import (
     LocationCommand,
     MessageType,
@@ -54,7 +55,7 @@ def test_drone_state_matches_spec() -> None:
         "drone-03",
         "task-17",
         MissionState.MOVING,
-        position=(30.0, 20.0, 15.0),
+        position=GeoPosition(43.4725, -80.5447, 15.0),
         orientation=(1.53, 2.12, 1.57),
     )
 
@@ -62,21 +63,27 @@ def test_drone_state_matches_spec() -> None:
     assert message["payload"] == {
         "task_id": "task-17",
         "mission_state": "MOVING",
-        "position": {"x": 30.0, "y": 20.0, "z": 15.0},
+        "position": {"latitude": 43.4725, "longitude": -80.5447, "altitude": 15.0},
         "orientation": {"roll": 1.53, "pitch": 2.12, "yaw": 1.57},
     }
 
 
 def test_drone_state_before_first_command_has_null_task_id() -> None:
     message = drone_state(
-        "drone-03", None, MissionState.IDLE, (0.0, 0.0, 15.0), (0.0, 0.0, 0.0)
+        "drone-03",
+        None,
+        MissionState.IDLE,
+        GeoPosition(43.0, -80.0, 15.0),
+        (0.0, 0.0, 0.0),
     )
 
     assert json.loads(encode(message))["payload"]["task_id"] is None
 
 
 def test_drone_state_sends_integer_inputs_as_floats() -> None:
-    message = drone_state("drone-03", None, MissionState.IDLE, (1, 2, 3), (0, 0, 0))
+    message = drone_state(
+        "drone-03", None, MissionState.IDLE, GeoPosition(43, -80, 15), (0, 0, 0)
+    )
 
     payload = json.loads(encode(message))["payload"]
     numbers = [*payload["position"].values(), *payload["orientation"].values()]
@@ -91,7 +98,7 @@ def test_encode_round_trips_built_messages() -> None:
             "drone-03",
             "task-17",
             MissionState.ARRIVED,
-            (1.0, 2.0, 3.0),
+            GeoPosition(43.0, -80.0, 15.0),
             (0.0, 0.0, 0.0),
         ),
     ):
@@ -104,7 +111,7 @@ def test_encode_rejects_non_finite_numbers(bad_value: float) -> None:
         "drone-03",
         "task-17",
         MissionState.MOVING,
-        (bad_value, 0.0, 0.0),
+        GeoPosition(bad_value, -80.0, 15.0),
         (0.0, 0.0, 0.0),
     )
 
@@ -118,17 +125,17 @@ def _command(drone_id: str = "drone-03", **payload_overrides: Any) -> str:
 
 def test_parse_valid_location_command() -> None:
     assert parse_location_command(_command(), "drone-03") == LocationCommand(
-        task_id="task-17", target=(30.0, 20.0, 15.0), yaw=1.57
+        task_id="task-17", target=GeoPosition(43.4725, -80.5447, 15.0), yaw=1.57
     )
 
 
 def test_parse_accepts_bytes_and_integer_coordinates() -> None:
-    raw = _command(target={"x": 30, "y": 20, "z": 15}).encode()
+    raw = _command(target={"latitude": 43, "longitude": -80, "altitude": 15}).encode()
 
     command = parse_location_command(raw, "drone-03")
 
     assert command is not None
-    assert command.target == (30.0, 20.0, 15.0)
+    assert command.target == GeoPosition(43.0, -80.0, 15.0)
 
 
 def test_parse_logs_why_it_ignored_a_command(caplog: pytest.LogCaptureFixture) -> None:
@@ -151,11 +158,14 @@ def test_parse_logs_why_it_ignored_a_command(caplog: pytest.LogCaptureFixture) -
         _command(task_id=""),
         _command(task_id=17),
         _command(target=None),
-        _command(target={"x": 30.0, "y": 20.0}),
-        _command(target={"x": "30", "y": 20.0, "z": 15.0}),
-        _command(target={"x": True, "y": 20.0, "z": 15.0}),
+        _command(target={"latitude": 43.0, "longitude": -80.0}),  # no altitude
+        _command(target={"x": 30.0, "y": 20.0, "z": 15.0}),  # old xyz format
+        _command(target={"latitude": "43", "longitude": -80.0, "altitude": 15.0}),
+        _command(target={"latitude": True, "longitude": -80.0, "altitude": 15.0}),
         # Python's json accepts NaN literals, so they can reach the parser.
-        _command(target={"x": math.nan, "y": 20.0, "z": 15.0}),
+        _command(target={"latitude": math.nan, "longitude": -80.0, "altitude": 15.0}),
+        _command(target={"latitude": 91.0, "longitude": -80.0, "altitude": 15.0}),
+        _command(target={"latitude": 43.0, "longitude": -181.0, "altitude": 15.0}),
         _command(orientation={}),
         _command(orientation={"yaw": "north"}),
     ],

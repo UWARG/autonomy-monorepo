@@ -15,7 +15,7 @@ from multiprocessing.synchronize import Event
 import pytest
 from websockets.asyncio.server import serve
 
-from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.geometry import GeoPosition
 from src.mock_drone_fleet.mock_fleet import SHUTDOWN_GRACE_S, FleetConfig, run_fleet
 from tests.fake_groundside import FakeGroundside
 
@@ -24,14 +24,14 @@ from tests.fake_groundside import FakeGroundside
 
 
 def _crashing_worker(
-    drone_id: str, url: str, start: Vector3, speed: float, period: float, level: str,
+    drone_id: str, url: str, start: GeoPosition, speed: float, period: float, level: str,
     stop_event: Event,
 ) -> None:  # fmt: skip
     raise RuntimeError(f"{drone_id} failed on purpose")
 
 
 def _stubborn_worker(
-    drone_id: str, url: str, start: Vector3, speed: float, period: float, level: str,
+    drone_id: str, url: str, start: GeoPosition, speed: float, period: float, level: str,
     stop_event: Event,
 ) -> None:  # fmt: skip
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -39,7 +39,7 @@ def _stubborn_worker(
 
 
 def _polite_worker(
-    drone_id: str, url: str, start: Vector3, speed: float, period: float, level: str,
+    drone_id: str, url: str, start: GeoPosition, speed: float, period: float, level: str,
     stop_event: Event,
 ) -> None:  # fmt: skip
     stop_event.wait(30)

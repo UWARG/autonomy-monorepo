@@ -11,10 +11,15 @@ import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
 from src.mock_drone_fleet import mock_drone
+from src.mock_drone_fleet.geometry import GeoPosition, from_local
 from src.mock_drone_fleet.mock_drone import MockDrone
 from tests.fakes import make_location_command
 
 Handler = Callable[[ServerConnection], Awaitable[None]]
+
+HOME = GeoPosition(43.4723, -80.5449, 0.0)
+# 5 m away (3 m east, 4 m north) at 15 m up: about 0.5 s of flight at 10 m/s.
+TARGET = from_local(HOME, (3.0, 4.0, 15.0))._asdict()
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +31,10 @@ def _fast_reconnect(monkeypatch: pytest.MonkeyPatch) -> None:
 def _fast_drone() -> MockDrone:
     """A drone that reports every 50 ms, to keep tests short."""
     return MockDrone(
-        "drone-01", start_position=(0.0, 0.0, 15.0), speed=10.0, report_period=0.05
+        "drone-01",
+        start_position=from_local(HOME, (0.0, 0.0, 15.0)),
+        speed=10.0,
+        report_period=0.05,
     )
 
 
@@ -57,7 +65,7 @@ def test_drone_registers_acks_flies_and_stays_arrived() -> None:
 
         async def groundside(websocket: ServerConnection) -> None:
             received.append(json.loads(await websocket.recv()))  # REGISTER
-            target = {"x": 3.0, "y": 4.0, "z": 15.0}
+            target = TARGET
             for task_id in ("task-1", "task-2"):
                 command = make_location_command(
                     "drone-01", task_id=task_id, target=target
@@ -92,7 +100,7 @@ def test_drone_registers_acks_flies_and_stays_arrived() -> None:
 
     for arrived in states[-2:]:
         assert arrived["task_id"] == "task-1"
-        assert arrived["position"] == {"x": 3.0, "y": 4.0, "z": 15.0}
+        assert arrived["position"] == TARGET
 
 
 def test_drone_reregisters_and_continues_mission_after_disconnect() -> None:
@@ -109,7 +117,7 @@ def test_drone_reregisters_and_continues_mission_after_disconnect() -> None:
 
             if connections == 1:
                 # Start a 5 m flight (0.5 s), then drop the drone mid-flight.
-                target = {"x": 3.0, "y": 4.0, "z": 15.0}
+                target = TARGET
                 command = make_location_command(
                     "drone-01", task_id="task-1", target=target
                 )
@@ -140,4 +148,4 @@ def test_drone_reregisters_and_continues_mission_after_disconnect() -> None:
     states = _payloads(second_session, "DRONE_STATE")
     assert all(s["task_id"] == "task-1" for s in states)
     assert states[-1]["mission_state"] == "ARRIVED"
-    assert states[-1]["position"] == {"x": 3.0, "y": 4.0, "z": 15.0}
+    assert states[-1]["position"] == TARGET

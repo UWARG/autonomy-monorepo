@@ -22,7 +22,7 @@ from typing import Callable
 from websockets.exceptions import InvalidURI
 from websockets.uri import parse_uri
 
-from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.geometry import GeoPosition, from_local
 from src.mock_drone_fleet.mock_drone import MockDrone
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ POLL_INTERVAL_S = 0.5
 # Drones poll their stop flag once per report, so allow a report period plus margin.
 SHUTDOWN_GRACE_S = 2.0
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
+# Default takeoff point: University of Waterloo.
+DEFAULT_HOME_LATITUDE = 43.4723
+DEFAULT_HOME_LONGITUDE = -80.5449
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,8 @@ class FleetConfig:
     num_drones: int
     url: str
     speed: float = 5.0
+    home_latitude: float = DEFAULT_HOME_LATITUDE
+    home_longitude: float = DEFAULT_HOME_LONGITUDE
     spacing: float = 5.0
     altitude: float = 15.0
     report_period: float = 1.0
@@ -56,6 +61,10 @@ class FleetConfig:
         for name in ("spacing", "altitude"):
             if not math.isfinite(getattr(self, name)):
                 raise ValueError(f"{name} must be finite, got {getattr(self, name)}")
+        for name, limit in (("home_latitude", 90.0), ("home_longitude", 180.0)):
+            value = getattr(self, name)
+            if not math.isfinite(value) or abs(value) > limit:
+                raise ValueError(f"{name} must be within ±{limit:g}, got {value}")
         try:
             parse_uri(self.url)
         except InvalidURI as error:
@@ -68,16 +77,18 @@ def drone_ids(num_drones: int) -> list[str]:
     return [f"drone-{n:0{width}d}" for n in range(1, num_drones + 1)]
 
 
-def start_positions(num_drones: int, spacing: float, altitude: float) -> list[Vector3]:
-    """Drones in a line along x, `spacing` m apart, so they aren't all equally close
-    to every target."""
-    return [(i * spacing, 0.0, altitude) for i in range(num_drones)]
+def start_positions(
+    num_drones: int, home: GeoPosition, spacing: float, altitude: float
+) -> list[GeoPosition]:
+    """Drones in a line heading east from `home`, `spacing` m apart at `altitude` m
+    above takeoff, so they aren't all equally close to every target."""
+    return [from_local(home, (i * spacing, 0.0, altitude)) for i in range(num_drones)]
 
 
 def drone_worker(
     drone_id: str,
     url: str,
-    start_position: Vector3,
+    start_position: GeoPosition,
     speed: float,
     report_period: float,
     log_level: str,
@@ -98,7 +109,7 @@ def drone_worker(
     asyncio.run(drone.run(url, should_stop))
 
 
-Worker = Callable[[str, str, Vector3, float, float, str, Event], None]
+Worker = Callable[[str, str, GeoPosition, float, float, str, Event], None]
 
 
 def run_fleet(
@@ -111,7 +122,10 @@ def run_fleet(
     """
     config.validate()
     ids = drone_ids(config.num_drones)
-    positions = start_positions(config.num_drones, config.spacing, config.altitude)
+    home = GeoPosition(config.home_latitude, config.home_longitude, 0.0)
+    positions = start_positions(
+        config.num_drones, home, config.spacing, config.altitude
+    )
     processes = [
         multiprocessing.Process(
             target=worker,
@@ -202,8 +216,14 @@ def parse_args(argv: list[str] | None = None) -> FleetConfig:
     parser.add_argument("--num-drones", type=int, default=3)
     parser.add_argument("--url", default="ws://127.0.0.1:8765")
     parser.add_argument("--speed", type=float, default=5.0, help="m/s")
+    parser.add_argument(
+        "--home-latitude", type=float, default=DEFAULT_HOME_LATITUDE, help="degrees"
+    )
+    parser.add_argument(
+        "--home-longitude", type=float, default=DEFAULT_HOME_LONGITUDE, help="degrees"
+    )
     parser.add_argument("--spacing", type=float, default=5.0, help="m between drones")
-    parser.add_argument("--altitude", type=float, default=15.0, help="m")
+    parser.add_argument("--altitude", type=float, default=15.0, help="m above takeoff")
     parser.add_argument("--report-period", type=float, default=1.0, help="s")
     parser.add_argument("--log-level", default="INFO", choices=LOG_LEVELS)
     args = parser.parse_args(argv)
@@ -212,6 +232,8 @@ def parse_args(argv: list[str] | None = None) -> FleetConfig:
         num_drones=args.num_drones,
         url=args.url,
         speed=args.speed,
+        home_latitude=args.home_latitude,
+        home_longitude=args.home_longitude,
         spacing=args.spacing,
         altitude=args.altitude,
         report_period=args.report_period,
