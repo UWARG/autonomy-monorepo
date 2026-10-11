@@ -1,0 +1,12 @@
+name = "obstacle-avoidance"
+description = "Drone avoids obstacles while staying on task"
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+test = "uv run pytest"
+"test:unit" = "uv run pytest tests/unit"
+"test:integration" = "uv run pytest tests/integration"
+run = "uv run python -m obstacle-avoidance"
+lint = "uv run ruff check ."

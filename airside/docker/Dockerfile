@@ -4,13 +4,21 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 SHELL ["/bin/bash", "-lc"]
 
+ARG ROS_SNAPSHOT=2026-08-07
+COPY airside/docker/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+RUN rm /etc/apt/sources.list.d/ros2.sources \
+  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.asc\n' \
+     "${ROS_SNAPSHOT}" > /etc/apt/sources.list.d/ros2-snapshot.sources
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     geographiclib-tools \
     git \
     python3-colcon-common-extensions \
+    python3-numpy \
     python3-pip \
     python3-pytest \
     python3-rosdep \
+    python3-shapely \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
@@ -34,8 +42,9 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
+COPY perception/ /monorepo/perception/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install /monorepo/camera /monorepo/utils /monorepo/perception
 
 COPY airside/src/ src/
 

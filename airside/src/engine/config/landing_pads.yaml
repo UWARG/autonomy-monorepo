@@ -1,0 +1,16 @@
+# Landing pads for the dropping sequence. Each pad is a drop
+# location; `alt` is the relative altitude to fly to above the
+# pad in GUIDED mode before the final LAND-mode descent onto it.
+#
+# TODO: replace these values with the real pad coordinates once 
+#they are known.
+landing_pads:
+  - lat: 43.4338803
+    lon: -80.5775947
+    alt: 10
+  - lat: 43.4340313
+    lon: -80.5779689
+    alt: 10
+  - lat: 43.4339319
+    lon: -80.5780172
+    alt: 10

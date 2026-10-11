@@ -22,3 +22,12 @@ ESTIMATED_LAP_TIME_SEC = "estimated_lap_time_sec"
 
 # Time in seconds when the current lap started
 LATEST_LAP_START_TIME_SEC = "latest_lap_start_time_sec"
+
+# Number of payload items still on board for the dropping sequence
+ITEMS_REMAINING = "items_remaining"
+
+# Landing pads not yet claimed for a drop (claiming a pad removes it here)
+FREE_LANDING_PADS = "free_landing_pads"
+
+# The landing pad currently being dropped on
+TARGET_LANDING_PAD = "target_landing_pad"

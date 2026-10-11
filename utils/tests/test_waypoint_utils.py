@@ -5,6 +5,7 @@ import pytest
 from src.types import Coordinate
 from src.waypoint_utils import (
     east_north_coordinate_offset_m,
+    parse_landing_pads_file,
     parse_waypoints_file,
     sort_clockwise_sweep,
 )
@@ -131,6 +132,61 @@ def test_parse_rejects_invalid_yaml(tmp_path):
 def test_parse_missing_file(tmp_path):
     with pytest.raises(OSError):
         parse_waypoints_file(tmp_path / "nope.yaml")
+
+
+def _write_landing_pads(tmp_path, content):
+    path = tmp_path / "landing_pads.yaml"
+    path.write_text(content)
+    return path
+
+
+def test_parse_landing_pads(tmp_path):
+    path = _write_landing_pads(
+        tmp_path,
+        """
+        landing_pads:
+          - {lat: 43.47, lon: -80.54, alt: 10}
+          - lat: 43.48
+            lon: -80.55
+            alt: 12
+        """,
+    )
+    assert parse_landing_pads_file(path) == [
+        Coordinate(43.47, -80.54, 10.0),
+        Coordinate(43.48, -80.55, 12.0),
+    ]
+
+
+def test_parse_landing_pads_empty_file(tmp_path):
+    path = _write_landing_pads(tmp_path, "\n# only comments\n")
+    assert parse_landing_pads_file(path) == []
+
+
+def test_parse_landing_pads_rejects_non_mapping_root(tmp_path):
+    path = _write_landing_pads(tmp_path, "- 43.47\n- -80.54\n")
+    with pytest.raises(ValueError):
+        parse_landing_pads_file(path)
+
+
+def test_parse_landing_pads_rejects_missing_keys(tmp_path):
+    path = _write_landing_pads(
+        tmp_path, "landing_pads:\n  - {lat: 43.47, lon: -80.54}\n"
+    )
+    with pytest.raises(ValueError):
+        parse_landing_pads_file(path)
+
+
+def test_parse_landing_pads_rejects_out_of_range_coordinates(tmp_path):
+    path = _write_landing_pads(
+        tmp_path, "landing_pads:\n  - {lat: 91.0, lon: -80.54, alt: 10}\n"
+    )
+    with pytest.raises(ValueError):
+        parse_landing_pads_file(path)
+
+
+def test_parse_landing_pads_missing_file(tmp_path):
+    with pytest.raises(OSError):
+        parse_landing_pads_file(tmp_path / "nope.yaml")
 
 
 def test_enu_offset_scale():

@@ -31,6 +31,7 @@ def find_repo_root_or_none(start: Path | None = None) -> Path | None:
 class Registry:
     def __init__(self, root: Path):
         self.root = root.resolve()
+        self.include_paths: tuple[str, ...] = ()
         self.entries = self._load_entries()
         self.projects = self._load_materialized_projects()
 
@@ -43,6 +44,8 @@ class Registry:
 
         with registry_path.open("rb") as file:
             data = tomllib.load(file)
+
+        self.include_paths = self._parse_include_paths(data)
 
         projects = data.get("projects")
         if not isinstance(projects, dict) or not projects:
@@ -71,13 +74,62 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: project '{name}' path must be "
                     "repo-relative."
                 )
+            extra_paths = self._parse_extra_paths(name, metadata)
             if name in entries:
                 raise ManifestError(
                     f"{ROOT_REGISTRY_FILENAME}: duplicate project '{name}'."
                 )
-            entries[name] = ProjectEntry(name=name, path=path)
+            entries[name] = ProjectEntry(
+                name=name, path=path, extra_paths=extra_paths
+            )
 
         return dict(sorted(entries.items()))
+
+    def _parse_include_paths(self, data: dict[str, Any]) -> tuple[str, ...]:
+        raw = data.get("include_paths", [])
+        if not isinstance(raw, list) or not all(
+            isinstance(item, str) for item in raw
+        ):
+            raise ManifestError(
+                f"{ROOT_REGISTRY_FILENAME}: 'include_paths' must be a list of "
+                "strings."
+            )
+        for item in raw:
+            if not item:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: 'include_paths' must not contain "
+                    "empty strings."
+                )
+            if Path(item).is_absolute() or ".." in Path(item).parts:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: 'include_paths' must be "
+                    "repo-relative."
+                )
+        return tuple(raw)
+
+    def _parse_extra_paths(
+        self, name: str, metadata: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raw = metadata.get("extra_paths", [])
+        if not isinstance(raw, list) or not all(
+            isinstance(item, str) for item in raw
+        ):
+            raise ManifestError(
+                f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must be "
+                "a list of strings."
+            )
+        for item in raw:
+            if not item:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
+                    "not contain empty strings."
+                )
+            if Path(item).is_absolute() or ".." in Path(item).parts:
+                raise ManifestError(
+                    f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
+                    "be repo-relative."
+                )
+        return tuple(raw)
 
     def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}

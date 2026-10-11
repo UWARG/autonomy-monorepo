@@ -1,0 +1,17 @@
+name = "3ds"
+description = "ROS 2 Humble workspace for the 3DS setpoint photo mission."
+
+depends_on = ["utils", "camera"]
+
+[commands]
+setup = "docker compose build"
+build = "docker compose build"
+run = "docker compose up"
+compose-up = "docker compose up -d"
+compose-down = "docker compose down"
+logs = "docker compose logs -f"
+test = "echo 'Tests are not implemented yet'"
+shell = "docker compose run --rm 3ds bash"
+
+[ci]
+pr = ["test"]

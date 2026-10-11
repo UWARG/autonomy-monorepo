@@ -8,6 +8,7 @@ from pathlib import Path
 class ProjectEntry:
     name: str
     path: str
+    extra_paths: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
