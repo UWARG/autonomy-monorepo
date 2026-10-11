@@ -10,8 +10,8 @@ from typing import Any, Callable
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
 
-from src import mock_drone
-from src.mock_drone import MockDrone
+from src.mock_drone_fleet import mock_drone
+from src.mock_drone_fleet.mock_drone import MockDrone
 from tests.fakes import make_location_command
 
 Handler = Callable[[ServerConnection], Awaitable[None]]

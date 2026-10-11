@@ -15,8 +15,8 @@ from multiprocessing.synchronize import Event
 import pytest
 from websockets.asyncio.server import serve
 
-from src.geometry import Vector3
-from src.mock_fleet import SHUTDOWN_GRACE_S, FleetConfig, run_fleet
+from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.mock_fleet import SHUTDOWN_GRACE_S, FleetConfig, run_fleet
 from tests.fake_groundside import FakeGroundside
 
 # Stub workers. They run in child processes, so they must be module-level functions
@@ -111,7 +111,7 @@ def test_fleet_reports_failure_when_drones_crash(
 ) -> None:
     config = FleetConfig(num_drones=2, url="ws://127.0.0.1:1", report_period=0.05)
 
-    with caplog.at_level(logging.ERROR, logger="src.mock_fleet"):
+    with caplog.at_level(logging.ERROR, logger="src.mock_drone_fleet.mock_fleet"):
         exit_code = run_fleet(config, multiprocessing.Event(), _crashing_worker)
 
     assert exit_code == 1
@@ -128,7 +128,7 @@ def test_drones_that_ignore_stop_are_terminated_within_one_shared_timeout(
     stop_event = multiprocessing.Event()
     threading.Timer(1.0, stop_event.set).start()  # let the processes start first
 
-    with caplog.at_level(logging.ERROR, logger="src.mock_fleet"):
+    with caplog.at_level(logging.ERROR, logger="src.mock_drone_fleet.mock_fleet"):
         started = time.monotonic()
         exit_code = run_fleet(config, stop_event, _stubborn_worker)
         elapsed = time.monotonic() - started
@@ -157,7 +157,7 @@ def test_ctrl_c_during_startup_stops_the_drones_already_started(
     monkeypatch.setattr(BaseProcess, "start", start_then_interrupt)
     config = FleetConfig(num_drones=3, url="ws://127.0.0.1:1", report_period=0.05)
 
-    with caplog.at_level(logging.INFO, logger="src.mock_fleet"):
+    with caplog.at_level(logging.INFO, logger="src.mock_drone_fleet.mock_fleet"):
         exit_code = run_fleet(config, multiprocessing.Event(), _polite_worker)
 
     assert exit_code == 0  # the one started drone stopped cleanly

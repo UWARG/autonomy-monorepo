@@ -1,4 +1,4 @@
-"""Unit tests for src.mock_drone that need no network connection."""
+"""Unit tests for src.mock_drone_fleet.mock_drone that need no network connection."""
 
 import asyncio
 import logging
@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from websockets.exceptions import InvalidURI
 
-from src.geometry import Vector3
-from src.messages import LocationCommand, MissionState
-from src.mock_drone import MockDrone
+from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.messages import LocationCommand, MissionState
+from src.mock_drone_fleet.mock_drone import MockDrone
 from tests.fakes import FakeClock
 
 
@@ -94,7 +94,7 @@ def test_reused_task_id_with_different_target_is_rejected_while_moving(
     drone = _drone(fake_clock)
     drone.handle_command(_command("task-17"))
 
-    with caplog.at_level(logging.WARNING, logger="src.mock_drone"):
+    with caplog.at_level(logging.WARNING, logger="src.mock_drone_fleet.mock_drone"):
         reused = _command("task-17", target=(0.0, 0.0, 15.0))
         assert drone.handle_command(reused) is False
 

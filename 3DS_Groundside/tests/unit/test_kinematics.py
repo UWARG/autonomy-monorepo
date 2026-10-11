@@ -1,10 +1,10 @@
-"""Unit tests for src.kinematics."""
+"""Unit tests for src.mock_drone_fleet.kinematics."""
 
 import math
 
 import pytest
 
-from src.kinematics import step_toward
+from src.mock_drone_fleet.kinematics import step_toward
 
 
 def test_happy_case_moves_max_step_along_line_to_target() -> None:

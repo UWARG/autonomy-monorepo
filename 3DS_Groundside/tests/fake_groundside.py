@@ -21,7 +21,12 @@ from typing import Any
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from src.messages import MessageType, MissionState, encode, make_message
+from src.mock_drone_fleet.messages import (
+    MessageType,
+    MissionState,
+    encode,
+    make_message,
+)
 
 logger = logging.getLogger("fake_groundside")
 

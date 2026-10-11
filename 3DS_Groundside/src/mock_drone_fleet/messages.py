@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from src.geometry import Vector3
+from src.mock_drone_fleet.geometry import Vector3
 
 logger = logging.getLogger(__name__)
 

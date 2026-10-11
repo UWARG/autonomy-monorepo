@@ -1,4 +1,4 @@
-"""Unit tests for src.messages."""
+"""Unit tests for src.mock_drone_fleet.messages."""
 
 import json
 import logging
@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from src.messages import (
+from src.mock_drone_fleet.messages import (
     LocationCommand,
     MessageType,
     MissionState,
@@ -132,7 +132,7 @@ def test_parse_accepts_bytes_and_integer_coordinates() -> None:
 
 
 def test_parse_logs_why_it_ignored_a_command(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.DEBUG, logger="src.messages"):
+    with caplog.at_level(logging.DEBUG, logger="src.mock_drone_fleet.messages"):
         assert parse_location_command(_command("drone-03"), "drone-01") is None
 
     assert "addressed to 'drone-03'" in caplog.text

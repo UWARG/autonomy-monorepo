@@ -13,9 +13,9 @@ from typing import Any, Callable
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import InvalidURI, WebSocketException
 
-from src.geometry import Vector3
-from src.kinematics import step_toward
-from src.messages import (
+from src.mock_drone_fleet.geometry import Vector3
+from src.mock_drone_fleet.kinematics import step_toward
+from src.mock_drone_fleet.messages import (
     LocationCommand,
     MissionState,
     command_ack,
