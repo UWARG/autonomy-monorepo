@@ -49,7 +49,7 @@ def _payloads(received: list[dict[str, Any]], msg_type: str) -> list[dict[str, A
     return [m["payload"] for m in received if m["type"] == msg_type]
 
 
-def test_drone_registers_acks_flies_and_returns_to_idle() -> None:
+def test_drone_registers_acks_flies_and_stays_arrived() -> None:
     received: list[dict[str, Any]] = []
 
     async def scenario() -> None:
@@ -64,15 +64,15 @@ def test_drone_registers_acks_flies_and_returns_to_idle() -> None:
                 )
                 await websocket.send(json.dumps(command))
 
-            seen_arrived = False
+            arrived_reports = 0
             async for raw in websocket:
                 message = json.loads(raw)
                 received.append(message)
-                state = message["payload"].get("mission_state")
-                seen_arrived = seen_arrived or state == "ARRIVED"
-                if seen_arrived and state == "IDLE":
-                    done.set()
-                    return
+                if message["payload"].get("mission_state") == "ARRIVED":
+                    arrived_reports += 1
+                    if arrived_reports == 2:
+                        done.set()
+                        return
 
         await _run_against(groundside, done, received)
 
@@ -88,12 +88,11 @@ def test_drone_registers_acks_flies_and_returns_to_idle() -> None:
     states = _payloads(received, "DRONE_STATE")
     mission_states = [s["mission_state"] for s in states]
     assert "MOVING" in mission_states
-    assert mission_states.count("ARRIVED") == 1
-    assert mission_states[-1] == "IDLE"
+    assert mission_states[-2:] == ["ARRIVED", "ARRIVED"]
 
-    arrived = next(s for s in states if s["mission_state"] == "ARRIVED")
-    assert arrived["task_id"] == "task-1"
-    assert arrived["position"] == {"x": 3.0, "y": 4.0, "z": 15.0}
+    for arrived in states[-2:]:
+        assert arrived["task_id"] == "task-1"
+        assert arrived["position"] == {"x": 3.0, "y": 4.0, "z": 15.0}
 
 
 def test_drone_reregisters_and_continues_mission_after_disconnect() -> None:

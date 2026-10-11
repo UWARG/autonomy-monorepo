@@ -38,7 +38,7 @@ def test_new_idle_drone_is_available() -> None:
     assert _DroneView(mission_state="IDLE").available
 
 
-def test_drone_is_not_available_until_idle_on_assigned_task() -> None:
+def test_drone_is_not_available_until_it_finishes_the_assigned_task() -> None:
     view = _DroneView(mission_state="IDLE", assigned_task="task-1")
 
     # Report sent before the drone processed task-1: still IDLE on its old task.
@@ -48,9 +48,35 @@ def test_drone_is_not_available_until_idle_on_assigned_task() -> None:
     view.mission_state, view.task_id = "MOVING", "task-1"
     assert not view.available
     view.mission_state = "ARRIVED"
-    assert not view.available
-    view.mission_state = "IDLE"
     assert view.available
+
+
+def test_stale_arrived_report_for_previous_task_is_not_available() -> None:
+    # Just sent task-2, but the drone's next report still says ARRIVED on task-1.
+    view = _DroneView(mission_state="ARRIVED", task_id="task-1", assigned_task="task-2")
+
+    assert not view.available
+
+
+def test_repeated_arrived_reports_count_the_task_once() -> None:
+    groundside = FakeGroundside()
+    view = _DroneView()
+    arrived = {
+        "type": "DRONE_STATE",
+        "drone_id": "drone-01",
+        "timestamp": 0.0,
+        "payload": {
+            "task_id": "task-1",
+            "mission_state": "ARRIVED",
+            "position": {"x": 1.0, "y": 2.0, "z": 15.0},
+            "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": 0.0},
+        },
+    }
+
+    for _ in range(3):
+        groundside._on_message("drone-01", view, arrived)
+
+    assert groundside.completed_tasks == [("drone-01", "task-1")]
 
 
 def test_drone_that_has_not_reported_yet_is_not_available() -> None:

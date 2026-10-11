@@ -77,15 +77,12 @@ def test_resent_finished_command_is_reacknowledged_without_flying_again(
     drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()  # ARRIVED
-    fake_clock.advance(1.0)
-    drone.update()  # IDLE
 
     assert drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0))) is True
 
     fake_clock.advance(1.0)
     drone.update()
-    # Stays IDLE rather than reporting task-17 as ARRIVED a second time.
-    assert drone.mission_state is MissionState.IDLE
+    assert drone.mission_state is MissionState.ARRIVED
 
 
 def test_reused_task_id_with_different_target_is_rejected_while_moving(
@@ -111,20 +108,20 @@ def test_reused_task_id_with_different_target_is_rejected_after_finishing(
     drone.handle_command(_command("task-17", target=(2.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()  # ARRIVED
-    drone.update()  # IDLE
 
     assert drone.handle_command(_command("task-17", target=(9.0, 0.0, 15.0))) is False
-    assert drone.mission_state is MissionState.IDLE
+    assert drone.mission_state is MissionState.ARRIVED
 
 
-def test_arrived_drone_rejects_new_command(fake_clock: FakeClock) -> None:
+def test_arrived_drone_accepts_new_command(fake_clock: FakeClock) -> None:
     drone = _drone(fake_clock)
     drone.handle_command(_command(target=(1.0, 0.0, 15.0)))
     fake_clock.advance(1.0)
     drone.update()
     assert drone.mission_state is MissionState.ARRIVED
 
-    assert drone.handle_command(_command("task-18")) is False
+    assert drone.handle_command(_command("task-18")) is True
+    assert drone.mission_state is MissionState.MOVING
 
 
 def test_position_follows_elapsed_time_at_speed(fake_clock: FakeClock) -> None:
@@ -175,9 +172,7 @@ def test_idle_drone_does_not_move(fake_clock: FakeClock) -> None:
     assert drone.mission_state is MissionState.IDLE
 
 
-def test_full_mission_cycle_returns_to_idle_and_accepts_next_command(
-    fake_clock: FakeClock,
-) -> None:
+def test_drone_stays_arrived_until_the_next_command(fake_clock: FakeClock) -> None:
     drone = _drone(fake_clock)
     drone.handle_command(_command(target=(3.0, 0.0, 15.0)))
 
@@ -188,12 +183,14 @@ def test_full_mission_cycle_returns_to_idle_and_accepts_next_command(
     drone.update()
     assert drone.mission_state is MissionState.ARRIVED
     assert drone.position == (3.0, 0.0, 15.0)
-    fake_clock.advance(
-        1.0
-    )  # ARRIVED is reported for one update, then the drone is free
-    drone.update()
-    assert drone.mission_state is MissionState.IDLE
-    assert drone.task_id == "task-17"  # last task stays visible to groundside
+
+    # Every later report repeats ARRIVED, so groundside can't miss it.
+    for _ in range(5):
+        fake_clock.advance(1.0)
+        drone.update()
+        assert drone.mission_state is MissionState.ARRIVED
+        assert drone.task_id == "task-17"
+        assert drone.position == (3.0, 0.0, 15.0)
 
     assert drone.handle_command(_command("task-18")) is True
 
@@ -203,10 +200,8 @@ def test_next_leg_starts_from_where_previous_leg_ended(fake_clock: FakeClock) ->
     drone.handle_command(_command(target=(4.0, 0.0, 15.0)))
     fake_clock.advance(2.0)
     drone.update()  # ARRIVED at (4, 0, 15)
-    fake_clock.advance(1.0)
-    drone.update()  # IDLE
 
-    # Idle for a while; the new leg's timing starts when the command arrives.
+    # Wait a while; the new leg's timing starts when the command arrives.
     fake_clock.advance(30.0)
     drone.handle_command(_command("task-18", target=(4.0, 10.0, 15.0)))
     fake_clock.advance(1.0)

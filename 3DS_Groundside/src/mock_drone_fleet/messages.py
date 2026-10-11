@@ -25,7 +25,7 @@ class MessageType(str, Enum):
 
 
 class MissionState(str, Enum):
-    """Mission states in DRONE_STATE. Only IDLE drones take new tasks."""
+    """Mission states in DRONE_STATE. IDLE and ARRIVED drones can take new tasks."""
 
     IDLE = "IDLE"
     MOVING = "MOVING"

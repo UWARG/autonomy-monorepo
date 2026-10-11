@@ -53,7 +53,8 @@ class _Leg:
 class MockDrone:
     """A simulated drone that flies in a straight line to commanded targets.
 
-    States cycle IDLE -> MOVING -> ARRIVED (for one update) -> IDLE.
+    States go IDLE -> MOVING -> ARRIVED, and the drone stays ARRIVED until its next
+    command. IDLE and ARRIVED drones are free.
     """
 
     def __init__(
@@ -102,7 +103,7 @@ class MockDrone:
         return self._command.task_id if self._command else None
 
     def handle_command(self, command: LocationCommand) -> bool:
-        """Return whether the command is accepted. Only IDLE drones take new tasks; an
+        """Return whether the command is accepted. MOVING drones reject new tasks; an
         exact resend of the last command is re-accepted without restarting."""
         if self._command is not None and command.task_id == self._command.task_id:
             if command == self._command:
@@ -113,7 +114,7 @@ class MockDrone:
                 command.task_id,
             )
             return False
-        if self._mission_state is not MissionState.IDLE:
+        if self._mission_state is MissionState.MOVING:
             self._log.info(
                 "rejecting %s, still %s on %s",
                 command.task_id,
@@ -134,17 +135,16 @@ class MockDrone:
 
     def update(self) -> None:
         """Recompute position and mission state from the clock."""
-        if self._mission_state is MissionState.ARRIVED:
-            self._mission_state = MissionState.IDLE
+        if self._leg is None:
+            return  # IDLE or ARRIVED: nothing moves until the next command
+        elapsed = self._clock() - self._leg.start_time
+        self._position = step_toward(
+            self._leg.start_position, self._leg.target, self._speed, elapsed
+        )
+        if self._position == self._leg.target:
+            self._log.info("arrived for %s", self.task_id)
+            self._mission_state = MissionState.ARRIVED
             self._leg = None
-        elif self._leg is not None:
-            elapsed = self._clock() - self._leg.start_time
-            self._position = step_toward(
-                self._leg.start_position, self._leg.target, self._speed, elapsed
-            )
-            if self._position == self._leg.target:
-                self._log.info("arrived for %s", self.task_id)
-                self._mission_state = MissionState.ARRIVED
 
     def state_message(self) -> dict[str, Any]:
         """The DRONE_STATE message describing the drone right now."""

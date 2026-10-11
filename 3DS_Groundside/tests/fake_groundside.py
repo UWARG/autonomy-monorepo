@@ -41,9 +41,10 @@ class _DroneView:
 
     @property
     def available(self) -> bool:
-        # A drone that just got a command may still report IDLE for its old task,
-        # so wait until it reports IDLE for the task we assigned.
-        return self.mission_state == MissionState.IDLE and (
+        # A drone that just got a command may still report its old task, so wait
+        # until it reports being free on the task we assigned.
+        free = self.mission_state in (MissionState.IDLE, MissionState.ARRIVED)
+        return free and (
             self.assigned_task is None or self.task_id == self.assigned_task
         )
 
@@ -122,7 +123,12 @@ class FakeGroundside:
                 p["y"],
                 p["z"],
             )
-            if state == MissionState.ARRIVED:
+            # ARRIVED repeats every report until the next command; count it once.
+            newly_arrived = (state, payload["task_id"]) != (
+                view.mission_state,
+                view.task_id,
+            )
+            if state == MissionState.ARRIVED and newly_arrived:
                 self.completed_tasks.append((drone_id, payload["task_id"]))
             view.mission_state = state
             view.task_id = payload["task_id"]
