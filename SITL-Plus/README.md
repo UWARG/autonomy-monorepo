@@ -46,6 +46,9 @@ Depth is stored in centimetres (`uint16`) and logged with `meter=100` so Rerun d
 
 Camera threads and the physics loop run concurrently; scene props (plane, barrels, hoop, etc.) are spawned in `main.py` for visual/ranging targets.
 
+### Configuring sensors
+Cameras and range finders are defined in `src/sensor_ports.yaml`. This file is mounted into the container as a volume, so you can add or edit sensors and just restart the container (`docker compose up`) without rebuilding the image.
+
 ### Visualization (Rerun)
 
 - App id: `SITL-Plus` (`rr.init` in `main.py`)
