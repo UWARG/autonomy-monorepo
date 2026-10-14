@@ -6,15 +6,13 @@ import { ros } from '../ros.js';
 const DASH = '\u2014';
 
 const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
-  active: { className: 'pill-ok', label: 'ACTIVE' },
-  degraded: { className: 'pill-warn', label: 'DEGRADED' },
-  lost: { className: 'pill-bad', label: 'LOST' },
+  armed: { className: 'pill-ok', label: 'ARMED' },
+  off: { className: 'pill-bad', label: 'OFF' },
 };
 
 const STATUS_SUMMARY: Record<ConnectionStatus, string> = {
-  active: 'MAVLink heartbeat nominal',
-  degraded: 'Heartbeat irregular \u2014 check link quality',
-  lost: 'No heartbeat \u2014 drone unreachable',
+  armed: 'MAVLink heartbeat nominal',
+  off: 'No heartbeat \u2014 drone unreachable',
 };
 
 function Row({
@@ -40,6 +38,7 @@ interface Empty {
 
 export default function ConnectionWidget() {
   const [connection, setConnection] = useState<ConnectionMessage>();
+  
 
   useEffect(() => {
     const poseTopic = new ROSLIB.Topic<Empty>({
@@ -48,17 +47,21 @@ export default function ConnectionWidget() {
       messageType: 'std_msgs/Empty'
     });
 
-    const onPose = () => {
-      // might need to change values in the future.
-      const status = 'active';
-      const transport = 'placeholder';
-      const heartbeatHz = 1;
+    let timeoutId = 1;
 
-      setConnection({status, transport, heartbeatHz})
+    const onHeartbeat = () => {
+      // might need to change values in the future.
+      clearTimeout(timeoutId);
+
+      setConnection({status: 'armed', transport: 'placeholder', heartbeatHz: 1});
+
+      timeoutId = setTimeout(() => {
+        setConnection({status: 'off', transport: 'placeholder', heartbeatHz: 0});
+      }, 5000);
     }
 
-    poseTopic.subscribe(onPose);
-    return () => poseTopic.unsubscribe(onPose);
+    poseTopic.subscribe(onHeartbeat);
+    return () => poseTopic.unsubscribe(onHeartbeat);
   }, []);
 
   const pill = connection
