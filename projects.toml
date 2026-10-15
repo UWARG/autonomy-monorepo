@@ -17,17 +17,20 @@ path = "camera"
 [projects.utils]
 path = "utils"
 
-[projects.mav_comms]
-path = "mav_comms"
-
 [projects.ims]
 path = "ims"
 
 [projects.airside]
 path = "airside"
 
+[projects.3ds]
+path = "3ds"
+
 [projects.gesture_control]
 path = "gesture_control"
 
 [projects.target_tracking]
 path = "target_tracking"
+
+[projects.3DS_Groundside]
+path = "3DS_Groundside"

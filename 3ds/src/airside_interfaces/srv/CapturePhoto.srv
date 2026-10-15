@@ -1,0 +1,11 @@
+# Save the latest camera frame as a photo.
+
+# Where the photo was meant to be taken.
+Coordinate setpoint
+# Measured drone position when the capture was requested (NaN if no GPS fix).
+Coordinate position
+---
+bool success
+# Saved photo file, set on success.
+string path
+string message

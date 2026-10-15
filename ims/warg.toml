@@ -1,7 +1,7 @@
 name = "ims"
 description = "Intelligent Monitoring System — WebSocket server and React dashboard."
 
-depends_on = ["utils", "mav_comms", "camera"]
+depends_on = ["utils", "camera"]
 
 [commands]
 setup = "uv sync && pnpm --dir frontend install"
