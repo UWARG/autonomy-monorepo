@@ -7,6 +7,9 @@ top-down map of the whole area.
 Each photo only needs its GPS position (lat, lon, alt). Drone heading and
 camera field of view are not needed: they are worked out from the photos.
 
+For a full beginner-friendly explanation of how it works, see
+[OVERVIEW.md](OVERVIEW.md).
+
 ## Usage
 
 ```python
