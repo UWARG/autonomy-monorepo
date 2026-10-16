@@ -5,8 +5,12 @@ description = "Groundside operator tooling for 3DS autonomy."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "torch>=2.2",
+]
 
 [project.urls]
 Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/3DS_Groundside"
@@ -21,6 +25,20 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+# Vendored third-party code, kept as close to upstream as possible.
+extend-exclude = ["src/image_stitcher/third_party"]
+
+# CPU-only PyTorch: the default Linux wheel bundles CUDA and is several GB.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
