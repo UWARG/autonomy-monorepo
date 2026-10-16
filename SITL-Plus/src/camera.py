@@ -3,7 +3,6 @@
 import logging
 import os
 import struct
-import time
 
 import cv2
 import numpy as np
@@ -12,6 +11,7 @@ import rerun as rr
 
 import constants
 import state
+from frame_timer import FrameTimer
 
 prev_state = state.update
 
@@ -83,7 +83,6 @@ class Camera:
         self.projection_matrix = p.computeProjectionMatrixFOV(
             self.fov, self.aspect, self.near, self.far
         )
-        time.sleep(1 / constants.CAMERA_FPS)
 
     def capture_image(self):
         """Capture RGB, depth, and segmentation images from PyBullet."""
@@ -97,7 +96,9 @@ class Camera:
 
     def camera_thread(self):
         """Capture images and send them over UDP and to Rerun."""
+        timer = FrameTimer(constants.CAMERA_FPS)
         while True:
+            timer.wait()
             self.update()
             self.capture_image()
             rgba_array = np.asarray(self.rgb_img, dtype=np.uint8).reshape(
