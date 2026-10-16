@@ -47,7 +47,7 @@ Likely engineering reasons are:
 
 The main limitation is that this application provides only the current destination, with no outgoing velocity or explicit preview of the next leg. Whether that causes substantial slowing must be established from logs or simulation.
 
-## 2. Candidate approaches and why they matter
+## 2. Approaches
 
 These approaches operate at different levels. A **planner** creates a route; a **follower** tracks it. They can be combined rather than treated as mutually exclusive replacements.
 
@@ -94,27 +94,3 @@ These are qualitative engineering judgments about implementation effort and suit
 | Spline / Bezier + speed profile | Planner, paired with a follower | Allows deliberate turn geometry and speed scheduling | More integration work; smoothness alone does not guarantee speed or compliance | Main custom-planning candidate |
 | Dubins + suitable follower | Geometric planner | Explicit minimum turning radius | Simplified aircraft model; requires headings | Prioritize if fixed-wing cruise is confirmed |
 | Built-in ArduPilot navigation | Existing navigation stack | Tests whether existing capabilities address the performance gap | Depends on firmware, parameters, aircraft, and mission integration | First practical comparison for the relevant aircraft |
-
-## 4. Proposed recommendation
-
-**Keep the current approach as the baseline, evaluate the applicable built-in ArduPilot navigation, and research a smooth path plus speed profile as the main custom alternative.**
-
-Why this order:
-
-1. A baseline prevents claiming improvements without evidence.
-2. Existing navigation may deliver the required behavior with less custom code to maintain.
-3. A custom smooth-path approach targets turn geometry and speed scheduling directly, while allowing explicit course constraints.
-4. Lookahead following is worth investigating as a tracking component, not automatically as a complete replacement planner.
-5. If fixed-wing cruise is confirmed, Dubins planning and L1 tracking become more relevant comparison points.
-
-No final performance winner can be selected from code inspection alone.
-
-## 5. How to validate the recommendation
-
-- Use identical waypoint order, course constraints, aircraft model, speed limits, and acceleration limits for every comparison.
-- Include the final-to-first segment when measuring a closed lap. Measure between successive crossings of the same start/finish reference, after the initial approach.
-- Record valid completed laps, lap time, closest approach to required waypoints, boundary violations, turn speeds, and tracking error.
-- Compare several runs and include wind/disturbance cases. Report median lap time and completion rate; reject apparent speed gains caused by skipping waypoints or shortening the permitted course.
-- Verify lap completion independently of the current bookkeeping: the waypoint index advances when a target is loaded, and the tree converts waypoint-loop failures into success. A failed final waypoint must not count as a completed lap.
-
-The current 1 m acceptance radius and 120 s lapping duration are implementation settings, not verified competition requirements. Before implementation, confirm the applicable competition year, required waypoint-passing geometry, aircraft/flight mode, and flight-controller configuration. Those unknowns should remain explicit rather than be guessed.
