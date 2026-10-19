@@ -10,6 +10,8 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",
     "torch>=2.2",
+    # Needed by XFeat, which torch.hub loads from GitHub (see features.py).
+    "tqdm>=4.0",
 ]
 
 [project.urls]
@@ -26,10 +28,6 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-
-[tool.ruff]
-# Vendored third-party code, kept as close to upstream as possible.
-extend-exclude = ["src/image_stitcher/third_party"]
 
 # CPU-only PyTorch: the default Linux wheel bundles CUDA and is several GB.
 [[tool.uv.index]]

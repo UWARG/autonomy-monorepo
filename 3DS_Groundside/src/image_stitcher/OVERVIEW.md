@@ -109,10 +109,10 @@ descriptor, so keypoints from two photos can be paired up by comparing
 descriptors (`features.py`).
 
 XFeat runs on the CPU (it uses a GPU automatically if PyTorch finds one) and
-takes a fraction of a second per photo. It is vendored, meaning a copy of
-its code and trained weights lives in `third_party/xfeat/`, because it can't
-be installed with pip. Its licence (Apache 2.0) allows this, and its
-`__init__.py` records exactly which version was copied and what was changed.
+takes a fraction of a second per photo. It can't be installed with pip, so
+`features.py` loads it straight from its GitHub repo with **torch.hub**,
+pinned to one commit. The first run downloads the code and trained weights
+(about 6 MB) into `~/.cache/torch/hub`; after that it runs from the cache.
 
 **The rotation problem.** XFeat recognises a spot only if the photo is
 roughly the same way up. Turned more than about 45°, matching fails. Since
@@ -262,7 +262,6 @@ The output (`files.py`):
 | `files.py` | Writing `map.png`/`map.json`; reading photo runs saved by the 3ds airside camera node |
 | `synthetic.py` | Fake missions with known ground truth, for tests and the demo |
 | `demo.py` | Runs a fake 3-drone mission end to end |
-| `third_party/xfeat/` | Vendored XFeat code, weights and licence |
 
 ## 5. Testing
 
@@ -335,9 +334,11 @@ These shaped the design, and are worth knowing before changing it.
   available. Both are recovered from the data.
 - **XFeat** was chosen by the PM. It's faster than SIFT on CPU and more robust
   than ORB.
-- **Vendored XFeat and weights (6 MB)** so it works with no internet at the
-  field. The weights were checked byte-for-byte against the official repo and
-  load in PyTorch's safe mode, which can't execute code.
+- **XFeat loaded from its official repo with torch.hub** instead of keeping a
+  copy in our repo (requested in review). Code and weights are pinned to one
+  commit, and the weights load in PyTorch's safe mode, which can't execute
+  code. The first run needs internet, so **run the stitcher once on the
+  groundside laptop before going to the field** to fill the cache.
 - **CPU-only PyTorch** via a uv package index, so CI doesn't download the
   multi-GB CUDA build.
 - **Rendering redraws everything** rather than updating in place, because
@@ -377,4 +378,4 @@ These shaped the design, and are worth knowing before changing it.
 | Drift | Small placement errors adding up along a chain of photos |
 | Bundle adjustment | Re-solving all placements together to remove drift |
 | Georeference | Tie an image to real GPS coordinates |
-| Vendoring | Copying a third-party library's code into your repo |
+| torch.hub | PyTorch's loader for models published in a GitHub repo |

@@ -35,6 +35,10 @@ on a worker thread, saving periodically, until `stop_event` is set.
 `files.load_photo_run(run_dir)` reads a photo run saved by the 3ds airside
 camera node (`photos.jsonl` + PNGs).
 
+The first run needs internet: XFeat is downloaded from its GitHub repo with
+`torch.hub` (pinned commit, about 6 MB) and cached in `~/.cache/torch/hub`.
+Run the demo once on the groundside laptop before going to the field.
+
 Demo on a synthetic 3-drone mission (writes `stitcher_demo/map.png` and
 `ground_truth.png` for comparison):
 
@@ -78,7 +82,6 @@ weights that fade towards each photo's edges, hiding seams.
 | `geo.py` | GPS / local metre / pixel geometry |
 | `files.py` | Writing maps, reading 3ds airside photo runs |
 | `synthetic.py` | Fake missions with known ground truth, for tests and the demo |
-| `third_party/xfeat/` | Vendored XFeat model and weights (Apache 2.0, see its `__init__.py`) |
 
 ## Accuracy
 

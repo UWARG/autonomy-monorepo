@@ -10,7 +10,16 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 
-from src.image_stitcher.third_party.xfeat import XFeat
+# XFeat isn't pip installable, so it is loaded from its GitHub repo with
+# torch.hub. The first run downloads the code and weights (about 6 MB) into
+# ~/.cache/torch/hub; later runs use that cache and need no internet.
+# Pinned to one commit so upstream changes can't change our results.
+XFEAT_COMMIT = "e92685f57f8318b18725c5c8c0bd28c7fe188d9a"
+XFEAT_REPO = f"verlab/accelerated_features:{XFEAT_COMMIT}"
+XFEAT_WEIGHTS_URL = (
+    "https://github.com/verlab/accelerated_features/raw/"
+    f"{XFEAT_COMMIT}/weights/xfeat.pt"
+)
 
 # XFeat is not rotation invariant: it stops recognising points once an image
 # is turned more than roughly 45 degrees. Drones on a lawn mower path turn
@@ -65,7 +74,7 @@ class XFeatMatcher:
             than this (-1 keeps every mutual match and leaves filtering to
             RANSAC)
         """
-        self._xfeat = XFeat(top_k=top_k)
+        self._xfeat = load_xfeat(top_k)
         self._min_cosine_similarity = min_cosine_similarity
 
     def extract(self, rgb: np.ndarray) -> ImageFeatures:
@@ -111,6 +120,30 @@ class XFeatMatcher:
             keypoints=output["keypoints"].cpu().numpy().astype(np.float32),
             descriptors=output["descriptors"],
         )
+
+
+def load_xfeat(top_k: int) -> torch.nn.Module:
+    """
+    Loads the pretrained XFeat model from the pinned upstream commit.
+    """
+    # skip_validation: the commit hash can't change, so there's no need to ask
+    # the GitHub API (which is rate limited) whether it exists.
+    xfeat = torch.hub.load(
+        XFEAT_REPO,
+        "XFeat",
+        pretrained=False,
+        top_k=top_k,
+        trust_repo=True,
+        skip_validation=True,
+    )
+    weights = torch.hub.load_state_dict_from_url(
+        XFEAT_WEIGHTS_URL,
+        map_location=xfeat.dev,
+        progress=False,
+        weights_only=True,
+    )
+    xfeat.net.load_state_dict(weights)
+    return xfeat
 
 
 def unrotate_points(
