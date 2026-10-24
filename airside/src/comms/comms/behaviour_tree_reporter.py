@@ -1,8 +1,10 @@
-"""
-Behaviour tree reporter: numbers in every node in the mission tree, builds a table describing the tree
-reports which node is running by the number 
-"""
-import py_trees
+
+# Behaviour tree reporter: numbers every node in the mission tree and saves the
+#table to a file that is copied to the ground before takeoff. In flight, only
+#the number of the running node is sent over STATUSTEXT ("S,<number>").
+
+from pathlib import Path
+
 import rclpy
 from rclpy.node import Node
 from py_trees_ros_interfaces.msg import BehaviourTree
@@ -10,102 +12,87 @@ from py_trees_ros_interfaces.srv import OpenSnapshotStream
 
 from engine.ground_log import send_to_ground
 
-def local_tree_table (root: py_trees.behaviour.Behaviour):
-    ids = {} #used to look up node number
-    table = [] # sent to the ground, includes number, parent number, name of the node
-
-    def visit(node, parent_number):
-        number = len(table)
-        ids[node.id] = number
-        table.append((number, parent_number, node.name))
-        for child in node.children:
-            visit(child, number)
-
-    visit(root, -1) # root has no parent, so -1
-    return ids, table
-
-def local_running_id(root: py_trees.behaviour.Behaviour, ids: dict) -> int | None:
-    running = [
-        ids[node.id]
-        for node in root.iterate()
-        if node.status == py_trees.common.Status.RUNNING
-    ]
-    return max(running) if running else None
+# Mounted to airside/log/ on the host
+TREE_FILE = Path("/ros_ws/log/behaviour_tree.txt")
 
 
-def table_to_messages(table):
-    # short text message per node that includes, the number, parent, and name 
+def table_to_lines(table):
+    # one line per node: number, parent, name
     return [f"T,{number},{parent},{name}" for number, parent, name in table]
+
 
 class BehaviourTreeReporter(Node):
 
     def __init__(self):
         super().__init__("behaviour_tree_reporter")
-            
-        #maps a node UUID as bytes so it can be a key (our node id our number)
+
+        # maps a node UUID as bytes so it can be a key (our node id our number)
         self._ids: dict[bytes, int] = {}
         self._parents: dict[int, int] = {}
         self._table: list[tuple[int, int, str]] = []
         self._last_running_number: int | None = None
-        self._sub = None #created once we know the real topic name 
+        self._sub = None  # created once we know the real topic name
 
-        # open the snapshot stream to get the behaviour tree snapshots
-        self._open_snapshot_stream()
+        self._client = self.create_client(
+            OpenSnapshotStream, "/engine_manager/snapshot_streams/open"
+        )
+        # keep trying until the engine's tree is up
+        self._open_timer = self.create_timer(2.0, self._open_snapshot_stream)
 
-        # Resend the tree table periodically for ground stations that connect late
-        self.create_timer(30.0, self._resend_table)
-    
-
+        # resend the running node for ground stations that connect late
+        self.create_timer(30.0, self._resend_running)
 
     def _open_snapshot_stream(self) -> None:
-        client = self.create_client(OpenSnapshotStream, "/engine_manager/snapshot_streams/open")
-
-        if not client.wait_for_service(timeout_sec=10.0):
-            self.get_logger().error("Service not available: open_snapshot_stream")
+        if not self._client.service_is_ready():
+            self.get_logger().info(
+                "waiting for the engine's snapshot stream service",
+                throttle_duration_sec=10.0,
+            )
             return
+
+        self._open_timer.cancel()  # only open the stream once
 
         request = OpenSnapshotStream.Request()
         request.topic_name = ""
-        request.parameters.snapshot_period = 0.5 # 5 seconds it asks for updates -> 
+        request.parameters.snapshot_period = 0.5  # seconds between snapshots
         request.parameters.blackboard_data = False
         request.parameters.blackboard_activity = False
         # once it replies run the callback to subscribe to the real topic name
-        future = client.call_async(request)
+        future = self._client.call_async(request)
         future.add_done_callback(self._on_stream_opened)
-    
 
     def _on_stream_opened(self, future) -> None:
         # response is the topic name to subscribe to for the snapshots
-        response = future.result()
-        topic_name = response.topic_name
+        topic_name = future.result().topic_name
         self.get_logger().info(f"subscribing to snapshot topic: {topic_name}")
         self._sub = self.create_subscription(
             BehaviourTree, topic_name, self._on_snapshot, 10
         )
-    def _depth(self, number: int) -> int: # counts how far behavior is from root for parent relations 
+
+    def _depth(self, number: int) -> int:  # how far a behaviour is from the root
         depth = 0
         while number in self._parents:
             parent = self._parents[number]
-            if parent == -1: 
+            if parent == -1:
                 break
-
             depth += 1
             number = parent
-
         return depth
-    def _resend_table(self) -> None:
-        if not self._table:
-            return
 
-        for message in table_to_messages(self._table):
-            send_to_ground(self, message)
-
+    def _resend_running(self) -> None:
         if self._last_running_number is not None:
             send_to_ground(self, f"S,{self._last_running_number}")
-            
+
+    def _save_table(self) -> None:
+        TREE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TREE_FILE.write_text("\n".join(table_to_lines(self._table)) + "\n")
+        self.get_logger().info(
+            f"saved tree table ({len(self._table)} nodes) to {TREE_FILE}"
+        )
+
     def _on_snapshot(self, msg: BehaviourTree) -> None:
-        # First snapshot (or whenever we see a new node): (re)build the
-        # table and send it to the ground.
+        # First snapshot (or whenever we see a new node): rebuild the table
+        # and save it for the ground.
         table_changed = False
         for behaviour in msg.behaviours:
             key = bytes(behaviour.own_id.uuid)
@@ -115,16 +102,15 @@ class BehaviourTreeReporter(Node):
 
         if table_changed:
             self._table = []
-            for behaviour in msg.behaviours: 
+            for behaviour in msg.behaviours:
                 number = self._ids[bytes(behaviour.own_id.uuid)]
                 parent_key = bytes(behaviour.parent_id.uuid)
                 parent_number = self._ids.get(parent_key, -1)  # root has no parent, so -1
                 self._table.append((number, parent_number, behaviour.name))
                 self._parents[number] = parent_number
-            for message in table_to_messages(self._table):
-                send_to_ground(self, message)
+            self._save_table()
 
-        # Now find whichever node is RUNNING and report it if it changed.
+        #  find whichever node is RUNNING and report it if it changed.
         running_numbers = [
             self._ids[bytes(behaviour.own_id.uuid)]
             for behaviour in msg.behaviours
