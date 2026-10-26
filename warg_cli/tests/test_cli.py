@@ -1196,3 +1196,13 @@ def test_bootcamp_prints_manual_fork_steps_when_forking_fails(
     assert "gh repo fork UWARG/autonomy-bootcamp --clone=false" in output
     assert "https://github.com/UWARG/autonomy-bootcamp" in output
     assert "Click 'Fork'" in output
+
+
+def test_info_shows_startup_commands(startup_repo: Path, monkeypatch) -> None:
+    monkeypatch.chdir(startup_repo)
+
+    result = runner.invoke(app, ["info", "gesture_control"])
+
+    assert result.exit_code == 0
+    assert "Startup commands (restart: always):" in result.stdout
+    assert "sim:replay" in result.stdout
