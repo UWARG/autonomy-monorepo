@@ -16,3 +16,7 @@ class CommandError(WargError):
 
 class GitError(WargError):
     """Raised when a Git operation cannot be completed."""
+
+
+class StartupError(WargError):
+    """Raised when startup services cannot be installed or managed."""
