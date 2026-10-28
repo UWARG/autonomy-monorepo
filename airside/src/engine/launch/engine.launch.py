@@ -73,6 +73,15 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
+                package="engine",
+                executable="rosbag_controller",
+                name="ims_rosbag_controller",
+                output="both",
+                # Allow graceful flush plus bounded TERM/KILL cleanup of a stuck child.
+                sigterm_timeout="35",
+                sigkill_timeout="5",
+            ),
+            Node(
                 package="wrapper",
                 executable="camera",
                 name="camera_node",

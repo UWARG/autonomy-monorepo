@@ -32,6 +32,7 @@ setup(
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
             "heartbeat = engine.heartbeat_node:main",
+            "rosbag_controller = engine.rosbag_node:main",
         ],
     },
 )
