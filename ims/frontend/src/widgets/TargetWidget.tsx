@@ -1,21 +1,42 @@
-import type { PositionMessage, TargetMessage } from '../types';
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
+import { TOPICS } from '../topics';
 
 /**
- * A drone position stamped with client receipt time (ms epoch). The airside
- * PositionPayload carries no timestamp, so App records arrival time; the trail
- * is windowed on that — "positions received in the last N seconds" — rather
- * than an unbounded count of whatever rate happens to arrive.
+ * Drone position stamped with client receipt time (ms epoch). NavSatFix carries
+ * a header stamp, but the trail is about cadence as the ground station saw it,
+ * so arrival time is what gets recorded.
  */
-export interface TrailSample {
+interface TrailSample {
   lat: number;
   lon: number;
   t: number;
 }
 
+interface Fix {
+  latitude: number;
+  longitude: number;
+  altitude: number;
+}
+
+/** airside_interfaces/Target: a colour name plus a Coordinate. */
+interface TargetMsg {
+  colour: string;
+  location: { lat: number; lon: number; alt: number };
+}
+
 /** Seconds of history the trail represents. */
 const TRAIL_WINDOW_S = 20;
+/** Hard cap so a long flight cannot grow the trail without bound. */
+const TRAIL_MAX = 600;
 
 const PLOT_HALF_RANGE_M = 60;
+
+/** mavros republishes the fix at ~5 Hz, so this much silence means it stopped. */
+const FIX_STALE_AFTER_MS = 5000;
+/** Re-evaluated on a timer so a stopped feed is noticed without new messages. */
+const TICK_MS = 1000;
 
 const DASH = '\u2014';
 
@@ -55,27 +76,61 @@ function enuOffsetM(
 const VIEW = 200; // svg viewbox size
 const CENTER = VIEW / 2;
 
-export default function TargetWidget({
-  position,
-  target,
-  trail = [],
-}: {
-  position?: PositionMessage;
-  target?: TargetMessage;
-  trail?: TrailSample[];
-}) {
-  const haveDrone = !!position;
-  const haveTarget = !!(position && target);
+export default function TargetWidget() {
+  const [fix, setFix] = useState<Fix | null>(null);
+  const [fixAt, setFixAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+  const [target, setTarget] = useState<TargetMsg | null>(null);
+  const [trail, setTrail] = useState<TrailSample[]>([]);
+
+  useEffect(() => {
+    const fixTopic = new ROSLIB.Topic<Fix>({
+      ros,
+      name: TOPICS.globalPosition.name,
+      messageType: TOPICS.globalPosition.type,
+    });
+    const targetTopic = new ROSLIB.Topic<TargetMsg>({
+      ros,
+      name: TOPICS.target.name,
+      messageType: TOPICS.target.type,
+    });
+
+    fixTopic.subscribe((message) => {
+      const at = Date.now();
+      setFix(message);
+      setFixAt(at);
+      setTrail((prev) =>
+        [...prev, { lat: message.latitude, lon: message.longitude, t: at }].slice(-TRAIL_MAX),
+      );
+    });
+    targetTopic.subscribe(setTarget);
+
+    const ticker = window.setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => {
+      window.clearInterval(ticker);
+      fixTopic.unsubscribe();
+      targetTopic.unsubscribe();
+    };
+  }, []);
+
+  // A frozen panel is worse than an empty one: once the feed stops, the last
+  // fix (and the trail it anchors) is dropped rather than drawn as current.
+  const stale = fix != null && now - fixAt > FIX_STALE_AFTER_MS;
+  const live = stale ? null : fix;
+
+  const haveDrone = live != null;
+  const haveTarget = !!(live && target);
 
   const distance = haveTarget
-    ? haversineM(position!.lat, position!.lon, target!.lat, target!.lon)
+    ? haversineM(live.latitude, live.longitude, target.location.lat, target.location.lon)
     : null;
   const bearing = haveTarget
-    ? bearingDeg(position!.lat, position!.lon, target!.lat, target!.lon)
+    ? bearingDeg(live.latitude, live.longitude, target.location.lat, target.location.lon)
     : null;
 
-  const newestT = trail.length ? trail[trail.length - 1].t : 0;
-  const cutoff = newestT - TRAIL_WINDOW_S * 1000;
+  // Wall-clock window, so a stopped feed lets the trail expire instead of
+  // pinning it to the last sample received.
+  const cutoff = now - TRAIL_WINDOW_S * 1000;
   const recentTrail = trail.filter((s) => s.t >= cutoff);
 
   const scale = (CENTER - 24) / PLOT_HALF_RANGE_M; // px per metre
@@ -87,8 +142,8 @@ export default function TargetWidget({
 
   let targetPt: { x: number; y: number } | null = null;
   let targetClamped = false;
-  if (haveTarget && position && target) {
-    const o = enuOffsetM(position.lat, position.lon, target.lat, target.lon);
+  if (live && target) {
+    const o = enuOffsetM(live.latitude, live.longitude, target.location.lat, target.location.lon);
     const range = Math.hypot(o.east, o.north);
     if (range > PLOT_HALF_RANGE_M) {
       const k = PLOT_HALF_RANGE_M / range;
@@ -99,17 +154,17 @@ export default function TargetWidget({
     }
   }
 
-  const trailPts = position
+  const trailPts = live
     ? recentTrail.map((p) => {
-        const o = enuOffsetM(position.lat, position.lon, p.lat, p.lon);
+        const o = enuOffsetM(live.latitude, live.longitude, p.lat, p.lon);
         return project(o.east, o.north);
       })
     : [];
 
-  const trackingPill = target?.tracking
-    ? { className: 'pill-accent', label: `${target.label ?? 'TARGET'} \u00B7 TRACKING` }
+  const targetPill = stale
+    ? { className: 'pill-warn', label: 'STALE' }
     : target
-      ? { className: 'pill bg-edge text-ink-3', label: `${target.label ?? 'TARGET'} \u00B7 IDLE` }
+      ? { className: 'pill-accent', label: `${target.colour || 'TARGET'} · DETECTED` }
       : { className: 'pill bg-edge text-ink-3', label: 'NO TARGET' };
 
   return (
@@ -124,8 +179,13 @@ export default function TargetWidget({
       }}
     >
       <header className="flex items-center justify-between gap-4">
-        <h2 className="widget-label">Position / Target</h2>
-        <span className={trackingPill.className}>{trackingPill.label}</span>
+        <div className="flex items-baseline gap-2">
+          <h2 className="widget-label">Position / Target</h2>
+          <span className="font-mono text-[11px] text-ink-3">
+            {live ? `${live.latitude.toFixed(5)}, ${live.longitude.toFixed(5)}` : DASH}
+          </span>
+        </div>
+        <span className={targetPill.className}>{targetPill.label}</span>
       </header>
 
       <div
@@ -205,7 +265,7 @@ export default function TargetWidget({
             </>
           ) : (
             <text x={CENTER} y={CENTER} textAnchor="middle" fontSize="10" fill="var(--tgt-ink3)">
-              No position data
+              Awaiting {TOPICS.globalPosition.name}
             </text>
           )}
         </svg>
@@ -217,6 +277,12 @@ export default function TargetWidget({
           <span className="flex items-center gap-1.5"><span className="status-dot" style={{ background: 'var(--tgt-target)' }} />Target</span>
         </div>
         <div className="flex items-baseline gap-4">
+          <div className="flex flex-col items-end">
+            <span className="widget-label">Altitude AMSL</span>
+            <span className="font-mono text-sm font-semibold tabular-nums text-ink">
+              {live ? `${live.altitude.toFixed(1)} m` : DASH}
+            </span>
+          </div>
           <div className="flex flex-col items-end">
             <span className="widget-label">Distance</span>
             <span className="font-mono text-sm font-semibold tabular-nums text-ink">
