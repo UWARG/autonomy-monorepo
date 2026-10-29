@@ -32,9 +32,18 @@ from dataclasses import dataclass
 from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.polygon import orient
 
+# Sweep-axis identifiers. A cell is swept along its axis:
+#   HORIZONTAL — slice lines run along x at constant y; passes run along x and
+#                are stacked in y. A cell with this axis is monotone in y.
+#   VERTICAL   — slice lines run along y at constant x; passes run along y and
+#                are stacked in x. A cell with this axis is monotone in x.
 HORIZONTAL = 0
 VERTICAL = 1
 
+# Recursion cap for the axis-switch fallback in _decompose. Supported polygons
+# (simple, no holes) decompose on the first pass, so this normally never fires.
+# The cap only bounds a best-effort retry on unsupported input, turning a
+# would-be infinite loop into a clear error instead of hanging.
 _MAX_DEPTH = 8
 
 

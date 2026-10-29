@@ -2,14 +2,13 @@
 
 Guidance, Navigation, and Control.
 
-The first implemented component is **`orthomosaic`**: a pure-Python orthomosaic
-lawn-mower coverage planner. Given a camera, a target ground resolution, and a
-GPS boundary of an area to map, it returns the GPS coordinates where a nadir
-camera drone should fly and take pictures so the photos can be stitched into a
-complete orthomosaic.
+## Development
 
-This is coverage **planning** only. Obstacle avoidance, actual flight control,
-and image stitching are separate concerns outside this module.
+```bash
+warg run gnc setup     # uv sync
+warg run gnc test      # uv run --extra dev pytest
+warg run gnc lint      # uv run --extra dev ruff check .
+```
 
 ## Orthomosaic planning
 
@@ -74,19 +73,6 @@ plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
 | `decompose.py` | boustrophedon cell decomposition + cell ordering |
 | `sweep.py` | per-cell coverage generation and orientation cost |
 | `pathing.py` | orchestration: `plan_orthomosaic_path` |
-
-### Development
-
-```bash
-warg run gnc setup     # uv sync
-warg run gnc test      # uv run --extra dev pytest
-warg run gnc lint      # uv run --extra dev ruff check .
-```
-
-The module depends on `utils` (shared types/waypoint math) and `shapely`
-(geometry). Like the rest of the repo, `utils` is imported from the monorepo
-root, so runtimes must put the monorepo root on `sys.path` (as airside's
-container already does).
 
 ### Assumptions and limitations
 
