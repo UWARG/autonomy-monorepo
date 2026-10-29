@@ -77,6 +77,21 @@ host networking under Settings > Resources > Network, or switch to the 1:1
 ROS logs (rclpy logger output and captured node stdout) are written to
 `airside/log/ros/` on the host via the `ROS_LOG_DIR` mount in `compose.yaml`.
 
+### Flight recording (rosbag)
+
+`engine.launch.py` records the topics in `_RECORDED_TOPICS` to an MCAP rosbag
+(zstd compressed) for every run. Bags are written to
+`airside/data/bags/airside_<UTC time>/` on the host and split every 5 minutes,
+so losing power only costs the last split. Edit `_RECORDED_TOPICS` to change
+what is recorded. Raw camera topics are left out because of their size.
+
+```bash
+ros2 bag info /ros_ws/data/bags/<bag>                      # inside the container
+scp -r <user>@<drone-ip>:<path-to-repo>/airside/data/bags .  # copy off the drone
+```
+
+Message timestamps are the airside computer's system clock, not GPS time.
+
 ## Developer Guide
 
 ### Behavior tree
