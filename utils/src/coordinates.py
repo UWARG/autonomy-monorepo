@@ -1,4 +1,4 @@
-"""Local east/north (ENU) conversion for scan-planning geometry."""
+"""Local east/north (ENU) conversion and planar rotation helpers."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import math
 from shapely import affinity
 from shapely.geometry import Polygon
 
-from utils.src.constants import EARTH_RADIUS_M
-from utils.src.types import Coordinate
-from utils.src.waypoint_utils import east_north_coordinate_offset_m
+from .constants import EARTH_RADIUS_M
+from .types import Coordinate
+from .waypoint_utils import east_north_coordinate_offset_m
 
 
 def rotate_point(

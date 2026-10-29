@@ -3,7 +3,7 @@ import math
 import pytest
 from shapely.geometry import Point, Polygon
 
-from orthomosaic.coordinates import (
+from utils.src.coordinates import (
     anchor_for_boundary,
     boundary_to_enu,
     coordinate_to_enu,

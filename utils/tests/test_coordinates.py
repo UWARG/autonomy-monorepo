@@ -3,7 +3,7 @@ import math
 import pytest
 from shapely.geometry import Polygon
 
-from orthomosaic.coordinates import (
+from src.coordinates import (
     anchor_for_boundary,
     boundary_to_enu,
     coordinate_to_enu,
@@ -12,9 +12,9 @@ from orthomosaic.coordinates import (
     rotate_points,
     rotate_polygon,
 )
-from utils.src.constants import EARTH_RADIUS_M
-from utils.src.types import Coordinate
-from utils.src.waypoint_utils import east_north_coordinate_offset_m
+from src.constants import EARTH_RADIUS_M
+from src.types import Coordinate
+from src.waypoint_utils import east_north_coordinate_offset_m
 
 ANCHOR = Coordinate(43.5, -80.5, 0.0)
 

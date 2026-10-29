@@ -69,7 +69,6 @@ plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
 |---|---|
 | `models.py` | `CameraSpec`, `ScanRequest`, `ScanPlan` value objects |
 | `footprint.py` | altitude, footprint, GSD, and spacing math |
-| `coordinates.py` | GPS↔local east/north conversion and rotation |
 | `decompose.py` | boustrophedon cell decomposition + cell ordering |
 | `sweep.py` | per-cell coverage generation and orientation cost |
 | `pathing.py` | orchestration: `plan_orthomosaic_path` |

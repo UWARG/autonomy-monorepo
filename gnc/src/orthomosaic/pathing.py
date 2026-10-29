@@ -6,7 +6,7 @@ import math
 
 from shapely.geometry import Polygon
 
-from .coordinates import (
+from utils.src.coordinates import (
     anchor_for_boundary,
     boundary_to_enu,
     coordinate_to_enu,
