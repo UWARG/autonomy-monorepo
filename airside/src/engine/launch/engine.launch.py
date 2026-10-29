@@ -26,6 +26,7 @@ _RECORDED_TOPICS = [
     "/heartbeat",
     "/capture/target_location",
     "/trigger_post_processing",
+    "/commander/abort",
     "/processed_map",
     "/targets_located",
     "/rosout",
