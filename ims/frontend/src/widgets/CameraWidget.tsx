@@ -63,6 +63,7 @@ export default function CameraWidget({
       ros,
       name: topic,
       messageType: 'sensor_msgs/Image',
+      throttle_rate: 200, // Limit ROSBridge image delivery to 5 FPS.
     });
     let active = true;
     const onImage = (message: RosImage) => {
