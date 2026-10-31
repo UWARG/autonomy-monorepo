@@ -71,7 +71,7 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
-| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `FCU_URL` | `serial:///dev/ttyAMA0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
 | `AEAC_CONNECTION_TOKEN` | unset | Secret used by both live AEAC WebSockets; set only in ignored `airside/.env` |
 | `AEAC_UAV_ID` | unset | Bidder-defined string in outgoing 1 Hz telemetry |
 | `AEAC_OWN_AIRCRAFT_INDEX` | `-1` | Verified server traffic index of this aircraft; live backup fails closed if unset |

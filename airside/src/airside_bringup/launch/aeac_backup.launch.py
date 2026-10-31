@@ -13,7 +13,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "fcu_url",
                 default_value=EnvironmentVariable(
-                    "FCU_URL", default_value="serial:///dev/serial0:115200"
+                    "FCU_URL", default_value="serial:///dev/ttyAMA0:115200"
                 ),
             ),
             DeclareLaunchArgument(

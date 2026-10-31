@@ -79,13 +79,9 @@ class TriggeredImagePublisherNode(Node):
         gps = self.gps_cache.getElemBeforeTime(self.get_clock().now())
         imu = self.imu_cache.getElemBeforeTime(self.get_clock().now())
 
-        missing = [
-            name for name, value in (('camera', frame), ('GPS', gps), ('IMU', imu))
-            if value is None
-        ]
-        if missing:
+        if frame is None:
             response.success = False
-            response.message = f'Waiting for {", ".join(missing)} data'
+            response.message = 'Waiting for camera data'
             self.get_logger().warning(f'Capture skipped: {response.message}')
             return response
 
@@ -100,11 +96,20 @@ class TriggeredImagePublisherNode(Node):
         response.header.stamp = self.get_clock().now().to_msg()
         response.header.frame_id = frame.header.frame_id
         response.image = jpeg
-        response.location.lat = gps.latitude
-        response.location.lon = gps.longitude
-        response.location.alt = gps.altitude
-        response.imu = imu
-        self.get_logger().info('Served capture with GPS and orientation')
+        # GPS and IMU are optional: without them the capture is still served,
+        # with location/imu left zeroed and the gap noted in message.
+        if gps is not None:
+            response.location.lat = gps.latitude
+            response.location.lon = gps.longitude
+            response.location.alt = gps.altitude
+        if imu is not None:
+            response.imu = imu
+        missing = [name for name, value in (('GPS', gps), ('IMU', imu)) if value is None]
+        if missing:
+            response.message = f'No {", ".join(missing)} data'
+            self.get_logger().warning(f'Served capture without {", ".join(missing)}')
+        else:
+            self.get_logger().info('Served capture with GPS and orientation')
         return response
 
 

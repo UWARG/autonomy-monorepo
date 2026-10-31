@@ -1,6 +1,7 @@
 # Request one bundle of the latest image, GPS location and IMU.
 ---
-# False when an input feed hasn't published yet; message says which.
+# False when no camera frame is available yet. GPS/IMU are optional: when
+# missing, location/imu are zeroed and message names what was missing.
 bool success
 string message
 std_msgs/Header header
