@@ -1,7 +1,6 @@
-
 # Behaviour tree reporter: numbers every node in the mission tree and saves the
-#table to a file that is copied to the ground before takeoff. In flight, only
-#the number of the running node is sent over STATUSTEXT ("S,<number>").
+# table to a file that is copied to the ground before takeoff. In flight, only
+# the number of the running node is sent over STATUSTEXT ("S,<number>").
 
 from pathlib import Path
 
@@ -12,16 +11,15 @@ from py_trees_ros_interfaces.srv import OpenSnapshotStream
 
 from engine.ground_log import send_to_ground
 
-# Mounted to airside/log/ on the host
-TREE_FILE = Path("/ros_ws/log/behaviour_tree.txt")
-
-
-def table_to_lines(table):
-    # one line per node: number, parent, name
-    return [f"T,{number},{parent},{name}" for number, parent, name in table]
-
 
 class BehaviourTreeReporter(Node):
+    
+    # Mounted to airside/log/ on the host
+    TREE_FILE = Path("/ros_ws/log/behaviour_tree.txt")
+
+    def table_to_lines(self, table):
+        # One line per node: number, parent, name
+        return [f"T,{number},{parent},{name}" for number, parent, name in table]
 
     def __init__(self):
         super().__init__("behaviour_tree_reporter")
@@ -84,10 +82,10 @@ class BehaviourTreeReporter(Node):
             send_to_ground(self, f"S,{self._last_running_number}")
 
     def _save_table(self) -> None:
-        TREE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        TREE_FILE.write_text("\n".join(table_to_lines(self._table)) + "\n")
+        self.TREE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.TREE_FILE.write_text("\n".join(self.table_to_lines(self._table)) + "\n")
         self.get_logger().info(
-            f"saved tree table ({len(self._table)} nodes) to {TREE_FILE}"
+            f"saved tree table ({len(self._table)} nodes) to {self.TREE_FILE}"
         )
 
     def _on_snapshot(self, msg: BehaviourTree) -> None:
@@ -110,7 +108,7 @@ class BehaviourTreeReporter(Node):
                 self._parents[number] = parent_number
             self._save_table()
 
-        #  find whichever node is RUNNING and report it if it changed.
+        # find whichever node is RUNNING and report it if it changed.
         running_numbers = [
             self._ids[bytes(behaviour.own_id.uuid)]
             for behaviour in msg.behaviours
