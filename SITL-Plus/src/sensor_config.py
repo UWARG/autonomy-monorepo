@@ -18,4 +18,3 @@ HOST = _cfg["host"]
 GROUNDSIDE_OFFSET = _cfg["groundside_offset"]
 CAMERA_PORTS = _cfg["camera_ports"]
 RANGE_FINDER_PORTS = _cfg["range_finder_ports"]
-# tạo đúng tên biến file py có
