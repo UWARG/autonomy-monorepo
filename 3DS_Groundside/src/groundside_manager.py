@@ -35,7 +35,7 @@ class DroneState:
     orientation: Attitude | None  # None until the first DRONE_STATE packet arrives
     mission_state: MissionState
     active_task_id: str | None
-    last_update_timestamp: float | None  # when the last DRONE_STATE arrived. In epoch seconds,g time.time()
+    last_update_timestamp: float | None  # when the last DRONE_STATE arrived. In epoch seconds, time.time()
     connected: bool
 
 
