@@ -5,13 +5,14 @@ description = "Groundside operator tooling for 3DS autonomy."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "numpy>=1.26",
     "opencv-python-headless>=4.9",
     "torch>=2.2",
     # Needed by XFeat, which torch.hub loads from GitHub (see features.py).
     "tqdm>=4.0",
+    "websockets>=13.0",
 ]
 
 [project.urls]
