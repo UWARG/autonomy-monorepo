@@ -6,6 +6,11 @@ case "$scenario" in
     traffic_clear) mock_mode=clear ;;
     traffic_static|traffic_pilot_takeover) mock_mode=static ;;
     traffic_dropout) mock_mode=dropout ;;
+    traffic_moving) mock_mode=moving ;;
+    traffic_multi) mock_mode=multi ;;
+    traffic_turn) mock_mode=turn ;;
+    traffic_delay) mock_mode=delay ;;
+    traffic_blocked) mock_mode=blocked ;;
     *) exit 2 ;;
 esac
 script_dir=/repo/airside/experiments/obstacle_avoidance/live_backup
@@ -20,6 +25,7 @@ export AEAC_WEBSOCKET_URL=ws://127.0.0.1:8765
 python3 "$script_dir/mock_aeac_server.py" \
     --mode "$mock_mode" --token sitl-only-token \
     --summary "/artifacts/$scenario-server.json" \
+    --truth-jsonl "/artifacts/$scenario-truth.jsonl" \
     > "/artifacts/$scenario-server.log" 2>&1 &
 server_pid=$!
 ros2 run mavros mavros_node --ros-args \
@@ -50,13 +56,25 @@ setsid ros2 bag record -o "/artifacts/$scenario-rosbag" \
     > "/artifacts/$scenario-rosbag.log" 2>&1 &
 bag_pid=$!
 
+duration=90
+case "$scenario" in traffic_moving|traffic_multi|traffic_turn|traffic_delay) duration=120 ;; esac
 status=0
 python3 /repo/airside/experiments/obstacle_avoidance/airside_bt_sitl.py \
-    --scenario "$scenario" --duration 90 --readiness-timeout 180 \
+    --scenario "$scenario" --duration "$duration" --readiness-timeout 180 \
     --log-jsonl "/artifacts/$scenario.jsonl" \
     --summary-json "/artifacts/$scenario-summary.json" \
     --params-json "/artifacts/$scenario-params.json" \
     --waypoints-file "/artifacts/$scenario-waypoints.yaml" || status=$?
+
+case "$scenario" in
+    traffic_moving|traffic_multi|traffic_turn|traffic_delay|traffic_blocked)
+        python3 "$script_dir/evaluate_moving_truth.py" \
+            --own-jsonl "/artifacts/$scenario.jsonl" \
+            --truth-jsonl "/artifacts/$scenario-truth.jsonl" \
+            --summary-json "/artifacts/$scenario-truth-summary.json" \
+            || status=1
+        ;;
+esac
 
 kill -INT -- -"$bag_pid" >/dev/null 2>&1 || true
 for attempt in {1..40}; do
@@ -73,8 +91,8 @@ if [[ ! -s "/artifacts/$scenario-server.json" ]]; then
     echo "Mock server received no telemetry" >&2
     status=1
 else
-    python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["connections"]>=2 and s["armed_telemetry_count"]>=10 and s["armed_intervals_outside_0_4_to_1_1"]==0, s; print("AEAC mock summary:", {k:v for k,v in s.items() if k!="last_payload"})' \
-        "/artifacts/$scenario-server.json" || status=1
+    python3 -c 'import json,sys; s=json.load(open(sys.argv[1])); assert s["connections"]>=2 and s["armed_telemetry_count"]>=10 and s["armed_intervals_outside_0_4_to_1_1"]==0, s; assert sys.argv[2] in ("traffic_dropout", "traffic_delay") or s.get("traffic_intervals_outside_0_8_to_1_2", 0)==0, s; print("AEAC mock summary:", {k:v for k,v in s.items() if k!="last_payload"})' \
+        "/artifacts/$scenario-server.json" "$scenario" || status=1
 fi
 kill -TERM "$sender_pid" "$listener_pid" "$mavros_pid" "$server_pid" \
     >/dev/null 2>&1 || true

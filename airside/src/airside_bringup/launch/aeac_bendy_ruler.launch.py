@@ -19,6 +19,11 @@ def generate_launch_description() -> LaunchDescription:
                     "obstacle_source": "traffic",
                     "traffic_topic": "/aeac/live_traffic",
                     "horizontal_speed_mps": "0.8",
+                    "traffic_freshness_s": "1.5",
+                    "traffic_buffer_min_m": "5.0",
+                    "traffic_buffer_reaction_s": "1.5",
+                    "traffic_own_speed_assumption_mps": "1.0",
+                    "traffic_consider_all_altitudes": "true",
                 }.items(),
             ),
             Node(

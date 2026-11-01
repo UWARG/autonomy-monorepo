@@ -40,16 +40,32 @@ class TrafficNavigationConfig:
     prediction_horizon_s: float = 3.0
     maximum_step_m: float = 1.0
     maximum_predicted_obstacles: int = 512
+    buffer_min_m: float = 0.0
+    buffer_reaction_s: float = 0.0
+    own_speed_assumption_mps: float = 0.0
+    consider_all_altitudes: bool = False
 
     def __post_init__(self) -> None:
-        if self.freshness_s <= 0.0:
+        if not math.isfinite(self.freshness_s) or self.freshness_s <= 0.0:
             raise ValueError("traffic freshness must be positive")
-        if self.prediction_horizon_s < 0.0:
+        if (
+            not math.isfinite(self.prediction_horizon_s)
+            or self.prediction_horizon_s < 0.0
+        ):
             raise ValueError("prediction horizon must be non-negative")
-        if self.maximum_step_m <= 0.0:
+        if not math.isfinite(self.maximum_step_m) or self.maximum_step_m <= 0.0:
             raise ValueError("maximum prediction step must be positive")
         if self.maximum_predicted_obstacles <= 0:
             raise ValueError("maximum predicted obstacles must be positive")
+        if not all(
+            math.isfinite(value) and value >= 0.0
+            for value in (
+                self.buffer_min_m,
+                self.buffer_reaction_s,
+                self.own_speed_assumption_mps,
+            )
+        ):
+            raise ValueError("traffic buffer parameters must be finite and non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +75,10 @@ class TrafficConversion:
     raw_aircraft_count: int
     relevant_aircraft_count: int
     predicted_circle_count: int
+    snapshot_age_s: float = 0.0
+    maximum_raw_keepaway_m: float = 0.0
+    maximum_buffer_m: float = 0.0
+    maximum_effective_radius_m: float = 0.0
 
 
 def _invalid_conversion(
@@ -114,6 +134,12 @@ def traffic_to_obstacle_snapshot(
         )
 
     age_s = now_s - traffic.received_s
+    if not math.isfinite(age_s):
+        return _invalid_conversion(
+            timestamp_s=traffic.received_s,
+            reason="INVALID_TRAFFIC_TIME",
+            raw_count=raw_count,
+        )
     if age_s < 0.0:
         return _invalid_conversion(
             timestamp_s=traffic.received_s,
@@ -151,6 +177,9 @@ def traffic_to_obstacle_snapshot(
     seen_indices: set[int] = set()
     obstacles: list[CircleObstacle] = []
     relevant_count = 0
+    maximum_raw_keepaway_m = 0.0
+    maximum_buffer_m = 0.0
+    maximum_effective_radius_m = 0.0
 
     for aircraft in traffic.aircraft:
         if aircraft.aircraft_index in seen_indices:
@@ -197,9 +226,40 @@ def traffic_to_obstacle_snapshot(
             vehicle_altitude_min_m <= traffic_altitude_max_m
             and traffic_altitude_min_m <= vehicle_altitude_max_m
         )
-        if not vertically_relevant:
+        if not (vertically_relevant or settings.consider_all_altitudes):
             continue
         relevant_count += 1
+        buffer_m = (
+            max(
+                settings.buffer_min_m,
+                (aircraft.speed_mps + settings.own_speed_assumption_mps)
+                * (age_s + settings.buffer_reaction_s),
+            )
+            if any(
+                value > 0.0
+                for value in (
+                    settings.buffer_min_m,
+                    settings.buffer_reaction_s,
+                    settings.own_speed_assumption_mps,
+                )
+            )
+            else 0.0
+        )
+        effective_radius_m = aircraft.horizontal_keepaway_m + buffer_m
+        if not math.isfinite(effective_radius_m):
+            return _invalid_conversion(
+                timestamp_s=traffic.received_s,
+                reason="INVALID_TRAFFIC_AIRCRAFT",
+                raw_count=raw_count,
+                relevant_count=relevant_count,
+            )
+        maximum_raw_keepaway_m = max(
+            maximum_raw_keepaway_m, aircraft.horizontal_keepaway_m
+        )
+        maximum_buffer_m = max(maximum_buffer_m, buffer_m)
+        maximum_effective_radius_m = max(
+            maximum_effective_radius_m, effective_radius_m
+        )
 
         east_offset_m, north_offset_m = east_north_coordinate_offset_m(
             vehicle_latitude_deg,
@@ -214,6 +274,13 @@ def traffic_to_obstacle_snapshot(
         current_north_m = vehicle_north_m + north_offset_m + north_velocity_mps * age_s
 
         prediction_distance_m = aircraft.speed_mps * settings.prediction_horizon_s
+        if not math.isfinite(prediction_distance_m):
+            return _invalid_conversion(
+                timestamp_s=traffic.received_s,
+                reason="INVALID_TRAFFIC_AIRCRAFT",
+                raw_count=raw_count,
+                relevant_count=relevant_count,
+            )
         maximum_spacing_m = min(settings.maximum_step_m, aircraft.horizontal_keepaway_m)
         segment_count = math.ceil(prediction_distance_m / maximum_spacing_m)
         for segment in range(segment_count + 1):
@@ -228,7 +295,7 @@ def traffic_to_obstacle_snapshot(
                         current_east_m + east_velocity_mps * future_s,
                         current_north_m + north_velocity_mps * future_s,
                     ),
-                    radius_m=aircraft.horizontal_keepaway_m,
+                    radius_m=effective_radius_m,
                 )
             )
             if len(obstacles) > settings.maximum_predicted_obstacles:
@@ -250,4 +317,8 @@ def traffic_to_obstacle_snapshot(
         raw_aircraft_count=raw_count,
         relevant_aircraft_count=relevant_count,
         predicted_circle_count=len(obstacles),
+        snapshot_age_s=age_s,
+        maximum_raw_keepaway_m=maximum_raw_keepaway_m,
+        maximum_buffer_m=maximum_buffer_m,
+        maximum_effective_radius_m=maximum_effective_radius_m,
     )

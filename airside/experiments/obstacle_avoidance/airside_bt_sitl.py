@@ -59,8 +59,19 @@ TRAFFIC_SCENARIOS = {
     "traffic_static",
     "traffic_dropout",
     "traffic_pilot_takeover",
+    "traffic_moving",
+    "traffic_multi",
+    "traffic_turn",
+    "traffic_delay",
+    "traffic_blocked",
 }
 TRAFFIC_OBSTACLE_SCENARIOS = TRAFFIC_SCENARIOS - {"traffic_clear"}
+TRAFFIC_MOVING_SCENARIOS = {"traffic_moving", "traffic_multi", "traffic_turn", "traffic_delay"}
+
+
+def _steady_time_s() -> float:
+    raw_clock = getattr(time, "CLOCK_MONOTONIC_RAW", None)
+    return time.clock_gettime(raw_clock) if raw_clock is not None else time.monotonic()
 
 
 class AirsideBTSitlScenario(Node):
@@ -555,6 +566,19 @@ class AirsideBTSitlScenario(Node):
             "obstacle_avoidance.horizontal_speed_mps:="
             + os.environ.get("OBSTACLE_HORIZONTAL_SPEED_MPS", "2.0"),
         ]
+        if (
+            obstacle_source == "traffic"
+            and os.environ.get("OBSTACLE_TRAFFIC_TOPIC") == "/aeac/live_traffic"
+        ):
+            command.extend(
+                [
+                    "-p", "obstacle_avoidance.traffic_freshness_s:=1.5",
+                    "-p", "obstacle_avoidance.traffic_buffer_min_m:=5.0",
+                    "-p", "obstacle_avoidance.traffic_buffer_reaction_s:=1.5",
+                    "-p", "obstacle_avoidance.traffic_own_speed_assumption_mps:=1.0",
+                    "-p", "obstacle_avoidance.traffic_consider_all_altitudes:=true",
+                ]
+            )
         if lapping_duration_s is not None:
             command.extend(["-p", f"lapping_duration_s:={lapping_duration_s}"])
         self.manager_process = subprocess.Popen(
@@ -725,6 +749,7 @@ class AirsideBTSitlScenario(Node):
         relative_position = self._relative_position()
         with self.lock:
             state = self.state
+            fix = self.fix
             altitude_m = self.relative_altitude_m
             diagnostics = dict(self.latest_diagnostics)
             return {
@@ -732,6 +757,9 @@ class AirsideBTSitlScenario(Node):
                 "east_m": relative_position[0] if relative_position else None,
                 "north_m": relative_position[1] if relative_position else None,
                 "relative_altitude_m": altitude_m,
+                "latitude_deg": fix.latitude if fix is not None else None,
+                "longitude_deg": fix.longitude if fix is not None else None,
+                "monotonic_s": _steady_time_s(),
                 "armed": state.armed if state is not None else False,
                 "mode": state.mode if state is not None else None,
                 "velocity": self.last_velocity,
@@ -752,7 +780,17 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
         and summary["diagnostics_count"] > 0
         and summary["failure_reason"] is None
     )
-    if scenario in {"invalid", "partial"}:
+    if scenario == "traffic_blocked":
+        passed = (
+            common
+            and summary["goal_reached_at_s"] is None
+            and summary["planner_status"] == "NO_PATH"
+            and summary["planner_hold_count"] > 0
+            and summary["min_traffic_clearance_m"] is not None
+            and summary["min_traffic_clearance_m"] >= 3.0
+            and not summary["breached"]
+        )
+    elif scenario in {"invalid", "partial"}:
         passed = (
             common
             and summary["nonzero_velocity_count"] == 0
@@ -763,7 +801,8 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
         passed = (
             common
             and summary["goal_reached_at_s"] is not None
-            and summary["goal_reached_at_s"] <= 90.0
+            and summary["goal_reached_at_s"]
+            <= (120.0 if scenario in TRAFFIC_MOVING_SCENARIOS else 90.0)
             and summary["stop_observed"]
             and summary["pilot_resume_observed"]
             and summary["recon_switch_sent"]
@@ -787,14 +826,16 @@ def evaluate_summary(summary: dict[str, Any]) -> None:
                 passed = (
                     passed
                     and summary["min_traffic_clearance_m"] is not None
-                    and summary["min_traffic_clearance_m"] >= MIN_CLEARANCE_M
+                    and summary["min_traffic_clearance_m"] >= (
+                        3.0 if scenario in TRAFFIC_MOVING_SCENARIOS else MIN_CLEARANCE_M
+                    )
                     and summary["traffic_raw_count"] > 0
                 )
             elif scenario != "traffic_clear":
                 passed = passed and summary["min_wall_dist_m"] >= MIN_CLEARANCE_M
         if scenario in {"wall", "traffic_static"}:
             passed = passed and summary["planner_hold_count"] == 0
-        if scenario in {"dropout", "frozen", "traffic_dropout"}:
+        if scenario in {"dropout", "frozen", "traffic_dropout", "traffic_delay"}:
             passed = passed and summary["stop_observed"]
         if scenario in {"pilot_takeover", "traffic_pilot_takeover"}:
             passed = (
@@ -912,6 +953,12 @@ def run_scenario(node: AirsideBTSitlScenario, args: argparse.Namespace) -> dict[
                 snapshot["t"] = round(elapsed_s, 3)
                 log.write(json.dumps(snapshot, sort_keys=True) + "\n")
                 log.flush()
+                if args.scenario == "traffic_delay":
+                    with node.lock:
+                        stale = node.latest_diagnostics.get("reason") == "STALE_TRAFFIC"
+                        speed = math.sqrt(sum(component**2 for component in node.last_velocity))
+                    if stale and speed <= 0.05:
+                        summary["stop_observed"] = True
 
                 position = node._relative_position()
                 if position is not None:
@@ -1125,6 +1172,11 @@ def main() -> int:
             "traffic_static",
             "traffic_dropout",
             "traffic_pilot_takeover",
+            "traffic_moving",
+            "traffic_multi",
+            "traffic_turn",
+            "traffic_delay",
+            "traffic_blocked",
         ],
         required=True,
     )

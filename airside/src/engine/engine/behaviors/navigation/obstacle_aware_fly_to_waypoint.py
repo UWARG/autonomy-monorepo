@@ -137,6 +137,18 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
                     "obstacle_avoidance.maximum_predicted_obstacles"
                 ).value
             ),
+            buffer_min_m=self._parameter_float("obstacle_avoidance.traffic_buffer_min_m"),
+            buffer_reaction_s=self._parameter_float(
+                "obstacle_avoidance.traffic_buffer_reaction_s"
+            ),
+            own_speed_assumption_mps=self._parameter_float(
+                "obstacle_avoidance.traffic_own_speed_assumption_mps"
+            ),
+            consider_all_altitudes=bool(
+                self._node.get_parameter(
+                    "obstacle_avoidance.traffic_consider_all_altitudes"
+                ).value
+            ),
         )
 
         self._latest_pose: PoseStamped | None = None
@@ -216,6 +228,10 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
             "obstacle_avoidance.traffic_prediction_horizon_s": 3.0,
             "obstacle_avoidance.traffic_prediction_step_m": 1.0,
             "obstacle_avoidance.maximum_predicted_obstacles": 512,
+            "obstacle_avoidance.traffic_buffer_min_m": 0.0,
+            "obstacle_avoidance.traffic_buffer_reaction_s": 0.0,
+            "obstacle_avoidance.traffic_own_speed_assumption_mps": 0.0,
+            "obstacle_avoidance.traffic_consider_all_altitudes": False,
             "obstacle_avoidance.control_rate_hz": 10.0,
             "obstacle_avoidance.horizontal_speed_mps": 2.0,
             "obstacle_avoidance.vertical_speed_mps": 1.0,
@@ -613,6 +629,26 @@ class ObstacleAwareFlyToWaypoint(py_trees.behaviour.Behaviour):
                 traffic_conversion.predicted_circle_count
                 if traffic_conversion is not None
                 else 0
+            ),
+            "traffic_snapshot_age_s": self._format_optional(
+                traffic_conversion.snapshot_age_s
+                if traffic_conversion is not None and traffic_conversion.reason is None
+                else None
+            ),
+            "traffic_maximum_raw_keepaway_m": self._format_optional(
+                traffic_conversion.maximum_raw_keepaway_m
+                if traffic_conversion is not None and traffic_conversion.reason is None
+                else None
+            ),
+            "traffic_maximum_buffer_m": self._format_optional(
+                traffic_conversion.maximum_buffer_m
+                if traffic_conversion is not None and traffic_conversion.reason is None
+                else None
+            ),
+            "traffic_maximum_effective_radius_m": self._format_optional(
+                traffic_conversion.maximum_effective_radius_m
+                if traffic_conversion is not None and traffic_conversion.reason is None
+                else None
             ),
             "pose_age_s": self._format_age(now_s, self._pose_received_s),
             "fix_age_s": self._format_age(now_s, self._fix_received_s),

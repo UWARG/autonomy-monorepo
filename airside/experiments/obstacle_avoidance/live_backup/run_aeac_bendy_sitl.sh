@@ -19,7 +19,7 @@ echo "Artifacts: $artifact_dir"
 
 scenario="${1:-traffic_static}"
 case "$scenario" in
-    traffic_clear|traffic_static|traffic_dropout|traffic_pilot_takeover) ;;
+    traffic_clear|traffic_static|traffic_dropout|traffic_pilot_takeover|traffic_moving|traffic_multi|traffic_turn|traffic_delay|traffic_blocked) ;;
     *) echo "Unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 

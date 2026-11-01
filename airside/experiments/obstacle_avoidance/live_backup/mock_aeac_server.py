@@ -20,23 +20,38 @@ _MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 _EARTH_RADIUS_M = 6_371_000.0
 
 
+def _steady_time_s() -> float:
+    raw_clock = getattr(time, "CLOCK_MONOTONIC_RAW", None)
+    return time.clock_gettime(raw_clock) if raw_clock is not None else time.monotonic()
+
+
 class FixtureState:
-    def __init__(self, *, mode: str, summary: Path) -> None:
+    def __init__(self, *, mode: str, summary: Path, truth_jsonl: Path | None = None) -> None:
         self.mode = mode
         self.summary = summary
+        self.truth_jsonl = truth_jsonl
         self.lock = threading.Lock()
         self.connections = 0
         self.telemetry: list[tuple[float, dict]] = []
         self.traffic_sent = 0
+        self.traffic_sent_at_s: dict[int, list[float]] = {}
         self.origin: tuple[float, float] | None = None
         self.blackout_started_s: float | None = None
+        self.movement_started_s: float | None = None
 
     def record_telemetry(self, payload: dict) -> None:
         with self.lock:
-            now_s = time.monotonic()
+            now_s = _steady_time_s()
             self.telemetry.append((now_s, payload))
             if self.origin is None:
                 self.origin = (payload["latitude"], payload["longitude"])
+            if (
+                self.mode in {"moving", "multi", "turn", "delay"}
+                and self.movement_started_s is None
+            ):
+                north_m = math.radians(payload["latitude"] - self.origin[0]) * _EARTH_RADIUS_M
+                if payload.get("mode") == "armed-automatic" and north_m >= 2.0:
+                    self.movement_started_s = now_s
             intervals = [
                 b[0] - a[0] for a, b in zip(self.telemetry, self.telemetry[1:])
             ]
@@ -46,6 +61,11 @@ class FixtureState:
                 if item[1].get("mode") in {"armed-pilot", "armed-automatic"}
             ]
             armed_intervals = [b[0] - a[0] for a, b in zip(armed, armed[1:])]
+            traffic_intervals = [
+                later - earlier
+                for times in self.traffic_sent_at_s.values()
+                for earlier, later in zip(times, times[1:])
+            ]
             self.summary.write_text(
                 json.dumps(
                     {
@@ -65,6 +85,15 @@ class FixtureState:
                             for interval in armed_intervals
                         ),
                         "traffic_sent": self.traffic_sent,
+                        "traffic_interval_min_s": (
+                            min(traffic_intervals) if traffic_intervals else None
+                        ),
+                        "traffic_interval_max_s": (
+                            max(traffic_intervals) if traffic_intervals else None
+                        ),
+                        "traffic_intervals_outside_0_8_to_1_2": sum(
+                            not 0.8 <= interval <= 1.2 for interval in traffic_intervals
+                        ),
                         "last_payload": payload,
                     },
                     indent=2,
@@ -74,8 +103,65 @@ class FixtureState:
                 encoding="utf-8",
             )
 
-    def traffic_event(self) -> str | None:
+    def _other_aircraft(self, now_s: float) -> list[dict]:
+        if self.origin is None:
+            return []
+
+        def entry(index: int, name: str, east_m: float, north_m: float,
+                  speed_mps: float, heading_deg: float) -> dict:
+            latitude = self.origin[0] + math.degrees(north_m / _EARTH_RADIUS_M)
+            longitude = self.origin[1] + math.degrees(
+                east_m / (_EARTH_RADIUS_M * math.cos(math.radians(self.origin[0])))
+            )
+            return {
+                "aircraftIndex": index,
+                "name": name,
+                "horizontalKeepAway": 5.0,
+                "verticalKeepAway": 5.0,
+                "position": {
+                    "lat": latitude,
+                    "lon": longitude,
+                    "altitude": (
+                        30.0 if self.mode in {"moving", "multi", "turn", "delay"}
+                        else 15.0
+                    ),
+                    "speed": speed_mps,
+                    "direction": heading_deg,
+                },
+            }
+
+        if self.mode in {"static", "dropout"}:
+            return [entry(2, "SITL-STATIC", 0.0, 20.0, 0.0, 0.0)]
+        if self.mode == "blocked":
+            return [entry(2, "SITL-BLOCKED-GOAL", 0.0, 40.0, 0.0, 0.0)]
+        if self.mode not in {"moving", "multi", "turn", "delay"}:
+            return []
+
+        elapsed_s = max(0.0, now_s - self.movement_started_s) if self.movement_started_s else 0.0
+        if self.mode == "turn" and elapsed_s >= 6.0:
+            first_east_m = -12.0 + 1.2 * 6.0
+            first = entry(2, "SITL-TURN", first_east_m, 20.0 + 1.2 * (elapsed_s - 6.0), 1.2, 0.0)
+        else:
+            first = entry(2, "SITL-MOVING", -12.0 + 1.2 * elapsed_s, 20.0, 1.2, 90.0)
+        if self.mode == "multi":
+            second = entry(3, "SITL-SECOND", 12.0 - 1.2 * elapsed_s, 27.0, 1.2, 270.0)
+            return [first, second]
+        return [first]
+
+    def record_truth(self) -> None:
+        if self.truth_jsonl is None:
+            return
         with self.lock:
+            now_s = _steady_time_s()
+            if self.origin is None:
+                return
+            sample = {"monotonic_s": now_s, "aircraft": self._other_aircraft(now_s)}
+        with self.truth_jsonl.open("a", encoding="utf-8") as output:
+            output.write(json.dumps(sample, separators=(",", ":")) + "\n")
+
+    def traffic_event(self, connection_number: int) -> str | None:
+        with self.lock:
+            now_s = _steady_time_s()
             entries: list[dict] = []
             if self.telemetry and self.origin is not None:
                 latest = self.telemetry[-1][1]
@@ -84,11 +170,15 @@ class FixtureState:
                         latest["latitude"] - self.origin[0]
                     ) * _EARTH_RADIUS_M
                     if north_m >= 5.0 and self.blackout_started_s is None:
-                        self.blackout_started_s = time.monotonic()
+                        self.blackout_started_s = now_s
                     if (
                         self.blackout_started_s is not None
-                        and time.monotonic() - self.blackout_started_s < 5.5
+                        and now_s - self.blackout_started_s < 5.5
                     ):
+                        return None
+                if self.mode == "delay" and self.movement_started_s is not None:
+                    elapsed_s = now_s - self.movement_started_s
+                    if 8.0 <= elapsed_s < 10.2:
                         return None
                 entries.append(
                     {
@@ -105,24 +195,9 @@ class FixtureState:
                         },
                     }
                 )
-                if self.mode in {"static", "dropout"}:
-                    lat = self.origin[0] + math.degrees(20.0 / _EARTH_RADIUS_M)
-                    entries.append(
-                        {
-                            "aircraftIndex": 2,
-                            "name": "SITL-STATIC",
-                            "horizontalKeepAway": 5.0,
-                            "verticalKeepAway": 5.0,
-                            "position": {
-                                "lat": lat,
-                                "lon": self.origin[1],
-                                "altitude": 15.0,
-                                "speed": 0.0,
-                                "direction": 0.0,
-                            },
-                        }
-                    )
+                entries.extend(self._other_aircraft(now_s))
             self.traffic_sent += 1
+            self.traffic_sent_at_s.setdefault(connection_number, []).append(now_s)
         return json.dumps({"event": "traffic", "payload": {"traffic": entries}})
 
 
@@ -193,11 +268,12 @@ class Handler(socketserver.BaseRequestHandler):
         )
         with self.server.fixture.lock:
             self.server.fixture.connections += 1
+            connection_number = self.server.fixture.connections
         self.request.settimeout(None)
-        next_traffic_s = time.monotonic()
+        next_traffic_s = _steady_time_s()
         try:
             while True:
-                timeout_s = max(0.0, next_traffic_s - time.monotonic())
+                timeout_s = max(0.0, next_traffic_s - _steady_time_s())
                 readable, _, _ = select.select([self.request], [], [], timeout_s)
                 if readable:
                     opcode, body = _read_frame(self.request)
@@ -210,8 +286,8 @@ class Handler(socketserver.BaseRequestHandler):
                         if message.get("action") == "telemetry":
                             self.server.fixture.record_telemetry(message["data"])
                             _send_frame(self.request, '{"event":"telemetry_ack"}')
-                if time.monotonic() >= next_traffic_s:
-                    event = self.server.fixture.traffic_event()
+                if _steady_time_s() >= next_traffic_s:
+                    event = self.server.fixture.traffic_event(connection_number)
                     if event is not None:
                         _send_frame(self.request, event)
                     next_traffic_s += 1.0
@@ -226,12 +302,23 @@ class Server(socketserver.ThreadingTCPServer):
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("clear", "static", "dropout"), required=True)
+    parser.add_argument(
+        "--mode",
+        choices=("clear", "static", "dropout", "moving", "multi", "turn", "delay", "blocked"),
+        required=True,
+    )
     parser.add_argument("--token", required=True)
     parser.add_argument("--summary", type=Path, required=True)
+    parser.add_argument("--truth-jsonl", type=Path)
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
-    fixture = FixtureState(mode=args.mode, summary=args.summary)
+    fixture = FixtureState(mode=args.mode, summary=args.summary, truth_jsonl=args.truth_jsonl)
+    if args.truth_jsonl is not None:
+        def sample_truth() -> None:
+            while True:
+                fixture.record_truth()
+                time.sleep(0.1)
+        threading.Thread(target=sample_truth, daemon=True).start()
     with Server(("127.0.0.1", args.port), Handler) as server:
         server.token = args.token
         server.fixture = fixture

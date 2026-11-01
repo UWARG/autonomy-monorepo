@@ -151,3 +151,19 @@ one MAVROS setpoint owner. The aggregate and rosbags are under
 `/var/snap/docker/common/static-obstacle-readiness-pr181-bendy-speed-gate-v4/`.
 This qualifies the software for the team's controlled ground-test process,
 not for unsupervised flight or live AEAC traffic.
+
+## Live-buffer regression check (November 1, 2026)
+
+After adding the live-only moving-traffic buffer, the final image
+`warg/airside:pr181-moving-final2` passed this unchanged synthetic readiness
+gate 5/5. The three fresh static runs reached the goal in 61.628–61.654 s,
+kept 1.160–1.183 m beyond the server keep-away, stayed at or below 0.744 m/s,
+and reported no planner hold or exclusion breach. Clear and pilot-takeover also
+passed; the latter stopped in LOITER and waited for fresh data on GUIDED
+resume. The aggregate and rosbags are under
+`/var/snap/docker/common/pr181-static-readiness-final2c/`.
+
+The runner now waits up to 36 seconds for Docker before starting its first
+fresh boot. This prevents a cold Snap/WSL daemon from starting the Airside test
+container without the paired SITL container; it does not change any flight
+behavior or acceptance threshold.

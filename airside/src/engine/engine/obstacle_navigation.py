@@ -298,6 +298,14 @@ class ObstacleAwareController:
                 now_s=now_s,
             )
         )
+        if result.status is PlanStatus.PATH_FOUND and any(
+            math.hypot(
+                local_goal.x - obstacle.center.x,
+                local_goal.y - obstacle.center.y,
+            ) <= obstacle.radius_m + self.planner.config.clearance_margin_m
+            for obstacle in obstacles.obstacles
+        ):
+            return self.hold("BLOCKED_GOAL", goal_distance_m=goal_distance_m)
         if result.status is PlanStatus.NO_PATH or result.waypoint is None:
             reason = result.reason.value if result.reason is not None else "NO_PATH"
             return self.hold(reason, goal_distance_m=goal_distance_m)

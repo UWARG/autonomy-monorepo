@@ -53,12 +53,30 @@ bash airside/experiments/obstacle_avoidance/live_backup/run_aeac_bendy_sitl.sh t
 ```
 
 The runner has `traffic_clear`, `traffic_static`, `traffic_dropout`, and
-`traffic_pilot_takeover` scenarios. It requires two simultaneous mock WebSocket
+`traffic_pilot_takeover` scenarios, plus `traffic_moving`, `traffic_multi`,
+`traffic_turn`, `traffic_delay`, and `traffic_blocked` for simulated aircraft.
+It requires two simultaneous mock WebSocket
 connections, at least ten armed telemetry packets, all armed packet intervals
 within 0.4–1.1 s, one MAVROS setpoint owner, a recorded rosbag, and observed
 lapping speed at or below 1 m/s. It commands 0.8 m/s to leave headroom below
 the 1 m/s first-flight limit. The mock server is a protocol fixture, **not**
 proof the 2027 competition server accepts the JSON or authenticates the token.
+
+For live traffic only, the planner now inflates each server exclusion radius by
+`max(5 m, (other-aircraft speed + 1 m/s) × (snapshot age + 1.5 s))`; its existing
+1 m path clearance is additional. It keeps the 3 s swept-heading prediction,
+uses a 1.5 s snapshot deadline, and treats every other aircraft as horizontally
+relevant even when reported altitude differs. These conservative first-flight
+settings may deliberately result in `NO_PATH`/hold. They do not change the
+synthetic `/aeac/traffic` test defaults.
+
+The moving scenarios record the mock aircraft's independent 10 Hz ground-truth
+trajectory and compare it with the UAV's GPS samples. Their minimum observed
+separation must exceed the server's keep-away by 3 m; the 1 Hz traffic message
+extrapolation is not used as the acceptance measurement. `traffic_blocked`
+expects a hold rather than goal completion, while `traffic_delay` must stop on
+stale input and recover after traffic resumes. Run the single-aircraft crossing
+three times with independent SITL boots before treating it as a qualification.
 
 ## Mock-server SITL result (October 7, 2026)
 
@@ -82,6 +100,48 @@ keep-away. Both had two WebSockets and no armed telemetry interval outside
 `/var/snap/docker/common/pr181-aeac-bendy-final-static/` and
 `/var/snap/docker/common/pr181-aeac-bendy-final-dropout/`.
 
+## Moving mock traffic status (November 1, 2026)
+
+The final image `warg/airside:pr181-moving-final2` passed `colcon test`: 3
+interface, 44 comms, 52 engine, and 51 navigation tests. The independent
+moving-traffic fixture passed 5/5. An experimental production switch to
+`CLOCK_MONOTONIC_RAW` was reverted before this image; only the mock/harness uses
+that clock for independent ground-truth timestamps.
+
+The single-aircraft crossing passed three independent fresh SITL boots. All
+three reached the goal in 68.954–70.407 s, kept 10.495–10.792 m of measured
+clearance *beyond* the server keep-away, stayed at or below 0.832 m/s, and used
+one MAVROS setpoint owner. Armed telemetry intervals were 0.897–1.001 s and
+normal traffic intervals were 0.995–1.006 s, so both strict cadence gates
+passed.
+
+The same image also passed the two-aircraft, turning, intentional-delay,
+blocked-goal, and live pilot-takeover scenarios. The multi-aircraft and turning
+runs reached the goal with 10.824 m and 12.007 m true clearance respectively.
+The delay run entered a zero-velocity `STALE_TRAFFIC` hold after 1.5 s, resumed
+only after a new complete snapshot, and retained 10.166 m true clearance. The
+blocked-goal run held with `BLOCKED_GOAL` for the full 90 s, issued no nonzero
+velocity command, and showed only 0.010 m/s SITL drift. Live pilot takeover
+stopped in LOITER, waited for fresh data after returning to GUIDED, and then
+reached the goal. Every run recorded a rosbag, reported two WebSocket
+connections, and retained a sole setpoint owner.
+
+The separate synthetic `/aeac/traffic` readiness campaign also passed 5/5:
+clear, pilot takeover, and stationary obstacle 3/3 on fresh boots. The three
+stationary runs reached the goal in 61.628–61.654 s, stayed at or below
+0.744 m/s, and kept 1.160–1.183 m beyond the original keep-away cylinder.
+
+Final evidence is under
+`/var/snap/docker/common/pr181-moving-final2-test/`,
+`/var/snap/docker/common/pr181-moving-final2-run2/`,
+`/var/snap/docker/common/pr181-moving-final2-run3/`, the matching
+`pr181-moving-final2-{multi,turn,delay,blocked,live-takeover}/` directories, and
+`/var/snap/docker/common/pr181-static-readiness-final2c/`.
+
+These results qualify the mock-server SITL behavior, not the competition
+server. Live props-on flight remains blocked until the real-token props-off
+checks below pass on the actual flight computer.
+
 For props-off integration on the actual flight computer, run from `airside/`:
 
 ```bash
@@ -91,7 +151,7 @@ docker compose -f compose.yaml -f compose.aeac-bendy.yaml up --build
 Do not combine it with `compose.flight-test.yaml` or
 `compose.aeac-backup.yaml`. This launch starts the ordinary engine and sole
 position controller, but no synthetic traffic publisher and no A* controller.
-It uses `/aeac/live_traffic` with a 2.5 s freshness limit; startup, malformed,
+It uses `/aeac/live_traffic` with a 1.5 s freshness limit; startup, malformed,
 unhealthy, disconnected or stale traffic must hold motion. An empty *healthy*
 snapshot is valid and may permit travel.
 
@@ -111,6 +171,10 @@ snapshot is valid and may permit travel.
   disconnect/stale-snapshot test props-off with the real server before enabling
   live avoidance in a physical flight. The existing stationary obstacle ground
   test is a separate, lower-risk validation step.
+- Bound the real server-to-onboard data delay using server timestamps/logs or a
+  documented simulated-aircraft trajectory. A 1 Hz arrival cadence alone does
+  not prove the reported position is current. If the delay cannot be bounded,
+  do not enable props-on live avoidance.
 
 No live competition-server or physical-flight approval is claimed by the
 mock-server SITL result.

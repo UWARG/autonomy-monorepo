@@ -42,6 +42,15 @@ def generate_launch_description() -> LaunchDescription:
                 ),
                 description="TrafficSnapshot input for BendyRuler traffic mode",
             ),
+            DeclareLaunchArgument("traffic_freshness_s", default_value="2.5"),
+            DeclareLaunchArgument("traffic_buffer_min_m", default_value="0.0"),
+            DeclareLaunchArgument("traffic_buffer_reaction_s", default_value="0.0"),
+            DeclareLaunchArgument(
+                "traffic_own_speed_assumption_mps", default_value="0.0"
+            ),
+            DeclareLaunchArgument(
+                "traffic_consider_all_altitudes", default_value="false"
+            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -132,6 +141,24 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                         "obstacle_avoidance.traffic_topic": LaunchConfiguration(
                             "traffic_topic"
+                        ),
+                        "obstacle_avoidance.traffic_freshness_s": ParameterValue(
+                            LaunchConfiguration("traffic_freshness_s"), value_type=float
+                        ),
+                        "obstacle_avoidance.traffic_buffer_min_m": ParameterValue(
+                            LaunchConfiguration("traffic_buffer_min_m"), value_type=float
+                        ),
+                        "obstacle_avoidance.traffic_buffer_reaction_s": ParameterValue(
+                            LaunchConfiguration("traffic_buffer_reaction_s"),
+                            value_type=float,
+                        ),
+                        "obstacle_avoidance.traffic_own_speed_assumption_mps": ParameterValue(
+                            LaunchConfiguration("traffic_own_speed_assumption_mps"),
+                            value_type=float,
+                        ),
+                        "obstacle_avoidance.traffic_consider_all_altitudes": ParameterValue(
+                            LaunchConfiguration("traffic_consider_all_altitudes"),
+                            value_type=bool,
                         ),
                     }
                 ],

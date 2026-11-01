@@ -125,6 +125,60 @@ def test_altitude_interval_filters_irrelevant_aircraft() -> None:
     assert climbing_through.relevant_aircraft_count == 1
 
 
+def test_live_mode_keeps_all_altitudes_and_adds_minimum_buffer() -> None:
+    distant = aircraft(altitude_agl_m=80.0, horizontal_keepaway_m=5.0)
+    live = convert(
+        traffic(distant),
+        config=TrafficNavigationConfig(
+            freshness_s=1.5,
+            buffer_min_m=5.0,
+            buffer_reaction_s=1.5,
+            own_speed_assumption_mps=1.0,
+            consider_all_altitudes=True,
+        ),
+    )
+    assert live.relevant_aircraft_count == 1
+    assert live.snapshot.obstacles[0].radius_m == pytest.approx(10.0)
+    assert live.maximum_raw_keepaway_m == pytest.approx(5.0)
+    assert live.maximum_buffer_m == pytest.approx(5.0)
+    assert live.maximum_effective_radius_m == pytest.approx(10.0)
+    assert convert(traffic(distant)).snapshot.obstacles == ()
+
+
+def test_live_buffer_grows_with_speed_and_snapshot_age() -> None:
+    config = TrafficNavigationConfig(
+        freshness_s=1.5,
+        buffer_min_m=5.0,
+        buffer_reaction_s=1.5,
+        own_speed_assumption_mps=1.0,
+        consider_all_altitudes=True,
+    )
+    moving = traffic(aircraft(speed_mps=4.0, horizontal_keepaway_m=5.0))
+    fresh = convert(moving, config=config)
+    aged = convert(moving, config=config, now_s=NOW + 1.0)
+    assert fresh.snapshot.obstacles[0].radius_m == pytest.approx(12.5)
+    assert aged.snapshot.obstacles[0].radius_m == pytest.approx(17.5)
+    assert aged.snapshot_age_s == pytest.approx(1.0)
+    assert convert(moving, config=config, now_s=NOW + 1.5).reason is None
+    assert convert(moving, config=config, now_s=NOW + 1.501).reason == "STALE_TRAFFIC"
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), -1.0, float("inf")])
+def test_invalid_live_buffer_configuration_rejected(invalid: float) -> None:
+    with pytest.raises(ValueError):
+        TrafficNavigationConfig(buffer_min_m=invalid)
+
+
+def test_invalid_time_and_unbounded_speed_fail_closed() -> None:
+    assert convert(traffic(received_s=float("nan"))).reason == "INVALID_TRAFFIC_TIME"
+    result = convert(
+        traffic(aircraft(speed_mps=1e308)),
+        config=TrafficNavigationConfig(buffer_min_m=5.0, buffer_reaction_s=1.5),
+    )
+    assert result.reason == "INVALID_TRAFFIC_AIRCRAFT"
+    assert not result.snapshot.healthy
+
+
 @pytest.mark.parametrize(
     ("heading_deg", "east_sign", "north_sign"),
     [

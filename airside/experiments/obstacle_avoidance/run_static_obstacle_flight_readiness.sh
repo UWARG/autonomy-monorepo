@@ -5,9 +5,16 @@ set -uo pipefail
 cd "$(dirname "$0")"
 
 artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+docker_bin="${DOCKER_BIN:-docker}"
 mkdir -p "$artifact_dir"
 artifact_dir="$(realpath "$artifact_dir")"
 export ARTIFACT_DIR="$artifact_dir"
+
+for attempt in {1..12}; do
+    if "$docker_bin" info >/dev/null 2>&1; then break; fi
+    sleep 3
+done
+"$docker_bin" info >/dev/null
 
 # Command below the 1 m/s first-flight ceiling so SITL tracking transients do
 # not consume the entire speed margin. The harness checks observed GPS speed.
