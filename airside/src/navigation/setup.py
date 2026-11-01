@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "position_controller = navigation.position_controller_node:main",
+            "aeac_backup_controller = navigation.live_position_controller_node:main",
         ],
     },
 )

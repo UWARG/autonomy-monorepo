@@ -1,0 +1,7 @@
+# Use only with compose.yaml or compose.sitl.yaml. Never combine with the
+# synthetic static flight-test override: this launch owns all MAVROS setpoints.
+services:
+  airside:
+    env_file:
+      - .env
+    command: ros2 launch airside_bringup aeac_backup.launch.py

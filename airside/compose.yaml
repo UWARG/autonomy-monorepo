@@ -11,6 +11,7 @@ services:
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
+      OBSTACLE_SOURCE: ${OBSTACLE_SOURCE:-scan}
       ROS_LOG_DIR: /ros_ws/log/ros
     devices:
       - /dev/serial0:/dev/serial0

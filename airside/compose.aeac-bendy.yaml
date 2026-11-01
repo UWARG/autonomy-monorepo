@@ -1,0 +1,7 @@
+# Live server input for the existing engine + BendyRuler2D flight stack.
+# Do not combine with compose.aeac-backup.yaml or the synthetic flight-test override.
+services:
+  airside:
+    env_file:
+      - .env
+    command: ros2 launch airside_bringup aeac_bendy_ruler.launch.py

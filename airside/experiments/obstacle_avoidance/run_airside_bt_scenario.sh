@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+# Run one airside behavior-tree avoidance scenario with fresh containers.
+set -uo pipefail
+
+cd "$(dirname "$0")"
+
+scenario="${1:?scenario is required}"
+label="${2:-$scenario}"
+scenario_duration="${DEMO_DURATION_S:-90}"
+if [[ "$scenario" == "transition" && -z "${DEMO_DURATION_S:-}" ]]; then
+    scenario_duration=150
+fi
+artifact_dir="${ARTIFACT_DIR:?ARTIFACT_DIR is required}"
+repo_root="$(cd ../../.. && pwd)"
+docker_bin="${DOCKER_BIN:-docker}"
+sitl_name="sitl-144-airside"
+airside_name="airside-144-test"
+airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
+synthetic_traffic="false"
+include_static_obstacle="true"
+if [[ "$scenario" == "traffic_clear" ]]; then
+    synthetic_traffic="true"
+    include_static_obstacle="false"
+elif [[ "$scenario" == "traffic_static" \
+    || "$scenario" == "traffic_pilot_takeover" ]]; then
+    synthetic_traffic="true"
+fi
+
+mkdir -p "$artifact_dir"
+artifact_dir="$(realpath "$artifact_dir")"
+
+cleanup() {
+    "$docker_bin" rm -f "$airside_name" >/dev/null 2>&1 || true
+    "$docker_bin" rm -f "$sitl_name" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
+
+cleanup
+
+"$docker_bin" run -d --name "$sitl_name" --network host \
+    -v "$PWD":/demo:ro \
+    warg/sitl:latest bash -lc \
+    'cd /ardupilot && exec build/sitl/bin/arducopter -S -I0 --model + --speedup 1 \
+     --sim-address=127.0.0.1 \
+     --defaults Tools/autotest/default_params/copter.parm,/demo/sitl_airside.parm' \
+    >"$artifact_dir/${label}-sitl-container-id.txt"
+"$docker_bin" inspect "$sitl_name" \
+    >"$artifact_dir/${label}-sitl-inspect.json" 2>&1 || true
+sleep 3
+
+"$docker_bin" run --name "$airside_name" --network host --ipc host \
+    --entrypoint /bin/bash \
+    -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-44}" \
+    -e ROS_LOCALHOST_ONLY=1 \
+    -e RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    -e OBSTACLE_HORIZONTAL_SPEED_MPS="${OBSTACLE_HORIZONTAL_SPEED_MPS:-2.0}" \
+    -e OBSTACLE_SPEED_GATE_MPS="${OBSTACLE_SPEED_GATE_MPS:-}" \
+    -v "$repo_root":/repo:ro \
+    -v "$artifact_dir":/artifacts \
+    "$airside_image" -lc \
+    "source /opt/ros/humble/setup.bash
+     source /ros_ws/install/setup.bash
+     export PYTHONPATH=/monorepo\${PYTHONPATH:+:\$PYTHONPATH}
+     traffic_pid=''
+     if [[ '${synthetic_traffic}' == 'true' ]]; then
+       setsid ros2 run engine synthetic_static_traffic --ros-args \
+         -p include_obstacle:=${include_static_obstacle} \
+         -p east_offset_m:=0.0 \
+         -p north_offset_m:=20.0 \
+         -p altitude_agl_m:=15.0 \
+         -p horizontal_keepaway_m:=5.0 \
+         -p vertical_keepaway_m:=5.0 \
+         > /artifacts/${label}-synthetic-traffic.log 2>&1 &
+       traffic_pid=\$!
+     fi
+     ros2 run mavros mavros_node --ros-args \
+       -p fcu_url:=tcp://127.0.0.1:5760 \
+       -p fcu_protocol:=v2.0 \
+       -p tgt_system:=1 \
+       -p tgt_component:=1 \
+       -p plugin_denylist:=['rc_io'] \
+       > /artifacts/${label}-mavros.log 2>&1 &
+     mavros_pid=\$!
+     setsid ros2 bag record \
+       --output /artifacts/${label}-rosbag \
+       /obstacle_avoidance/scan \
+       /aeac/traffic \
+       /obstacle_avoidance/diagnostics \
+       /mavros/state \
+       /mavros/local_position/pose \
+       /mavros/global_position/global \
+       /mavros/global_position/rel_alt \
+       /position_controller/velocity_target \
+       /mavros/setpoint_velocity/cmd_vel \
+       /mavros/setpoint_raw/global \
+       > /artifacts/${label}-rosbag.log 2>&1 &
+     bag_pid=\$!
+     python3 /repo/airside/experiments/obstacle_avoidance/airside_bt_sitl.py \
+       --scenario ${scenario} \
+       --duration ${scenario_duration} \
+       --readiness-timeout ${READINESS_TIMEOUT_S:-180} \
+       --log-jsonl /artifacts/${label}.jsonl \
+       --summary-json /artifacts/${label}-summary.json \
+       --params-json /artifacts/${label}-params.json \
+       --waypoints-file /artifacts/${label}-waypoints.yaml
+     scenario_status=\$?
+     if ! kill -0 \$bag_pid >/dev/null 2>&1; then
+       echo 'ROS bag recorder exited before scenario completion' >&2
+       scenario_status=1
+     fi
+     kill -INT -- -\$bag_pid >/dev/null 2>&1 || true
+     for _ in \$(seq 1 40); do
+       kill -0 \$bag_pid >/dev/null 2>&1 || break
+       sleep 0.25
+     done
+     kill -TERM -- -\$bag_pid >/dev/null 2>&1 || true
+     wait \$bag_pid >/dev/null 2>&1 || true
+     if [[ ! -s /artifacts/${label}-rosbag/metadata.yaml ]]; then
+       echo 'ROS bag metadata was not produced' >&2
+       scenario_status=1
+     fi
+     kill -INT \$mavros_pid >/dev/null 2>&1 || true
+     for _ in \$(seq 1 20); do
+       kill -0 \$mavros_pid >/dev/null 2>&1 || break
+       sleep 0.25
+     done
+     kill -TERM \$mavros_pid >/dev/null 2>&1 || true
+     sleep 1
+     kill -KILL \$mavros_pid >/dev/null 2>&1 || true
+     wait \$mavros_pid >/dev/null 2>&1 || true
+     if [[ -n \$traffic_pid ]]; then
+       kill -INT -- -\$traffic_pid >/dev/null 2>&1 || true
+       for _ in \$(seq 1 20); do
+         kill -0 \$traffic_pid >/dev/null 2>&1 || break
+         sleep 0.25
+       done
+       kill -TERM -- -\$traffic_pid >/dev/null 2>&1 || true
+       wait \$traffic_pid >/dev/null 2>&1 || true
+     fi
+     exit \$scenario_status" \
+    >"$artifact_dir/${label}-runner.log" 2>&1
+scenario_status=$?
+
+echo "$scenario_status" >"$artifact_dir/${label}-exit.txt"
+"$docker_bin" logs "$sitl_name" \
+    >"$artifact_dir/${label}-fc.log" 2>&1 || true
+"$docker_bin" inspect "$airside_name" \
+    >"$artifact_dir/${label}-airside-inspect.json" 2>&1 || true
+cat "$artifact_dir/${label}-runner.log"
+exit "$scenario_status"

@@ -2,3 +2,12 @@ build/
 install/
 log/
 data/
+.env
+
+# Obstacle-avoidance experiment output (source and fixtures stay tracked).
+/experiments/obstacle_avoidance/logs/
+/experiments/obstacle_avoidance/artifacts/
+/experiments/obstacle_avoidance/rosbags/
+/experiments/obstacle_avoidance/**/*-rosbag/
+/experiments/obstacle_avoidance/**/*.mcap
+/experiments/obstacle_avoidance/**/*.db3

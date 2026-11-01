@@ -177,6 +177,21 @@ class ControllerTests(unittest.TestCase):
                 )
                 self.assertEqual(decision.planner_status, "NO_PATH")
 
+    def test_goal_covered_by_obstacle_holds_without_circling(self) -> None:
+        occupied_goal = ObstacleSnapshot(
+            obstacles=(CircleObstacle(Point2D(0.0, 10.0), 5.0),),
+            timestamp_s=NOW,
+        )
+        decision = self.controller.step(
+            now_s=NOW,
+            goal=goal(),
+            telemetry=telemetry(),
+            obstacles=occupied_goal,
+        )
+        self.assertEqual(decision.planner_status, "NO_PATH")
+        self.assertEqual(decision.reason, "BLOCKED_GOAL")
+        self.assertEqual((decision.east_mps, decision.north_mps), (0.0, 0.0))
+
     def test_stale_telemetry_and_waiting_after_guided_entry_hold(self) -> None:
         stale = self.controller.step(
             now_s=NOW,
@@ -226,6 +241,26 @@ class ControllerTests(unittest.TestCase):
             (reached.east_mps, reached.north_mps, reached.up_mps),
             (0.0, 0.0, 0.0),
         )
+
+    def test_traffic_source_can_report_specific_fail_closed_reasons(self) -> None:
+        missing = self.controller.step(
+            now_s=NOW,
+            goal=goal(),
+            telemetry=telemetry(),
+            obstacles=None,
+            missing_obstacles_reason="NO_TRAFFIC",
+        )
+        unhealthy = self.controller.step(
+            now_s=NOW,
+            goal=goal(),
+            telemetry=telemetry(),
+            obstacles=clear_snapshot(healthy=False),
+            obstacle_reason="TRAFFIC_PROTOCOL_ERROR",
+        )
+
+        self.assertEqual(missing.reason, "NO_TRAFFIC")
+        self.assertEqual(unhealthy.reason, "TRAFFIC_PROTOCOL_ERROR")
+        self.assertEqual((missing.east_mps, missing.north_mps), (0.0, 0.0))
 
 
 class ActiveNavigationClockTests(unittest.TestCase):
