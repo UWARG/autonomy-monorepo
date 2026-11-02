@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import math
 import time
-from bisect import insort
 from collections import Counter
 from threading import Event, Lock, Thread
 
@@ -16,13 +15,13 @@ from .mission import Mission
 
 logger = logging.getLogger(__name__)
 
+
 class DroneTaskScheduler:
     def __init__(self, missions: list[Mission], drone_manager: DroneStateManager) -> None:
         self.POLLING_HERTZ = 0.5
         self.STALE_TIMESTAMP_LIMIT = 4
         self.DRONE_FAILED_ASSIGN_ATTEMPT_LIMIT = 3
         self.NEXT_BEST_DRONE_PROXIMITY_LIMIT = 5
-        self.NUMBER_OF_DRONE_CANDIDATES = 5
 
         self.missions = list(missions)
         self.missions_list_lock = Lock()
@@ -150,25 +149,27 @@ class DroneTaskScheduler:
 
         Returns the accepting drone_id, or None if no drone accepted it.
         """
-        # Each element is a tuple that is defined as (proximity, drone_id)
-        closest_drones_candidates = []
+        def acceptable_drone_filter(drone):
+            # Keep only drones that are not already assigned this pass, have a
+            # position, and have a non-stale timestamp.
+            return (
+                drone.drone_id not in assigned_drones
+                and drone.position is not None
+                and drone.last_update_timestamp is not None
+                and time.time() - drone.last_update_timestamp
+                < self.STALE_TIMESTAMP_LIMIT
+            )
 
-        for drone in available_drones:
-            if (drone.drone_id in assigned_drones
-                    or drone.position is None or drone.last_update_timestamp is None):
-                continue
-
-            # Possibly stale position, ignore drone
-            if time.time() - drone.last_update_timestamp >= self.STALE_TIMESTAMP_LIMIT:
-                continue
-
+        def map_drone_output(drone):
             proximity = self.get_proximity(mission.target, drone.position)
 
-            if len(closest_drones_candidates) < self.NUMBER_OF_DRONE_CANDIDATES or proximity < closest_drones_candidates[-1][0]:
-                insort(closest_drones_candidates, (proximity, drone.drone_id))
+            return (proximity, drone.drone_id)
 
-            if len(closest_drones_candidates) > self.NUMBER_OF_DRONE_CANDIDATES:
-                closest_drones_candidates.pop()
+        # Each element is a tuple that is defined as (proximity, drone_id)
+        closest_drones_candidates = filter(
+            acceptable_drone_filter, available_drones)
+        closest_drones_candidates = sorted(
+            map(map_drone_output, closest_drones_candidates))
 
         if len(closest_drones_candidates) != 0:
             for index, (proximity, drone_id) in enumerate(closest_drones_candidates):
@@ -181,7 +182,7 @@ class DroneTaskScheduler:
 
                 # send_location_command_sync returns a boolean of whether it accepted or not
                 if assigned_drone_result:
-                    del failed_assign_attempts[drone_id]
+                    failed_assign_attempts.pop(drone_id, None)
                     return drone_id
                 else:
                     failed_assign_attempts[drone_id] += 1

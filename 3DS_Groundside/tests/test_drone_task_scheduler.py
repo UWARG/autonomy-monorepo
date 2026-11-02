@@ -248,14 +248,14 @@ def test_falls_back_to_a_distant_drone_once_over_the_failure_limit():
         "drone-near", "drone-far"]
 
 
-def test_attempts_no_more_than_number_of_drone_candidates():
+def test_tries_every_candidate_within_proximity_threshold():
     drones = [make_state(f"drone-{i:02d}", north(i)) for i in range(6)]
     manager = FakeDroneManager(drones, accept=False)
     scheduler = DroneTaskScheduler([], manager)
 
     assert scheduler.assign_mission(
         make_mission(), drones, set(), Counter()) is None
-    assert len(manager.sent) == scheduler.NUMBER_OF_DRONE_CANDIDATES
+    assert len(manager.sent) == len(drones)
 
 
 def test_success_clears_failed_attempt_count():
