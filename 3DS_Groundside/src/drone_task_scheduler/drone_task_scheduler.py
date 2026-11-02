@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+import logging
 import math
 import time
-from collections import Counter
 from bisect import insort
-from threading import Thread, Event, Lock
+from collections import Counter
+from threading import Event, Lock, Thread
 
 from utils.src.types import Coordinate
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
+from groundside_manager import DroneState, DroneStateManager
+
 from .mission import Mission
 
-from groundside_manager import DroneState as DroneState, DroneStateManager
-
+logger = logging.getLogger(__name__)
 
 class DroneTaskScheduler:
     def __init__(self, missions: list[Mission], drone_manager: DroneStateManager) -> None:
@@ -101,7 +103,9 @@ class DroneTaskScheduler:
                         assigned_drones.add(result)
             except Exception:
                 # Ignore error, keep trying
-                pass
+                logger.exception(
+                    "An error occurred while attempting to assign missions to available drones."
+                )
             finally:
                 """
                 Won't break since it will always remove the indices from the largest

@@ -3,6 +3,7 @@ Groundside Drone State Manager: tracks all identified drones and their latest kn
 
 SKELETON ONLY: types and method signatures; no logic implemented yet.
 """
+from __future__ import annotations
 
 import asyncio
 import threading

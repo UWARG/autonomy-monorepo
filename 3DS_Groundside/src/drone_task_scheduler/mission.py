@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from utils.src.types import Coordinate
+
 
 @dataclass
 class Mission:
