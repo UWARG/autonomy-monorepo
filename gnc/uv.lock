@@ -715,11 +715,8 @@ version = "0.1.0"
 source = { directory = "../utils" }
 dependencies = [
     { name = "pyyaml" },
-<<<<<<< HEAD
     { name = "shapely", version = "2.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "shapely", version = "2.1.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-=======
->>>>>>> ff1fa3a (Add a task scheduler to assign missions to drones operating on a separate thread (#169))
 ]
 
 [package.metadata]
@@ -727,9 +724,6 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-<<<<<<< HEAD
     { name = "shapely", specifier = ">=1.7.0" },
-=======
->>>>>>> ff1fa3a (Add a task scheduler to assign missions to drones operating on a separate thread (#169))
 ]
 provides-extras = ["dev"]
