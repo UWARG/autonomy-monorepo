@@ -229,14 +229,13 @@ export default function App() {
             <div className="ims-topbar-identity">
               <div className="ims-brand-block">
                 <span className="ims-brand-mark">I</span>
-                <div><strong>IMS</strong><span>Ground Station</span></div>
+                <div><strong>IMS</strong><span>Web Dashboard</span></div>
               </div>
               <div className="ims-system-status">
                 <span className="ims-status-dot" aria-hidden="true" />
-                <div><strong>System status</strong><span>Awaiting connection</span></div>
+                <div><strong>Status</strong><span>Placeholder</span></div>
               </div>
             </div>
-            <div className="ims-breadcrumb"><span>Workspace</span><b>/</b><strong>Overview</strong></div>
             <div className="ims-topbar-actions">
               <HeaderStatus />
               <button
@@ -327,10 +326,6 @@ export default function App() {
       </div>
 
       <main className="ims-workspace" onClick={() => editing && setSelectedId(null)}>
-        <div className="ims-page-heading">
-          <div><p className="ims-eyebrow">Mission operations</p><h1>Dashboard</h1><p>Monitor your vehicle and mission telemetry in real time.</p></div>
-          <div className="ims-heading-meta"><span className="ims-live-dot" />Live workspace</div>
-        </div>
         <div
           ref={gridRef}
           className={`ims-grid-wrapper ${editing ? 'ims-editing' : ''} mx-auto w-full max-w-[1400px] px-5 py-5`}
@@ -385,7 +380,7 @@ export default function App() {
             {layout.items.map((item) => (
               <div key={item.id} className={`ims-grid-card ims-widget-${item.type} ${selectedId === item.id ? 'ims-grid-card-selected' : ''}`} onClick={(event) => {
                 event.stopPropagation();
-                setSelectedId(item.id);
+                  setSelectedId((current) => current === item.id ? null : item.id);
               }}>
                 {editing && (
                   <>

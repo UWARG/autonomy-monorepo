@@ -2,7 +2,7 @@ import { Bar, BarChart, Cell, Line, LineChart, Pie, PieChart, ResponsiveContaine
 import type { CustomWidgetDefinition } from '../layout';
 
 const SAMPLE = [{ name: '1', value: 18 }, { name: '2', value: 32 }, { name: '3', value: 24 }, { name: '4', value: 41 }];
-const COLORS = ['#5B8DEF', '#34D17E', '#E0A83A', '#F26555'];
+const COLORS = ['#F2C230', '#6E7F3A', '#E7B51B', '#B5483D'];
 
 export default function CustomWidget({ definition }: { definition: CustomWidgetDefinition }) {
   const value = definition.decimals == null ? '42' : Number(42).toFixed(definition.decimals);
@@ -20,9 +20,9 @@ export default function CustomWidget({ definition }: { definition: CustomWidgetD
         {['line', 'bar', 'pie'].includes(definition.renderer) && (
           <ResponsiveContainer width="100%" height="100%">
             {definition.renderer === 'line' ? (
-              <LineChart data={SAMPLE}><XAxis dataKey="name" hide /><YAxis hide /><Line type="monotone" dataKey="value" stroke="#5B8DEF" strokeWidth={3} dot={false} /></LineChart>
+              <LineChart data={SAMPLE}><XAxis dataKey="name" hide /><YAxis hide /><Line type="monotone" dataKey="value" stroke="#F2C230" strokeWidth={3} dot={false} /></LineChart>
             ) : definition.renderer === 'bar' ? (
-              <BarChart data={SAMPLE}><XAxis dataKey="name" hide /><YAxis hide /><Bar dataKey="value" fill="#5B8DEF" radius={[5, 5, 0, 0]} /></BarChart>
+              <BarChart data={SAMPLE}><XAxis dataKey="name" hide /><YAxis hide /><Bar dataKey="value" fill="#F2C230" radius={[5, 5, 0, 0]} /></BarChart>
             ) : (
               <PieChart><Pie data={SAMPLE} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="80%" paddingAngle={3}>{SAMPLE.map((entry, index) => <Cell key={entry.name} fill={COLORS[index]} />)}</Pie></PieChart>
             )}
