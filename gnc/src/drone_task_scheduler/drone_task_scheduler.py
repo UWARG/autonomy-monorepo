@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import time
+from collections import Counter
+from bisect import insort
 from threading import Thread, Event, Lock
 
 from utils.src.types import Coordinate
@@ -16,6 +18,9 @@ class DroneTaskScheduler:
     def __init__(self, missions: list[Mission], drone_manager: DroneStateManager) -> None:
         self.POLLING_HERTZ = 0.5
         self.STALE_TIMESTAMP_LIMIT = 4
+        self.DRONE_FAILED_ASSIGN_ATTEMPT_LIMIT = 3
+        self.NEXT_BEST_DRONE_PROXIMITY_LIMIT = 5
+        self.NUMBER_OF_DRONE_CANDIDATES = 5
 
         self.missions = list(missions)
         self.missions_list_lock = Lock()
@@ -73,22 +78,31 @@ class DroneTaskScheduler:
         Blocked if self.stop_polling.is_set() is True. See variable definition for
         more information.
         """
+
+        # Counter to keep track of the number of failed attempts to assign
+        # to a drone
+        failed_assign_attempts = Counter()
+
         while not self.stop_polling.is_set():
+            removal_list = []
 
             try:
                 available_drones = self.drone_manager.get_available_drones()
-                removal_list = []
 
-                unavailable_drones = set()
+                assigned_drones = set()
 
                 for index, mission in enumerate(self.missions):
                     result = self.assign_mission(
-                        mission, available_drones, unavailable_drones)
+                        mission, available_drones, assigned_drones,
+                        failed_assign_attempts)
 
                     if result is not None:
                         removal_list.append(index)
-                        unavailable_drones.add(result)
-
+                        assigned_drones.add(result)
+            except Exception:
+                # Ignore error, keep trying
+                pass
+            finally:
                 """
                 Won't break since it will always remove the indices from the largest
                 to the smallest. This allows the smaller indices to remain it in the 
@@ -97,10 +111,7 @@ class DroneTaskScheduler:
                 with self.missions_list_lock:
                     for index in reversed(removal_list):
                         del self.missions[index]
-            except Exception:
-                # Ignore error, keep trying 
-                pass
-            finally:
+
                 self.stop_polling.wait(1 / self.POLLING_HERTZ)
 
     def add_mission(self, new_mission: Mission) -> None:
@@ -125,20 +136,21 @@ class DroneTaskScheduler:
         self,
         mission: Mission,
         available_drones: list[DroneState],
-        unavailable_drones: set[str],
+        assigned_drones: set[str],
+        failed_assign_attempts: Counter[str]
     ) -> str | None:
         """
-        Attempts to assign out the mission to the closest proximity drone. 
+        Assigns the mission to the nearest available drone that accepts it,
+        falling back to the next best candidate when close enough or when the
+        closer drone keeps rejecting.
 
-        If it successfully assigns out the mission to a drone, it returns drone_id. 
-        Otherwise it returns None, for when it couldn't find a drone or the drone
-        did not accept the mission. 
+        Returns the accepting drone_id, or None if no drone accepted it.
         """
-        closest_drone = None
-        closest_proximity = float('inf')
+        # Each element is a tuple that is defined as (proximity, drone_id)
+        closest_drones_candidates = []
 
         for drone in available_drones:
-            if (drone.drone_id in unavailable_drones
+            if (drone.drone_id in assigned_drones
                     or drone.position is None or drone.last_update_timestamp is None):
                 continue
 
@@ -148,20 +160,32 @@ class DroneTaskScheduler:
 
             proximity = self.get_proximity(mission.target, drone.position)
 
-            if proximity < closest_proximity:
-                closest_proximity = proximity
-                closest_drone = drone
+            if len(closest_drones_candidates) < self.NUMBER_OF_DRONE_CANDIDATES or proximity < closest_drones_candidates[-1][0]:
+                insort(closest_drones_candidates, (proximity, drone.drone_id))
 
-        if closest_drone is not None:
-            result = self.drone_manager.send_location_command_sync(
-                closest_drone.drone_id,
-                mission.task_id,
-                mission.target,
-                mission.yaw
-            )
+            if len(closest_drones_candidates) > self.NUMBER_OF_DRONE_CANDIDATES:
+                closest_drones_candidates.pop()
 
-            # send_location_command_sync returns a boolean of whether it accepted or not
-            if result:
-                return closest_drone.drone_id
+        if len(closest_drones_candidates) != 0:
+            for index, (proximity, drone_id) in enumerate(closest_drones_candidates):
+                assigned_drone_result = self.drone_manager.send_location_command_sync(
+                    drone_id,
+                    mission.task_id,
+                    mission.target,
+                    mission.yaw
+                )
+
+                # send_location_command_sync returns a boolean of whether it accepted or not
+                if assigned_drone_result:
+                    del failed_assign_attempts[drone_id]
+                    return drone_id
+                else:
+                    failed_assign_attempts[drone_id] += 1
+
+                if ((index != len(closest_drones_candidates) - 1 and closest_drones_candidates[index + 1][0] - proximity <= self.NEXT_BEST_DRONE_PROXIMITY_LIMIT)
+                        or (failed_assign_attempts[drone_id] > self.DRONE_FAILED_ASSIGN_ATTEMPT_LIMIT)):
+                    continue
+
+                break
 
         return None

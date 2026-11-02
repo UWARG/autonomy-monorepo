@@ -3,6 +3,7 @@
 import math
 import threading
 import time
+from collections import Counter
 
 import pytest
 
@@ -48,6 +49,7 @@ class FakeDroneManager:
 
     Mirrors real availability semantics: a drone that accepts a command stops
     being returned by get_available_drones() until its next DRONE_STATE reset.
+    `accept` is a bool, or a set of drone ids that accept.
     """
 
     def __init__(self, states=(), *, accept=True, raise_on_send=False):
@@ -68,9 +70,12 @@ class FakeDroneManager:
             "target": target,
             "yaw": yaw,
         })
-        if self.accept:
+        accepted = (
+            self.accept if isinstance(self.accept, bool)
+            else drone_id in self.accept)
+        if accepted:
             self._states = [s for s in self._states if s.drone_id != drone_id]
-        return self.accept
+        return accepted
 
 
 @pytest.fixture
@@ -131,7 +136,8 @@ def test_assigns_to_closest_drone():
     near = make_state("drone-near", north(10))
     far = make_state("drone-far", north(80))
     scheduler = DroneTaskScheduler([], FakeDroneManager([near, far]))
-    assert scheduler.assign_mission(make_mission(), [near, far], set()) == "drone-near"
+    assert scheduler.assign_mission(
+        make_mission(), [near, far], set(), Counter()) == "drone-near"
 
 
 def test_assigns_one_mission_per_drone_then_reports_exhausted():
@@ -142,17 +148,24 @@ def test_assigns_one_mission_per_drone_then_reports_exhausted():
     scheduler = DroneTaskScheduler([], FakeDroneManager([near, far]))
     mission = make_mission()
 
-    assert scheduler.assign_mission(mission, [near, far], set()) == "drone-near"
-    assert scheduler.assign_mission(mission, [near, far], {"drone-near"}) == "drone-far"
     assert scheduler.assign_mission(
-        mission, [near, far], {"drone-near", "drone-far"}) is None
+        mission, [near, far], set(), Counter()) == "drone-near"
+    assert scheduler.assign_mission(
+        mission, [near, far], {"drone-near"}, Counter()) == "drone-far"
+    assert scheduler.assign_mission(
+        mission, [near, far], {"drone-near", "drone-far"}, Counter()) is None
 
 
-def test_ties_break_deterministically_on_first_drone():
+def test_ties_break_deterministically_by_drone_id():
+    """Equal proximity is broken lexicographically by drone_id, so the result
+    does not depend on the order the drones are returned in."""
     a = make_state("drone-a", north(10))
     b = make_state("drone-b", north(10))
     scheduler = DroneTaskScheduler([], FakeDroneManager([a, b]))
-    assert scheduler.assign_mission(make_mission(), [a, b], set()) == "drone-a"
+    assert scheduler.assign_mission(
+        make_mission(), [a, b], set(), Counter()) == "drone-a"
+    assert scheduler.assign_mission(
+        make_mission(), [b, a], set(), Counter()) == "drone-a"
 
 
 def test_skips_drone_with_no_position():
@@ -160,7 +173,7 @@ def test_skips_drone_with_no_position():
     blind = make_state("drone-blind", None)
     scheduler = DroneTaskScheduler([], FakeDroneManager())
     assert scheduler.assign_mission(
-        make_mission(), [positioned, blind], set()) == "drone-ok"
+        make_mission(), [positioned, blind], set(), Counter()) == "drone-ok"
 
 
 def test_skips_drone_with_no_timestamp():
@@ -169,7 +182,7 @@ def test_skips_drone_with_no_timestamp():
     blind.last_update_timestamp = None
     scheduler = DroneTaskScheduler([], FakeDroneManager())
     assert scheduler.assign_mission(
-        make_mission(), [positioned, blind], set()) == "drone-ok"
+        make_mission(), [positioned, blind], set(), Counter()) == "drone-ok"
 
 
 def test_skips_stale_drone():
@@ -178,12 +191,82 @@ def test_skips_stale_drone():
     stale = make_state("drone-stale", north(1), age_s=3600)
     fresh = make_state("drone-fresh", north(90))
     scheduler = DroneTaskScheduler([], FakeDroneManager())
-    assert scheduler.assign_mission(make_mission(), [stale, fresh], set()) == "drone-fresh"
+    assert scheduler.assign_mission(
+        make_mission(), [stale, fresh], set(), Counter()) == "drone-fresh"
 
 
 def test_returns_none_when_no_drones_available():
     scheduler = DroneTaskScheduler([], FakeDroneManager())
-    assert scheduler.assign_mission(make_mission(), [], set()) is None
+    assert scheduler.assign_mission(make_mission(), [], set(), Counter()) is None
+
+
+# ---------------------------------------------------------------------------
+# assign_mission - fallback to the next best drone
+# ---------------------------------------------------------------------------
+
+def test_falls_back_to_next_drone_within_proximity_threshold():
+    """The nearest drone rejects, but the runner-up is close enough to try."""
+    nearest = make_state("drone-near", north(0))
+    backup = make_state("drone-backup", north(3))
+    manager = FakeDroneManager([nearest, backup], accept={"drone-backup"})
+    scheduler = DroneTaskScheduler([], manager)
+
+    assert scheduler.assign_mission(
+        make_mission(), [nearest, backup], set(), Counter()) == "drone-backup"
+    assert [command["drone_id"] for command in manager.sent] == [
+        "drone-near", "drone-backup"]
+
+
+def test_does_not_fall_back_to_a_distant_drone():
+    """A rejection stops the search once the next drone is beyond the
+    proximity threshold and the rejecting drone is not over its limit."""
+    nearest = make_state("drone-near", north(0))
+    far = make_state("drone-far", north(50))
+    manager = FakeDroneManager([nearest, far], accept=False)
+    scheduler = DroneTaskScheduler([], manager)
+    attempts = Counter()
+
+    assert scheduler.assign_mission(
+        make_mission(), [nearest, far], set(), attempts) is None
+    assert [command["drone_id"] for command in manager.sent] == ["drone-near"]
+    assert attempts["drone-near"] == 1
+
+
+def test_falls_back_to_a_distant_drone_once_over_the_failure_limit():
+    """Past DRONE_FAILED_ASSIGN_ATTEMPT_LIMIT rejections, the proximity
+    threshold is ignored and the next-best drone is tried anyway."""
+    nearest = make_state("drone-near", north(0))
+    far = make_state("drone-far", north(50))
+    manager = FakeDroneManager([nearest, far], accept={"drone-far"})
+    scheduler = DroneTaskScheduler([], manager)
+    attempts = Counter(
+        {"drone-near": scheduler.DRONE_FAILED_ASSIGN_ATTEMPT_LIMIT})
+
+    assert scheduler.assign_mission(
+        make_mission(), [nearest, far], set(), attempts) == "drone-far"
+    assert [command["drone_id"] for command in manager.sent] == [
+        "drone-near", "drone-far"]
+
+
+def test_attempts_no_more_than_number_of_drone_candidates():
+    drones = [make_state(f"drone-{i:02d}", north(i)) for i in range(6)]
+    manager = FakeDroneManager(drones, accept=False)
+    scheduler = DroneTaskScheduler([], manager)
+
+    assert scheduler.assign_mission(
+        make_mission(), drones, set(), Counter()) is None
+    assert len(manager.sent) == scheduler.NUMBER_OF_DRONE_CANDIDATES
+
+
+def test_success_clears_failed_attempt_count():
+    drone = make_state("drone-00", north(0))
+    manager = FakeDroneManager([drone], accept=True)
+    scheduler = DroneTaskScheduler([], manager)
+    attempts = Counter({"drone-00": 2})
+
+    assert scheduler.assign_mission(
+        make_mission(), [drone], set(), attempts) == "drone-00"
+    assert "drone-00" not in attempts
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +279,8 @@ def test_command_carries_drone_id_task_id_target_and_yaw():
     scheduler = DroneTaskScheduler([], manager)
     target, yaw = north(42), 1.57
 
-    scheduler.assign_mission(make_mission("task-17", target, yaw), [drone], set())
+    scheduler.assign_mission(
+        make_mission("task-17", target, yaw), [drone], set(), Counter())
 
     assert manager.sent == [{
         "drone_id": "drone-03",

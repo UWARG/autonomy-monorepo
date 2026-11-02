@@ -21,6 +21,7 @@ class MissionState(Enum):
 
     IDLE = "IDLE"
     MOVING = "MOVING"
+    ARRIVED = "ARRIVED"
     # TODO: confirm the full list of states wuth PM
 
 
