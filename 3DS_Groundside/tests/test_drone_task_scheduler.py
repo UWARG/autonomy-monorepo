@@ -7,8 +7,8 @@ from collections import Counter
 
 import pytest
 
-from drone_task_scheduler import DroneTaskScheduler, Mission
-from groundside_manager import DroneState, MissionState
+from src.drone_task_scheduler import DroneTaskScheduler, Mission
+from src.groundside_manager import DroneState, MissionState
 from utils import Coordinate
 
 BASE_LAT, BASE_LON, BASE_ALT = 43.4717, -80.5414, 15.0
