@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="490" viewBox="0 0 1000 490" role="img" aria-labelledby="title desc">
+  <title id="title">Assignment choices and connected competition</title>
+  <desc id="desc">Left: greedy assignment costs 24 minutes, while joint assignment costs 11. Right: drones A, B, and C are connected through shared regions, while drone D and region Q are independent.</desc>
+  <rect width="1000" height="490" fill="#f8fafc"/>
+  <g font-family="Arial, sans-serif" fill="#0f172a">
+    <text x="30" y="38" font-size="23" font-weight="bold">Choose combinations, not isolated winners</text>
+    <rect x="20" y="60" width="455" height="410" rx="14" fill="white" stroke="#cbd5e1"/>
+    <rect x="495" y="60" width="485" height="410" rx="14" fill="white" stroke="#cbd5e1"/>
+    <text x="40" y="92" font-size="18" font-weight="bold">Same cost table, different assignments</text>
+    <text x="70" y="135" font-size="16">Minutes</text><text x="230" y="135" font-size="16">Cell X</text><text x="345" y="135" font-size="16">Cell Y</text>
+    <path d="M55 150H435 M55 205H435 M55 260H435" stroke="#cbd5e1"/>
+    <text x="70" y="185" font-size="18">Drone A</text><text x="245" y="185" font-size="22">4</text><text x="360" y="185" font-size="22">5</text>
+    <text x="70" y="240" font-size="18">Drone B</text><text x="245" y="240" font-size="22">6</text><text x="355" y="240" font-size="22">20</text>
+    <rect x="40" y="280" width="415" height="65" rx="8" fill="#fff7ed"/>
+    <text x="55" y="306" font-size="17" fill="#9a3412">Greedy: A → X, B → Y</text><text x="55" y="330" font-size="17" fill="#9a3412">4 + 20 = 24 minutes summed cost</text>
+    <rect x="40" y="357" width="415" height="65" rx="8" fill="#ecfdf5"/>
+    <text x="55" y="383" font-size="17" fill="#065f46">Joint: A → Y, B → X</text><text x="55" y="407" font-size="17" fill="#065f46">5 + 6 = 11 minutes summed cost</text>
+    <text x="40" y="448" font-size="14">Nearest-one pruning removes Y for both drones.</text>
+    <text x="515" y="92" font-size="18" font-weight="bold">Competition can connect indirectly</text>
+    <rect x="515" y="108" width="440" height="247" rx="10" fill="#eff6ff"/>
+    <g stroke="#64748b" stroke-width="2.5"><path d="M610 145L850 135 M610 145L850 195 M610 225L850 195 M610 225L850 255 M610 305L850 255 M610 305L850 325 M610 395L850 395"/></g>
+    <g fill="#1d4ed8"><circle cx="610" cy="145" r="22"/><circle cx="610" cy="225" r="22"/><circle cx="610" cy="305" r="22"/><circle cx="610" cy="395" r="22"/></g>
+    <g fill="#0f766e"><rect x="828" y="116" width="44" height="38" rx="6"/><rect x="828" y="176" width="44" height="38" rx="6"/><rect x="828" y="236" width="44" height="38" rx="6"/><rect x="828" y="306" width="44" height="38" rx="6"/><rect x="828" y="376" width="44" height="38" rx="6"/></g>
+    <g fill="white" font-size="18" text-anchor="middle"><text x="610" y="151">A</text><text x="610" y="231">B</text><text x="610" y="311">C</text><text x="610" y="401">D</text><text x="850" y="141">X</text><text x="850" y="201">Y</text><text x="850" y="261">Z</text><text x="850" y="331">W</text><text x="850" y="401">Q</text></g>
+    <text x="515" y="448" font-size="14">Solve A–B–C together; D–Q is independent*</text>
+    <text x="515" y="465" font-size="12">*For this retained graph with separable constraints.</text>
+  </g>
+</svg>
