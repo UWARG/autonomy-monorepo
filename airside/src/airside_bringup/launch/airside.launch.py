@@ -43,11 +43,9 @@ def generate_launch_description() -> LaunchDescription:
                 description="TrafficSnapshot input for BendyRuler traffic mode",
             ),
             DeclareLaunchArgument(
-                "lapping_duration_s",
-                default_value=EnvironmentVariable(
-                    "LAPPING_DURATION_S", default_value="120.0"
-                ),
-                description="Lapping phase length before reconnaissance",
+                "lap_count",
+                default_value=EnvironmentVariable("LAP_COUNT", default_value="3"),
+                description="Number of laps to fly before reconnaissance",
             ),
             Node(
                 package="mavros",
@@ -142,9 +140,9 @@ def generate_launch_description() -> LaunchDescription:
                         "obstacle_avoidance.traffic_topic": LaunchConfiguration(
                             "traffic_topic"
                         ),
-                        "lapping_duration_s": ParameterValue(
-                            LaunchConfiguration("lapping_duration_s"),
-                            value_type=float,
+                        "lap_count": ParameterValue(
+                            LaunchConfiguration("lap_count"),
+                            value_type=int,
                         ),
                     }
                 ],

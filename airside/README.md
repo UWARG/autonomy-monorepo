@@ -99,8 +99,7 @@ The engine is built with [py_trees_ros](https://py-trees-ros.readthedocs.io/en/l
 1. **Record launch point**: once the pilot arms, the FCU home position (which
    ArduPilot resets at arming) is read back and stored as the landing spot.
 2. **Lapping**: fly the waypoints in `config/waypoints.yaml` as a clockwise
-   sweep, starting from the side facing the launch point, until the lapping
-   deadline.
+   sweep, starting from the side facing the launch point, for `LAP_COUNT` laps.
 3. **Reconnaissance**: the engine commands nothing and waits for the pilot to
    flip the recon-complete RC switch (`RECON_COMPLETE_RC_CHANNEL`). The pilot
    flies (switching out of GUIDED pauses the mission) and captures images on

@@ -1,5 +1,5 @@
 """
-Bookkeeping behaviors that maintain the lap-timing blackboard entries.
+Bookkeeping behaviors that track and report lap progress and lap times.
 """
 
 from __future__ import annotations
@@ -8,50 +8,7 @@ import py_trees
 import rclpy.node
 
 from engine import blackboard_keys
-from engine.constants import LAPPING_DURATION_SEC
 from engine.ground_log import send_to_ground
-
-_LAPPING_DURATION_PARAMETER = "lapping_duration_s"
-
-
-class SetLappingDeadline(py_trees.behaviour.Behaviour):
-    """
-    Writes the lapping deadline to the blackboard when lapping begins.
-
-    Always returns SUCCESS.
-    """
-
-    def __init__(self, name: str = "SetLappingDeadline") -> None:
-        super().__init__(name=name)
-
-        self.blackboard = self.attach_blackboard_client(name=self.name)
-        self.blackboard.register_key(
-            key=blackboard_keys.LAPPING_END_TIME_SEC,
-            access=py_trees.common.Access.WRITE,
-        )
-
-    def setup(self, **kwargs: rclpy.node.Node) -> None:
-        self._node = kwargs["node"]
-        self._node.declare_parameter(
-            _LAPPING_DURATION_PARAMETER,
-            LAPPING_DURATION_SEC,
-        )
-
-    def update(self) -> py_trees.common.Status:
-        now_s = self._node.get_clock().now().nanoseconds / 1e9
-        duration_s = float(
-            self._node.get_parameter(_LAPPING_DURATION_PARAMETER).value
-        )
-        self.blackboard.set(
-            blackboard_keys.LAPPING_END_TIME_SEC, now_s + duration_s
-        )
-        self._node.get_logger().info(
-            f"{self.name}: lapping deadline set to t={now_s + duration_s:.1f}s"
-        )
-        send_to_ground(
-            self._node, f"ENG: lapping phase, {duration_s:.0f}s window"
-        )
-        return py_trees.common.Status.SUCCESS
 
 
 class ResetLapWaypoints(py_trees.behaviour.Behaviour):
@@ -122,10 +79,8 @@ class StartLapTimer(py_trees.behaviour.Behaviour):
 
 class RecordLapEnd(py_trees.behaviour.Behaviour):
     """
-    Checks if the lap was completed and updates ``estimated_lap_time_sec``
-    from the lap that just finished.
-
-    The first completed lap is not used as an estimate.
+    Reports whether the lap that just finished was completed or cut short,
+    and how long it took.
 
     Always returns SUCCESS.
     """
@@ -144,10 +99,6 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             key=blackboard_keys.WAYPOINT_INDEX, access=py_trees.common.Access.READ
         )
-        self.blackboard.register_key(
-            key=blackboard_keys.ESTIMATED_LAP_TIME_SEC,
-            access=py_trees.common.Access.WRITE,
-        )
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
@@ -160,7 +111,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             index = self.blackboard.get(blackboard_keys.WAYPOINT_INDEX)
         except KeyError:
             self._node.get_logger().warning(
-                f"{self.name}: lap bookkeeping keys missing, skipping estimate"
+                f"{self.name}: lap bookkeeping keys missing, skipping lap report"
             )
             return py_trees.common.Status.SUCCESS
 
@@ -169,7 +120,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
         if index < len(waypoints):
             self._node.get_logger().info(
                 f"{self.name}: lap aborted at waypoint {index}/{len(waypoints)} "
-                f"after {lap_time_s:.1f}s, keeping previous lap-time estimate"
+                f"after {lap_time_s:.1f}s"
             )
             send_to_ground(
                 self._node, f"ENG: lap aborted at wp {index}/{len(waypoints)}"
@@ -181,14 +132,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             self._node,
             f"ENG: lap {self._completed_laps} done in {lap_time_s:.0f}s",
         )
-        if self._completed_laps == 1:
-            self._node.get_logger().info(
-                f"{self.name}: first lap completed in {lap_time_s:.1f}s"
-            )
-            return py_trees.common.Status.SUCCESS
-
-        self.blackboard.set(blackboard_keys.ESTIMATED_LAP_TIME_SEC, lap_time_s)
         self._node.get_logger().info(
-            f"{self.name}: lap completed in {lap_time_s:.1f}s"
+            f"{self.name}: lap {self._completed_laps} completed in {lap_time_s:.1f}s"
         )
         return py_trees.common.Status.SUCCESS

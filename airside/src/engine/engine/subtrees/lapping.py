@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import py_trees
 
+from engine.behaviors.navigation.lap_count import AnotherLapRemaining, SetLapCount
 from engine.behaviors.navigation.lap_timing import (
     RecordLapEnd,
     ResetLapWaypoints,
-    SetLappingDeadline,
     StartLapTimer,
 )
 from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
 from engine.behaviors.navigation.obstacle_aware_fly_to_waypoint import (
     ObstacleAwareFlyToWaypoint,
-)
-from engine.behaviors.navigation.time_checks import (
-    EnoughTimeForAnotherLap,
-    EnoughTimeRemaining,
 )
 
 
@@ -27,7 +23,6 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             LoadNextWaypoint(),
-            EnoughTimeRemaining(),
             ObstacleAwareFlyToWaypoint(),
             StartLapTimer(),
         ],
@@ -46,15 +41,15 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         name="SingleLap",
         memory=True,
         children=[
-            EnoughTimeForAnotherLap(),
+            AnotherLapRemaining(),
             ResetLapWaypoints(),
             waypoint_loop,
             RecordLapEnd(),
         ],
     )
 
-    lap_until_deadline = py_trees.decorators.FailureIsSuccess(
-        name="LapUntilDeadline",
+    lap_until_done = py_trees.decorators.FailureIsSuccess(
+        name="LapUntilDone",
         child=py_trees.decorators.Repeat(
             name="RepeatLap",
             child=single_lap,
@@ -66,7 +61,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         name="Lapping",
         memory=True,
         children=[
-            SetLappingDeadline(),
-            lap_until_deadline,
+            SetLapCount(),
+            lap_until_done,
         ],
     )

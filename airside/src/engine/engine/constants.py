@@ -11,8 +11,8 @@ TICK_PERIOD_MS = 500.0
 # Whether or not to print the tree with Unicode characters on every tick.
 UNICODE_TREE_DEBUG = False
 
-# Lapping deadline, from engine startup, seconds.
-LAPPING_DURATION_SEC = 120.0
+# Number of laps to fly before reconnaissance (overridable via the lap_count parameter).
+LAP_COUNT = 3
 
 # MAVLink message IDs the engine needs streamed from the FCU.
 MAVLINK_MSG_ID_HEARTBEAT = 0
@@ -35,9 +35,6 @@ STREAM_RATE_REQUESTS_HZ = {
 
 # Baseline rate for all legacy streams (REQUEST_DATA_STREAM fallback), Hz.
 BASELINE_STREAM_RATE_HZ = 4
-
-# A new lap is only started if this multiple of the last lap time fits before the deadline.
-LAP_TIME_MARGIN = 1.2
 
 # How close (meters) counts as having reached a waypoint.
 WAYPOINT_ACCEPTANCE_RADIUS_M = 1.0
