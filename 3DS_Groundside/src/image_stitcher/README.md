@@ -4,8 +4,10 @@ Groundside orthomosaic stitcher for 3DS ([#179](https://github.com/UWARG/autonom
 It takes photos from a fleet of drones, arriving in any order, and builds one
 top-down map of the whole area.
 
-Each photo only needs its GPS position (lat, lon, alt). Drone heading and
-camera field of view are not needed: they are worked out from the photos.
+Each photo needs its GPS position (lat, lon, alt) and the drone's roll and
+pitch. Drone heading is not needed: it is worked out from the photos. Photos
+are undistorted with the camera calibration in `camera_info.yaml`, which also
+gives the ground resolution at each altitude.
 
 ## Usage
 
@@ -13,31 +15,48 @@ camera field of view are not needed: they are worked out from the photos.
 from collections import deque
 from pathlib import Path
 
+from src.image_stitcher.camera import Camera
 from src.image_stitcher.message import ImageMessage
 from src.image_stitcher.stitcher import ImageStitcher
 
 queue = deque()
-stitcher = ImageStitcher()
+stitcher = ImageStitcher()  # or ImageStitcher(camera=Camera.load(path))
 
 # Whatever receives photos from the drones appends to the queue...
-queue.append(ImageMessage(lat=43.4723, lon=-80.5449, alt=25.0, img=rgb_array))
+queue.append(
+    ImageMessage(
+        lat=43.4723,
+        lon=-80.5449,
+        alt=25.0,
+        img=rgb_array,
+        roll_deg=1.2,
+        pitch_deg=-0.8,
+    )
+)
 
 # ...and the stitcher drains it.
 stitcher.process_queue(queue)
 stitcher.save(Path("map.png"))  # map.png + map.json (GPS corners, m/px)
 ```
 
-`ImageStitcher.run(queue, stop_event, output_path=...)` does the same in a loop
-on a worker thread, saving periodically, until `stop_event` is set.
+`ImageStitcher.run(queue, stop_event, output_dir=..., save_every=20)` does
+the same in a loop on a worker thread until `stop_event` is set. Every save is
+a new numbered map (`map_001.png` + `map_001.json`, `map_002...`), continuing
+after any maps already in the folder, so earlier maps are never overwritten.
 `files.load_photo_run(run_dir)` reads a photo run saved by the 3ds airside
-camera node (`photos.jsonl` + PNGs).
+camera node (`photos.jsonl` + PNGs). The camera node doesn't log roll/pitch
+yet, so until it adds an `attitude` entry those photos are rejected.
+
+Photos that can't be used are skipped and listed in
+`stitcher.rejections` as `(drone_id, image_id, reason)`.
 
 The first run needs internet: XFeat is downloaded from its GitHub repo with
 `torch.hub` (pinned commit, about 6 MB) and cached in `~/.cache/torch/hub`.
 Run the demo once on the groundside laptop before going to the field.
 
-Demo on a synthetic 3-drone mission (writes `stitcher_demo/map.png` and
-`ground_truth.png` for comparison):
+Demo on a synthetic 3-drone mission (writes the numbered maps to
+`stitcher_demo/`, the last one being the full map, and `ground_truth.png` for
+comparison):
 
 ```bash
 cd 3DS_Groundside
@@ -48,6 +67,10 @@ uv run python -m src.image_stitcher.demo stitcher_demo --gps-noise 2
 
 For each new photo:
 
+0. **Check and undistort.** Photos are rejected, and never placed, if they
+   have no GPS or roll/pitch, are tilted, badly exposed or blurry
+   (`quality.py`), or don't match the camera calibration's size. Good
+   photos are undistorted with the calibration (`camera.py`).
 1. **Find neighbours.** GPS picks the already-placed photos close enough to
    overlap it.
 2. **Match features.** [XFeat](https://github.com/verlab/accelerated_features)
@@ -72,6 +95,9 @@ weights that fade towards each photo's edges, hiding seams.
 | File | Purpose |
 |---|---|
 | `message.py` | `ImageMessage`: what arrives on the queue |
+| `camera.py` | Camera calibration: undistortion, ground resolution |
+| `quality.py` | Rejecting blurry, badly exposed or tilted photos |
+| `camera_info.yaml` | Arducam 640 x 480 calibration (ROS camera_info format) |
 | `stitcher.py` | `ImageStitcher`: matching, clustering, placing, rendering |
 | `features.py` | XFeat wrapper, rotated feature extraction |
 | `refine.py` | Joint least-squares refinement of photo poses |
@@ -82,15 +108,19 @@ weights that fade towards each photo's edges, hiding seams.
 
 ## Accuracy
 
-Measured on synthetic 120 x 90 m missions (50 photos, 3 drones, shuffled
-arrival, unknown heading, ±0.5 m altitude error), 5 random fields each:
+Simulated: synthetic 120 x 90 m missions flown at 25 m through the bundled
+camera calibration (91 photos, 3 drones, shuffled arrival, unknown heading,
+altitude error sigma 0.3 m), 5 random fields each. One pixel covers about
+4.5 cm of ground.
 
 | GPS error | Photos line up with each other | Map position vs truth | Connected map |
 |---|---|---|---|
-| 1 m | 3 to 6 cm (about 1 px) | 0.15 to 0.45 m | 5 / 5 |
-| 3 m | 3 to 6 cm (about 1 px) | 0.5 to 1.3 m | 5 / 5 |
+| 1 m | 4.2 to 6.3 cm | 0.164 to 0.312 m | 5 / 5 |
+| 3 m | 4.3 to 6.9 cm | 0.473 to 0.938 m | 5 / 5 |
 
-About 0.5 s per photo on a laptop CPU.
+Without the joint refinement (`refine.py`) photos line up only to 13.4 to
+41.1 cm. No photo was rejected by the quality checks. 0.42 to 0.75 s per
+photo on a laptop CPU.
 
 ## Configuration
 
@@ -100,14 +130,18 @@ The ones most likely to need changing for real flights:
 - `gps_error_m`: set to the real GPS accuracy.
 - `min_inliers`: raise it if wrong matches appear over repetitive ground.
 - `resolution_m`: fixed output metres per pixel (default: the photos' own).
+- `quality`: rejection limits (`QualityLimits`): `max_tilt_deg` (5),
+  `min_sharpness` (0.35) and `max_clipped_fraction` (0.2). The image
+  limits were picked on synthetic photos; check them on real ones.
 
 ## Limitations / future work
 
-- Assumes flat ground and a straight-down camera. Hills, buildings and tilted
-  photos will show small misalignments.
-- No lens distortion correction yet. Camera calibration
-  ([#212](https://github.com/UWARG/autonomy-monorepo/issues/212)) would
-  allow undistorting photos first.
+- Assumes flat ground and a straight-down camera. Hills and buildings will
+  show small misalignments. Photos tilted past `max_tilt_deg` are rejected
+  rather than corrected.
+- The calibration file must match the camera and resolution being flown.
+  After recalibrating (`airside_prec/camera_calibration.py` on the
+  `precision_landing` branch), replace `camera_info.yaml`.
 - A photo that overlaps nothing is placed by GPS alone, facing north,
   because its heading is unknown. It snaps into place once neighbours arrive.
 - The map's absolute position is only as good as the averaged GPS (see

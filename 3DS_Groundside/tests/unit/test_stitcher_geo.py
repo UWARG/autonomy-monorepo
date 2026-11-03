@@ -9,7 +9,6 @@ from src.image_stitcher.geo import (
     fit_similarity,
     footprint_corners,
     gps_to_local,
-    ground_sample_distance,
     local_to_gps,
     nadir_image_to_local,
     scale_of,
@@ -29,13 +28,6 @@ def test_one_degree_of_latitude_is_about_111_km():
     assert north == pytest.approx(111_320, rel=0.01)
 
 
-def test_ground_sample_distance():
-    # 90 degree FOV from 10 m sees 20 m of ground across 1000 px.
-    assert ground_sample_distance(10.0, 90.0, 1000) == pytest.approx(0.02)
-    with pytest.raises(ValueError):
-        ground_sample_distance(0.0, 90.0, 1000)
-
-
 def test_nadir_heading_zero_keeps_north_up():
     transform = nadir_image_to_local(3, 3, 1.0, 0.0, 10.0, 20.0)
     corners = footprint_corners(transform, 3, 3)
@@ -48,6 +40,13 @@ def test_nadir_heading_ninety_points_image_top_east():
     transform = nadir_image_to_local(3, 3, 1.0, 90.0, 0.0, 0.0)
     # Top centre pixel (1, 0) is one pixel "up" in the image, which is east.
     np.testing.assert_allclose(apply(transform, [[1.0, 0.0]])[0], [1.0, 0.0], atol=1e-9)
+
+
+def test_nadir_places_principal_point_below_camera():
+    transform = nadir_image_to_local(
+        640, 480, 0.05, 30.0, 12.0, -8.0, centre_px=np.array([350.0, 200.0])
+    )
+    np.testing.assert_allclose(apply(transform, [[350.0, 200.0]])[0], [12.0, -8.0])
 
 
 def test_fit_similarity_recovers_rotation_scale_shift():

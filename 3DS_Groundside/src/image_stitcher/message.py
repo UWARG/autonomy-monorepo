@@ -18,12 +18,16 @@ class ImageMessage:
     lat, lon: drone GPS position in degrees
     alt: metres above the launch point
     img: H x W x 3 RGB array
+    roll_deg, pitch_deg: drone attitude when the photo was taken, 0 = level.
+        NaN if unknown, which gets the photo rejected.
     """
 
     lat: float
     lon: float
     alt: float
     img: np.ndarray
+    roll_deg: float
+    pitch_deg: float
     drone_id: str = ""
     image_id: str = ""
 
@@ -36,8 +40,12 @@ class ImageMessage:
         return all(math.isfinite(value) for value in values) and self.alt > 0
 
     def has_valid_image(self) -> bool:
+        """
+        True for an 8-bit H x W x 3 image, the format the camera node sends.
+        """
         return (
             isinstance(self.img, np.ndarray)
+            and self.img.dtype == np.uint8
             and self.img.ndim == 3
             and self.img.shape[2] == 3
             and self.img.shape[0] > 0

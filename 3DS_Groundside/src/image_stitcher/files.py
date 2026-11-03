@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,6 +20,8 @@ if TYPE_CHECKING:
     from src.image_stitcher.stitcher import StitchedMap
 
 logger = logging.getLogger(__name__)
+
+_NUMBERED_MAP = re.compile(r"map_(\d+)\.png")
 
 
 def write_map(path: Path, stitched: StitchedMap) -> None:
@@ -47,10 +51,26 @@ def write_map(path: Path, stitched: StitchedMap) -> None:
     path.with_suffix(".json").write_text(json.dumps(metadata, indent=2))
 
 
+def next_map_path(output_dir: Path) -> Path:
+    """
+    The next free numbered map path in output_dir: map_001.png, map_002.png,
+    and so on. Numbering continues after the highest map already there, so a
+    restarted groundside never overwrites an earlier map.
+    """
+    numbers = [
+        int(match.group(1))
+        for path in output_dir.glob("map_*.png")
+        if (match := _NUMBERED_MAP.fullmatch(path.name))
+    ]
+    return output_dir / f"map_{max(numbers, default=0) + 1:03d}.png"
+
+
 def load_photo_run(run_dir: Path, drone_id: str = "") -> Iterator[ImageMessage]:
     """
     Reads a photo run saved by the 3ds airside camera node: photo_NNNN.png
-    files indexed by photos.jsonl, using each record's measured `position`.
+    files indexed by photos.jsonl, using each record's measured `position`
+    and `attitude` ({"roll": deg, "pitch": deg}). Records without an attitude
+    get NaN roll/pitch, so the stitcher rejects them.
     """
     with (run_dir / "photos.jsonl").open() as index:
         for line in index:
@@ -62,11 +82,14 @@ def load_photo_run(run_dir: Path, drone_id: str = "") -> Iterator[ImageMessage]:
                 logger.warning("Could not read %s", record["file"])
                 continue
             position = record["position"]
+            attitude = record.get("attitude") or {}
             yield ImageMessage(
                 lat=position["lat"],
                 lon=position["lon"],
                 alt=position["alt"],
                 img=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB),
+                roll_deg=attitude.get("roll", math.nan),
+                pitch_deg=attitude.get("pitch", math.nan),
                 drone_id=drone_id,
                 image_id=record["file"],
             )

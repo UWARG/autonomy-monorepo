@@ -46,21 +46,6 @@ def local_to_gps(
     return lat, lon
 
 
-def ground_sample_distance(
-    altitude_m: float, horizontal_fov_deg: float, image_width_px: int
-) -> float:
-    """
-    Metres of ground covered by one image pixel for a downward-facing camera.
-
-    The photo's ground width is 2 * altitude * tan(fov / 2), split evenly
-    across the image's pixel columns.
-    """
-    if altitude_m <= 0:
-        raise ValueError(f"altitude must be positive, got {altitude_m}")
-    ground_width_m = 2.0 * altitude_m * math.tan(math.radians(horizontal_fov_deg) / 2)
-    return ground_width_m / image_width_px
-
-
 def nadir_image_to_local(
     image_width_px: int,
     image_height_px: int,
@@ -68,22 +53,26 @@ def nadir_image_to_local(
     heading_deg: float,
     centre_east_m: float,
     centre_north_m: float,
+    centre_px: np.ndarray | None = None,
 ) -> np.ndarray:
     """
     Transform from image pixels to local metres for a nadir photo.
 
     heading_deg is degrees clockwise from north that the image top faces, so
-    with heading 0 image right is east and image up is north.
+    with heading 0 image right is east and image up is north. centre_px is
+    the pixel straight below the camera (its principal point), which lands at
+    (centre_east_m, centre_north_m); it defaults to the image centre.
     """
     cos_h = math.cos(math.radians(heading_deg))
     sin_h = math.sin(math.radians(heading_deg))
-    # Offsets from the image centre along the image axes, in metres:
+    # Offsets from the centre pixel along the image axes, in metres:
     #   right = (x - cx) * gsd,  up = -(y - cy) * gsd
     # Rotating (right, up) clockwise by the heading gives (east, north):
     #   east  =  right * cos + up * sin
     #   north = -right * sin + up * cos
     linear = gsd_m * np.array([[cos_h, -sin_h], [-sin_h, -cos_h]])
-    centre_px = image_centre(image_width_px, image_height_px)
+    if centre_px is None:
+        centre_px = image_centre(image_width_px, image_height_px)
     translation = np.array([centre_east_m, centre_north_m]) - linear @ centre_px
     transform = np.eye(3)
     transform[:2, :2] = linear

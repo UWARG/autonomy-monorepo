@@ -5,15 +5,22 @@ import cv2
 import numpy as np
 import pytest
 
+from src.image_stitcher.camera import Camera
 from src.image_stitcher.canvas import Canvas
-from src.image_stitcher.files import load_photo_run, write_map
+from src.image_stitcher.files import load_photo_run, next_map_path, write_map
 from src.image_stitcher.geo import gps_to_local
 from src.image_stitcher.message import ImageMessage
 from src.image_stitcher.stitcher import StitchedMap
 from src.image_stitcher.synthetic import make_ground, take_photo
 
-# From 20 m this sees 0.05 m per pixel across 640 px, matching the ground.
-FOV_DEG = math.degrees(2 * math.atan(0.8))
+# A distortion-free camera that sees 0.05 m per pixel from 20 m, matching
+# the ground.
+PINHOLE = Camera(
+    np.array([[400.0, 0.0, 319.5], [0.0, 400.0, 239.5], [0.0, 0.0, 1.0]]),
+    np.zeros(5),
+    640,
+    480,
+)
 
 
 @pytest.fixture(scope="module")
@@ -22,7 +29,7 @@ def ground():
 
 
 def test_photo_painted_at_true_position_reproduces_ground(ground):
-    rgb, image_to_local = take_photo(ground, FOV_DEG, 40.0, -30.0, 20.0, 35.0)
+    rgb, image_to_local = take_photo(ground, PINHOLE, 40.0, -30.0, 20.0, 35.0)
     # Local metres here are relative to the ground's north west corner.
     canvas = Canvas(ground.resolution_m, ground.origin)
     canvas.add(rgb, image_to_local)
@@ -76,11 +83,18 @@ def test_canvas_refuses_runaway_size():
 
 def test_message_validity():
     image = np.zeros((4, 4, 3), dtype=np.uint8)
-    assert ImageMessage(43.0, -80.0, 20.0, image).has_valid_position()
-    assert not ImageMessage(math.nan, math.nan, math.nan, image).has_valid_position()
-    assert not ImageMessage(43.0, -80.0, 0.0, image).has_valid_position()
-    assert ImageMessage(43.0, -80.0, 20.0, image).has_valid_image()
-    assert not ImageMessage(43.0, -80.0, 20.0, image[..., 0]).has_valid_image()
+    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0).has_valid_position()
+    assert not ImageMessage(
+        math.nan, math.nan, math.nan, image, 0.0, 0.0
+    ).has_valid_position()
+    assert not ImageMessage(43.0, -80.0, 0.0, image, 0.0, 0.0).has_valid_position()
+    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0).has_valid_image()
+    assert not ImageMessage(
+        43.0, -80.0, 20.0, image.astype(np.float64), 0.0, 0.0
+    ).has_valid_image()
+    assert not ImageMessage(
+        43.0, -80.0, 20.0, image[..., 0], 0.0, 0.0
+    ).has_valid_image()
 
 
 def test_write_map(tmp_path):
@@ -102,8 +116,15 @@ def test_write_map(tmp_path):
     assert north_west[1] < south_east[1]
 
 
+def test_numbered_maps_continue_after_existing_ones(tmp_path):
+    assert next_map_path(tmp_path) == tmp_path / "map_001.png"
+    for name in ["map_001.png", "map_007.png", "map_002.json", "map.png"]:
+        (tmp_path / name).touch()
+    assert next_map_path(tmp_path) == tmp_path / "map_008.png"
+
+
 def test_load_photo_run_reads_3ds_camera_format(tmp_path):
-    images = [np.full((8, 8, 3), value, dtype=np.uint8) for value in (10, 20)]
+    images = [np.full((8, 8, 3), value, dtype=np.uint8) for value in (10, 20, 30)]
     with (tmp_path / "photos.jsonl").open("w") as index:
         for number, image in enumerate(images, start=1):
             name = f"photo_{number:04d}.png"
@@ -115,6 +136,12 @@ def test_load_photo_run_reads_3ds_camera_format(tmp_path):
                 "setpoint": position,
                 "position": position,
             }
+            # Only the first photo has its attitude logged; the third has
+            # an explicit null.
+            if number == 1:
+                record["attitude"] = {"roll": 1.5, "pitch": -2.0}
+            if number == 3:
+                record["attitude"] = None
             index.write(json.dumps(record) + "\n")
 
     loaded = list(load_photo_run(tmp_path, drone_id="drone-01"))
@@ -122,7 +149,11 @@ def test_load_photo_run_reads_3ds_camera_format(tmp_path):
     assert [message.image_id for message in loaded] == [
         "photo_0001.png",
         "photo_0002.png",
+        "photo_0003.png",
     ]
     assert loaded[1].lat == 45.0
     assert loaded[0].drone_id == "drone-01"
     np.testing.assert_array_equal(loaded[1].img, images[1])
+    assert (loaded[0].roll_deg, loaded[0].pitch_deg) == (1.5, -2.0)
+    for message in loaded[1:]:
+        assert math.isnan(message.roll_deg) and math.isnan(message.pitch_deg)

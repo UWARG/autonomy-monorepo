@@ -1,7 +1,10 @@
 """
 Groundside orthomosaic stitcher.
 
-Photos arrive in any order from any drone. For each new photo:
+Photos arrive in any order from any drone. Unusable ones (blurry, badly
+exposed, tilted; see quality.py) are rejected and never placed. The rest are
+undistorted with the camera calibration (camera.py), which also gives their
+ground resolution from their altitude. Then:
 
 1. GPS picks the already-placed photos it probably overlaps.
 2. XFeat finds the same ground points in the new photo and those neighbours,
@@ -17,12 +20,12 @@ refine.py) so small errors don't pile up along chains of photos.
 
 Each cluster is placed on the map with a single best-fit rotation, scale and
 shift against all of its photos' GPS positions, so individual GPS errors
-average out instead of blurring the map. No heading or camera field of view
-is needed.
+average out instead of blurring the map. No heading is needed.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 import threading
@@ -33,19 +36,20 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from src.image_stitcher.camera import Camera
 from src.image_stitcher.canvas import Canvas, MapBounds
 from src.image_stitcher.features import ImageFeatures, XFeatMatcher
-from src.image_stitcher.files import write_map
+from src.image_stitcher.files import next_map_path, write_map
 from src.image_stitcher.geo import (
     FLIP_Y,
     apply,
     fit_similarity,
     gps_to_local,
-    image_centre,
     scale_of,
     to_3x3,
 )
 from src.image_stitcher.message import ImageMessage
+from src.image_stitcher.quality import QualityLimits, rejection_reason
 from src.image_stitcher.refine import PointMatches, refine_poses
 
 logger = logging.getLogger(__name__)
@@ -73,9 +77,6 @@ class StitcherConfig:
     # A cluster's photos must spread at least this far (metres) before its
     # rotation and scale are fitted from GPS.
     min_anchor_spread_m: float = 5.0
-    # Camera field of view (degrees), only used for photos that cannot be
-    # matched to anything before any cluster has learned the real scale.
-    fallback_fov_deg: float = 70.0
     # Re-solve all poses together every this many photos (0 = only when
     # rendering). Removes drift; cost grows with the number of photos.
     refine_every: int = 10
@@ -83,6 +84,8 @@ class StitcherConfig:
     resolution_m: float | None = None
     # Largest allowed map side in pixels, guards against corrupt positions.
     max_map_size_px: int = 20_000
+    # Limits for rejecting blurry, badly exposed or tilted photos.
+    quality: QualityLimits = field(default_factory=QualityLimits)
 
 
 @dataclass
@@ -105,6 +108,7 @@ class StitchedMap:
 
 @dataclass
 class _Photo:
+    # Holds the undistorted image; all pixels below are in it.
     message: ImageMessage
     features: ImageFeatures
     # GPS position in local metres.
@@ -113,11 +117,6 @@ class _Photo:
     cluster: int = -1
     # Image pixels -> cluster frame (the pixel frame of the cluster's first photo).
     pose: np.ndarray = field(default_factory=lambda: np.eye(3))
-
-    @property
-    def centre_px(self) -> np.ndarray:
-        height, width = self.message.img.shape[:2]
-        return image_centre(width, height)
 
 
 @dataclass
@@ -148,16 +147,21 @@ class _Link:
 class ImageStitcher:
     """
     Incrementally builds one orthomosaic from geotagged drone photos.
+
+    camera defaults to the calibration in camera_info.yaml.
     """
 
     def __init__(
         self,
         config: StitcherConfig | None = None,
         matcher: XFeatMatcher | None = None,
+        camera: Camera | None = None,
     ) -> None:
         self._config = config or StitcherConfig()
         self._matcher = matcher or XFeatMatcher()
+        self._camera = camera or Camera.load()
         self._photos: list[_Photo] = []
+        self._rejections: list[tuple[str, str, str]] = []
         self._links: list[_Link] = []
         # Clusters whose poses changed since they were last refined.
         self._unrefined: set[int] = set()
@@ -176,6 +180,13 @@ class ImageStitcher:
         return len({photo.cluster for photo in self._photos})
 
     @property
+    def rejections(self) -> list[tuple[str, str, str]]:
+        """
+        Every photo that was not used, in order: (drone_id, image_id, reason).
+        """
+        return list(self._rejections)
+
+    @property
     def reference(self) -> tuple[float, float] | None:
         """
         (lat, lon) of local (0, 0) metres: the first photo's position.
@@ -184,18 +195,22 @@ class ImageStitcher:
 
     def add(self, message: ImageMessage) -> bool:
         """
-        Adds one photo to the map. Returns False if it was skipped.
+        Adds one photo to the map. Returns False if it was rejected (see
+        `rejections`).
         """
-        if not message.has_valid_position():
-            logger.warning("Skipping %r: no valid GPS position", message.image_id)
-            return False
-        if not message.has_valid_image():
-            logger.warning("Skipping %r: image is not H x W x 3", message.image_id)
+        reason = self._rejection_reason(message)
+        if reason is not None:
+            logger.warning(
+                "Rejected %r from %r: %s", message.image_id, message.drone_id, reason
+            )
+            self._rejections.append((message.drone_id, message.image_id, reason))
             return False
 
         if self._reference is None:
             self._reference = (message.lat, message.lon)
         east, north = gps_to_local(message.lat, message.lon, *self._reference)
+        # Keep only the undistorted image so memory doesn't double.
+        message = dataclasses.replace(message, img=self._camera.undistort(message.img))
         photo = _Photo(message, self._matcher.extract(message.img), east, north)
 
         self._place(photo, self._find_matches(photo))
@@ -237,7 +252,7 @@ class ImageStitcher:
         self,
         queue: deque,
         stop: threading.Event,
-        output_path: Path | None = None,
+        output_dir: Path | None = None,
         save_every: int = 0,
         poll_interval_s: float = 0.1,
     ) -> None:
@@ -245,9 +260,12 @@ class ImageStitcher:
         Keeps stitching photos from the queue until `stop` is set and the
         queue is empty.
 
-        If output_path is given, the map is saved there every `save_every`
-        photos (0 = only at the end) and once more when stopping.
+        If output_dir is given, the map is saved there every `save_every`
+        photos (0 = only at the end) and once more when stopping. Each save is
+        a new numbered file (map_001.png + map_001.json, map_002...), so the
+        map's progress over the flight is kept.
         """
+        saved_count = 0
         while True:
             try:
                 message = queue.popleft()
@@ -259,14 +277,16 @@ class ImageStitcher:
             added = self.add(message)
             if (
                 added
-                and output_path is not None
+                and output_dir is not None
                 and save_every
                 and self.image_count % save_every == 0
             ):
-                self.save(output_path)
+                self.save(next_map_path(output_dir))
+                saved_count = self.image_count
 
-        if output_path is not None and self.image_count > 0:
-            self.save(output_path)
+        # Skip the final save if the last periodic one already has every photo.
+        if output_dir is not None and self.image_count > saved_count:
+            self.save(next_map_path(output_dir))
 
     def render(self) -> StitchedMap:
         """
@@ -321,10 +341,24 @@ class ImageStitcher:
         Each photo's final placement, in the order added: (message, 3x3
         transform from its pixels to local metres east/north of `reference`).
 
-        Returned per message rather than by image_id because different drones
-        can name their photos the same way.
+        The messages are copies holding the undistorted images, which is what
+        the transforms apply to. Returned per message rather than by image_id
+        because different drones can name their photos the same way.
         """
         return [(photo.message, self._image_to_local(photo)) for photo in self._photos]
+
+    def _rejection_reason(self, message: ImageMessage) -> str | None:
+        if not message.has_valid_position():
+            return "no valid GPS position"
+        if not message.has_valid_image():
+            return "image is not 8-bit H x W x 3"
+        if not self._camera.matches(message.img):
+            height, width = message.img.shape[:2]
+            return (
+                f"image is {width} x {height} but the camera is calibrated for "
+                f"{self._camera.width} x {self._camera.height}"
+            )
+        return rejection_reason(message, self._config.quality)
 
     def _find_matches(self, photo: _Photo) -> dict[int, list[_Match]]:
         """
@@ -474,7 +508,7 @@ class ImageStitcher:
         frame_to_local, anchored = self._georeference(cluster)
         if not anchored:
             return True
-        east, north = apply(frame_to_local @ pose, photo.centre_px)[0]
+        east, north = apply(frame_to_local @ pose, self._camera.principal_point)[0]
         error = math.hypot(east - photo.east, north - photo.north)
         return error <= self._config.max_gps_disagreement_m
 
@@ -488,15 +522,15 @@ class ImageStitcher:
         fitted from GPS ("anchored") rather than guessed.
 
         Unanchored clusters (one photo, or all taken from about the same
-        spot) get their position from GPS, their scale from what anchored
-        clusters learned, and assume the image top faces north.
+        spot) get their position from GPS, their scale from the camera
+        calibration, and assume the image top faces north.
         """
         anchored_fit = self._anchored_fit(cluster)
         if anchored_fit is not None:
             return anchored_fit, True
 
         members = self._members(cluster)
-        centres = np.array([apply(photo.pose, photo.centre_px)[0] for photo in members])
+        centres = self._centres(members)
         gps = np.array([[photo.east, photo.north] for photo in members])
         metres_per_frame_px = float(
             np.median(
@@ -520,7 +554,7 @@ class ImageStitcher:
             return self._fit_cache[cluster]
 
         members = self._members(cluster)
-        centres = np.array([apply(photo.pose, photo.centre_px)[0] for photo in members])
+        centres = self._centres(members)
         gps = np.array([[photo.east, photo.north] for photo in members])
         fit = None
         if (
@@ -536,29 +570,16 @@ class ImageStitcher:
     def _members(self, cluster: int) -> list[_Photo]:
         return [photo for photo in self._photos if photo.cluster == cluster]
 
+    def _centres(self, photos: list[_Photo]) -> np.ndarray:
+        """
+        Where the ground point straight below the drone (the principal point)
+        of each photo sits in its cluster frame.
+        """
+        point = self._camera.principal_point
+        return np.array([apply(photo.pose, point)[0] for photo in photos])
+
     def _metres_per_px(self, photo: _Photo) -> float:
-        """
-        Estimated ground metres per pixel of a photo.
-
-        Ground resolution is proportional to altitude, so the ratio learned
-        from anchored clusters applies to any photo from the same camera.
-        Before any cluster is anchored, the fallback field of view is used.
-        """
-        ratios = []
-        for cluster in {placed.cluster for placed in self._photos}:
-            fit = self._anchored_fit(cluster)
-            if fit is None:
-                continue
-            ratios.extend(
-                scale_of(fit) * scale_of(placed.pose) / placed.message.alt
-                for placed in self._members(cluster)
-            )
-        if ratios:
-            return float(np.median(ratios)) * photo.message.alt
-
-        width = photo.message.img.shape[1]
-        half_fov = math.radians(self._config.fallback_fov_deg) / 2
-        return 2 * photo.message.alt * math.tan(half_fov) / width
+        return self._camera.metres_per_px(photo.message.alt)
 
 
 def _gps_spread(photos: list[_Photo]) -> float:

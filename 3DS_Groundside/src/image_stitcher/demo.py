@@ -17,6 +17,7 @@ from pathlib import Path
 
 import cv2
 
+from src.image_stitcher.camera import Camera
 from src.image_stitcher.stitcher import ImageStitcher
 from src.image_stitcher.synthetic import lawn_mower_mission, make_ground
 
@@ -33,9 +34,11 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    camera = Camera.load()
     ground = make_ground(seed=args.seed)
     photos = lawn_mower_mission(
         ground,
+        camera,
         altitude_m=25.0,
         gps_noise_m=args.gps_noise,
         altitude_noise_m=0.3,
@@ -52,11 +55,11 @@ def main() -> None:
 
     queue: deque = deque()
     stop = threading.Event()
-    stitcher = ImageStitcher()
+    stitcher = ImageStitcher(camera=camera)
     worker = threading.Thread(
         target=stitcher.run,
         args=(queue, stop),
-        kwargs={"output_path": output_dir / "map.png", "save_every": 20},
+        kwargs={"output_dir": output_dir, "save_every": 20},
     )
     worker.start()
 
@@ -69,7 +72,7 @@ def main() -> None:
     print(
         f"Stitched {stitcher.image_count} photos into "
         f"{stitcher.cluster_count} cluster(s) in "
-        f"{time.perf_counter() - started:.1f} s -> {output_dir / 'map.png'}"
+        f"{time.perf_counter() - started:.1f} s -> {output_dir}"
     )
 
 

@@ -2,23 +2,22 @@
 Fake drone photos for testing the stitcher without a real flight.
 
 A large "ground truth" texture stands in for the area being mapped. Photos are
-cut out of it along a lawn mower path, with a downward camera model, so the
-true position of every photo is known and the stitcher can be scored.
+cut out of it along a lawn mower path through a calibrated camera (lens
+distortion included), so the true position of every photo is known and the
+stitcher can be scored.
 """
 
 from __future__ import annotations
 
+import functools
 import math
 from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
-from src.image_stitcher.geo import (
-    ground_sample_distance,
-    local_to_gps,
-    nadir_image_to_local,
-)
+from src.image_stitcher.camera import Camera
+from src.image_stitcher.geo import apply, local_to_gps, nadir_image_to_local
 from src.image_stitcher.message import ImageMessage
 
 
@@ -56,7 +55,8 @@ class SyntheticPhoto:
     true_east: float
     true_north: float
     true_heading_deg: float
-    # True image pixels -> local metres (same frame as true_east/north).
+    # True undistorted image pixels -> local metres (same frame as
+    # true_east/north).
     true_image_to_local: np.ndarray
 
 
@@ -98,22 +98,26 @@ def make_ground(
 
 def take_photo(
     ground: SyntheticGround,
-    fov_deg: float,
+    camera: Camera,
     east_m: float,
     north_m: float,
     altitude_m: float,
     heading_deg: float = 0.0,
-    image_size: tuple[int, int] = (640, 480),
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Renders what a nadir camera at (east_m, north_m) would see.
+    Renders what a nadir camera at (east_m, north_m) would see, with the
+    camera's lens distortion.
 
-    Returns (rgb, image_to_local).
+    Returns (raw rgb, transform from undistorted image pixels to local metres).
     """
-    width, height = image_size
-    gsd_m = ground_sample_distance(altitude_m, fov_deg, width)
     image_to_local = nadir_image_to_local(
-        width, height, gsd_m, heading_deg, east_m, north_m
+        camera.width,
+        camera.height,
+        camera.metres_per_px(altitude_m),
+        heading_deg,
+        east_m,
+        north_m,
+        camera.principal_point,
     )
     res = ground.resolution_m
     local_to_texture = np.array(
@@ -123,23 +127,34 @@ def take_photo(
             [0, 0, 1],
         ]
     )
-    image_to_texture = local_to_texture @ image_to_local
-    rgb = cv2.warpAffine(
+    # Each raw pixel shows the ground under its undistorted position.
+    texture_points = apply(
+        local_to_texture @ image_to_local, _undistorted_pixel_grid(camera)
+    ).reshape(camera.height, camera.width, 2)
+    rgb = cv2.remap(
         ground.texture,
-        image_to_texture[:2],
-        (width, height),
-        flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP,
+        texture_points[..., 0].astype(np.float32),
+        texture_points[..., 1].astype(np.float32),
+        cv2.INTER_LINEAR,
         borderMode=cv2.BORDER_REFLECT,
     )
     return rgb, image_to_local
 
 
+@functools.lru_cache(maxsize=4)
+def _undistorted_pixel_grid(camera: Camera) -> np.ndarray:
+    """
+    Undistorted position of every raw pixel, row by row (H*W x 2).
+    """
+    xs, ys = np.meshgrid(np.arange(camera.width), np.arange(camera.height))
+    return camera.undistort_points(np.stack([xs.ravel(), ys.ravel()], axis=1))
+
+
 def lawn_mower_mission(
     ground: SyntheticGround,
-    fov_deg: float = 70.0,
+    camera: Camera,
     altitude_m: float = 20.0,
     overlap: float = 0.6,
-    image_size: tuple[int, int] = (640, 480),
     gps_noise_m: float = 0.0,
     altitude_noise_m: float = 0.0,
     heading_noise_deg: float = 0.0,
@@ -155,12 +170,11 @@ def lawn_mower_mission(
     photos are always taken from the true position.
     """
     rng = np.random.default_rng(seed)
-    width, height = image_size
-    gsd_m = ground_sample_distance(altitude_m, fov_deg, width)
+    gsd_m = camera.metres_per_px(altitude_m)
     # The drone flies east/west with the image top facing its direction of
     # travel, so the image's height spans east-west along each row.
-    along_m = height * gsd_m
-    across_m = width * gsd_m
+    along_m = camera.height * gsd_m
+    across_m = camera.width * gsd_m
     columns = _sweep(along_m / 2, ground.width_m - along_m / 2, along_m * (1 - overlap))
     rows = _sweep(
         across_m / 2, ground.height_m - across_m / 2, across_m * (1 - overlap)
@@ -176,7 +190,7 @@ def lawn_mower_mission(
             true_heading = heading + rng.normal(0, heading_noise_deg)
             true_altitude = altitude_m + rng.normal(0, altitude_noise_m)
             rgb, image_to_local = take_photo(
-                ground, fov_deg, east, north, true_altitude, true_heading, image_size
+                ground, camera, east, north, true_altitude, true_heading
             )
             lat, lon = local_to_gps(
                 east + rng.normal(0, gps_noise_m),
@@ -188,6 +202,8 @@ def lawn_mower_mission(
                 lon=lon,
                 alt=true_altitude + rng.normal(0, altitude_noise_m),
                 img=rgb,
+                roll_deg=0.0,
+                pitch_deg=0.0,
                 drone_id=f"drone-{drone + 1:02d}",
                 image_id=f"photo_{len(photos) + 1:04d}",
             )
