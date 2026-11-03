@@ -105,21 +105,25 @@ weights that fade towards each photo's edges, hiding seams.
 | `geo.py` | GPS / local metre / pixel geometry |
 | `files.py` | Writing maps, reading 3ds airside photo runs |
 | `synthetic.py` | Fake missions with known ground truth, for tests and the demo |
+| `evaluate.py` | Accuracy on synthetic missions (the figures below) |
 
 ## Accuracy
 
 Simulated: synthetic 120 x 90 m missions flown at 25 m through the bundled
 camera calibration (91 photos, 3 drones, shuffled arrival, unknown heading,
 altitude error sigma 0.3 m), 5 random fields each. One pixel covers about
-4.5 cm of ground.
+4.5 cm of ground. Rerun with (about 7 minutes):
+
+```bash
+uv run python -m src.image_stitcher.evaluate
+```
 
 | GPS error | Photos line up with each other | Map position vs truth | Connected map |
 |---|---|---|---|
 | 1 m | 4.2 to 6.3 cm | 0.164 to 0.312 m | 5 / 5 |
 | 3 m | 4.3 to 6.9 cm | 0.473 to 0.938 m | 5 / 5 |
 
-Without the joint refinement (`refine.py`) photos line up only to 13.4 to
-41.1 cm. No photo was rejected by the quality checks. 0.42 to 0.75 s per
+No photo was rejected by the quality checks. 0.42 to 0.75 s per
 photo on a laptop CPU.
 
 ## Configuration

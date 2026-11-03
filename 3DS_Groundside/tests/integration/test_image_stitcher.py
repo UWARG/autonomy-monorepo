@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import pytest
 
+from src.image_stitcher import evaluate
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.features import XFeatMatcher
 from src.image_stitcher.geo import FLIP_Y, apply, fit_similarity, gps_to_local
@@ -95,6 +96,14 @@ def placement_errors(stitcher, photos, ground):
     best_fit = fit_similarity(stitched_points, true_points)
     relative = np.linalg.norm(apply(best_fit, stitched_points) - true_points, axis=1)
     return absolute, relative.mean()
+
+
+def test_evaluation_scores_like_the_tests(stitched, mission, ground):
+    # evaluate.py produces the README figures; it must measure the same way.
+    expected = placement_errors(stitched, mission, ground)
+    assert evaluate.placement_errors(stitched, mission, ground) == pytest.approx(
+        expected
+    )
 
 
 def test_mission_forms_one_cluster(stitched, mission):
