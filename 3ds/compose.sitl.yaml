@@ -1,22 +1,63 @@
-# Runs the 3DS stack against an ArduPilot SITL instance (e.g. Mission
-# Planner's built-in simulation)
+# Self-contained 3DS integration test against an ArduCopter SITL vehicle.
 #
-# Usage (from 3ds/):
-#   docker compose -f compose.sitl.yaml up
-#   SITL_HOST=<sitl-machine-ip> docker compose -f compose.sitl.yaml up
+# From 3ds/:
+#   docker compose -f compose.sitl.yaml up --build --abort-on-container-exit \
+#     --exit-code-from sitl-test
+#
+# The sitl-test service is the pass/fail authority. It exits non-zero if MAVROS
+# never connects or any mission phase times out.
 services:
+  sitl:
+    build:
+      context: ..
+      dockerfile: 3ds/docker/sitl/Dockerfile
+    image: warg/arducopter-sitl:4.7.2
+    pull_policy: build
+    environment:
+      SITL_HOME_LAT: ${SITL_HOME_LAT:--35.363261}
+      SITL_HOME_LON: ${SITL_HOME_LON:-149.165230}
+      SITL_HOME_ALT: ${SITL_HOME_ALT:-584}
+      SITL_HOME_HEADING: ${SITL_HOME_HEADING:-353}
+      SITL_SPEEDUP: ${SITL_SPEEDUP:-1}
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f '/ardupilot/arducopter' >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
+
   3ds:
     build:
       context: ..
       dockerfile: 3ds/docker/Dockerfile
     image: warg/3ds:latest
-    network_mode: host
+    pull_policy: build
+    depends_on:
+      sitl:
+        condition: service_healthy
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
-      FCU_URL: tcp://${SITL_HOST:-127.0.0.1}:5762
+      FCU_URL: tcp://sitl:5762
       ROS_LOG_DIR: /ros_ws/log/ros
     volumes:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
+      - ./data:/ros_ws/data
       - ..:/monorepo
     command: ros2 launch airside_bringup 3ds.launch.py
+
+  sitl-test:
+    image: warg/3ds:latest
+    pull_policy: never
+    depends_on:
+      3ds:
+        condition: service_started
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      SITL_HOME_LAT: ${SITL_HOME_LAT:--35.363261}
+      SITL_HOME_LON: ${SITL_HOME_LON:-149.165230}
+      SITL_TEST_TIMEOUT_S: ${SITL_TEST_TIMEOUT_S:-180}
+    volumes:
+      - ./src:/ros_ws/src:ro
+    command: python3 /ros_ws/src/engine/test/sitl_mission_test.py
+    restart: "no"

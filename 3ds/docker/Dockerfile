@@ -5,9 +5,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-lc"]
 
 ARG ROS_SNAPSHOT=2026-08-07
-COPY 3ds/docker/ros-snapshots.asc /usr/share/keyrings/ros-snapshots.asc
+COPY 3ds/docker/ros-snapshots.asc /tmp/ros-snapshots.asc
+RUN gpg --dearmor --batch --yes \
+      --output /usr/share/keyrings/ros-snapshots.gpg /tmp/ros-snapshots.asc \
+  && rm /tmp/ros-snapshots.asc
 RUN rm /etc/apt/sources.list.d/ros2.sources \
-  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.asc\n' \
+  && printf 'Types: deb\nURIs: http://snapshots.ros.org/humble/%s/ubuntu\nSuites: jammy\nComponents: main\nSigned-By: /usr/share/keyrings/ros-snapshots.gpg\n' \
      "${ROS_SNAPSHOT}" > /etc/apt/sources.list.d/ros2-snapshot.sources
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
