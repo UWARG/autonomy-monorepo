@@ -11,6 +11,10 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    # AEAC_CONNECTION_TOKEN and optional AEAC_OWN_AIRCRAFT_INDEX.
+    env_file:
+      - path: .env
+        required: false
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: tcp://${SITL_HOST:-127.0.0.1}:5762
@@ -19,4 +23,4 @@ services:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
-    command: ros2 launch engine engine.launch.py
+    command: ros2 launch airside_bringup airside.launch.py

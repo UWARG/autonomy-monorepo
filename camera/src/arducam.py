@@ -47,7 +47,7 @@ class Arducam(AbstractCamera):
             return None
 
         frame = self._normalize_geometry(frame)
-        return CameraFrame(rgb=frame)
+        return CameraFrame(rgb=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
     def _open_camera(self) -> cv2.VideoCapture:
         for backend in (cv2.CAP_V4L2, cv2.CAP_ANY):

@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Map tiles cached by the vite tile proxy
+tile-cache

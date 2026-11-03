@@ -1,0 +1,34 @@
+[project]
+name = "aeac-telemetry"
+version = "0.1.0"
+description = "Sends drone's telemetry from a MAVLink stream to the AEAC competition server"
+readme = { file = "README.md", content-type = "text/markdown" }
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+    "pymavlink>=2.4",
+    "websockets>=14",
+]
+
+[project.scripts]
+aeac-telemetry = "aeac_telemetry.main:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aeac_telemetry"]
+
+[tool.ruff]
+line-length = 88

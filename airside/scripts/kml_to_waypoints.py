@@ -3,9 +3,10 @@
 Convert a KML file (exported from Google My Maps) into the engine's
 waypoints.yaml config format.
 
-The placemark named "Home" becomes the `home` entry. Waypoints are taken from
-the first Polygon's outer ring (dropping the repeated closing vertex). If the
-KML has no polygon, all other Point placemarks are used in document order.
+Waypoints are taken from the first Polygon's outer ring (dropping the repeated
+closing vertex). If the KML has no polygon, all Point placemarks are used in
+document order, except one named "Home" (the mission lands where the drone
+was armed, so a home point is not needed).
 """
 
 import argparse
@@ -15,9 +16,8 @@ import xml.etree.ElementTree as ET
 _KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 
 _HEADER = """\
-# Lap waypoints. `home` orients the waypoints
-# and is the returning location at the end
-# of the mission.\
+# Lap waypoints. They are flown as a clockwise sweep starting from the
+# side facing the launch point (where the drone was armed).\
 """
 
 
@@ -32,8 +32,7 @@ def parse_coordinates(text):
 
 
 def extract(root):
-    """Return (home, waypoints) as (lat, lon) tuples from the KML root."""
-    home = None
+    """Return the waypoints as (lat, lon) tuples from the KML root."""
     polygon_points = None
     point_placemarks = []
 
@@ -44,9 +43,7 @@ def extract(root):
         point_coords = placemark.find("kml:Point/kml:coordinates", _KML_NS)
         if point_coords is not None:
             point = parse_coordinates(point_coords.text)[0]
-            if name.lower() == "home":
-                home = point
-            else:
+            if name.lower() != "home":
                 point_placemarks.append(point)
             continue
 
@@ -60,17 +57,11 @@ def extract(root):
                 ring = ring[:-1]
             polygon_points = ring
 
-    waypoints = polygon_points if polygon_points is not None else point_placemarks
-    return home, waypoints
+    return polygon_points if polygon_points is not None else point_placemarks
 
 
-def format_yaml(home, waypoints, alt):
+def format_yaml(waypoints, alt):
     lines = [_HEADER]
-    lines.append("home:")
-    lines.append(f"  lat: {home[0]}")
-    lines.append(f"  lon: {home[1]}")
-    lines.append(f"  alt: {alt}")
-    lines.append("")
     lines.append("waypoints:")
     for lat, lon in waypoints:
         lines.append(f"  - lat: {lat}")
@@ -93,20 +84,18 @@ def main():
     args = parser.parse_args()
 
     root = ET.parse(args.kml).getroot()
-    home, waypoints = extract(root)
+    waypoints = extract(root)
 
-    if home is None:
-        sys.exit('error: no Point placemark named "Home" found in KML')
     if not waypoints:
         sys.exit("error: no waypoints found in KML (no polygon or point placemarks)")
 
     alt = int(args.alt) if args.alt == int(args.alt) else args.alt
-    yaml_text = format_yaml(home, waypoints, alt)
+    yaml_text = format_yaml(waypoints, alt)
 
     if args.output:
         with open(args.output, "w") as f:
             f.write(yaml_text)
-        print(f"wrote {len(waypoints)} waypoints + home to {args.output}")
+        print(f"wrote {len(waypoints)} waypoints to {args.output}")
     else:
         sys.stdout.write(yaml_text)
 

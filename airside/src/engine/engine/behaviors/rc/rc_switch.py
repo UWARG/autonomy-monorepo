@@ -4,11 +4,9 @@ Behaviors that react to RC transmitter switches via ``mavros/rc/in``.
 
 from __future__ import annotations
 
-import typing
-
 import py_trees
 import rclpy.node
-from engine.constants import KILL_SWITCH_RC_CHANNEL, RC_SWITCH_HIGH_PWM
+from engine.constants import RC_SWITCH_HIGH_PWM
 from mavros_msgs.msg import RCIn
 from rclpy.qos import qos_profile_sensor_data
 
@@ -54,37 +52,6 @@ class RCSwitchMonitor(RCChannelListener, py_trees.behaviour.Behaviour):
     def __init__(self, name: str, channel: int) -> None:
         super().__init__(name=name)
         self._channel = channel
-
-
-class KillSwitch(RCChannelListener, py_trees.decorators.Decorator):
-    """
-    Pauses the decorated subtree while the kill switch is high.
-    """
-
-    def __init__(
-        self,
-        child: py_trees.behaviour.Behaviour,
-        name: str = "KillSwitch",
-        channel: int = KILL_SWITCH_RC_CHANNEL,
-    ) -> None:
-        super().__init__(name=name, child=child)
-        self._channel = channel
-
-    def tick(self) -> typing.Iterator[py_trees.behaviour.Behaviour]:
-        if self._switch_high:
-            self._node.get_logger().warning(
-                f"{self.name}: RC channel {self._channel} flipped, pausing mission",
-                throttle_duration_sec=5.0,
-            )
-            self.feedback_message = "mission paused by kill switch"
-            self.status = py_trees.common.Status.RUNNING
-            yield self
-            return
-
-        yield from super().tick()
-
-    def update(self) -> py_trees.common.Status:
-        return self.decorated.status
 
 
 class WaitForRCSwitch(RCSwitchMonitor):

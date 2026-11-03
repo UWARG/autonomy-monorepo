@@ -93,3 +93,71 @@ plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
   turn arc) and is configurable via `ScanRequest.turn_penalty_m`.
 - **Spherical Earth model.** Local east/north projection uses the IUGG mean
   Earth radius; accurate to sub-meter over scan-scale regions.
+
+## Obstacle avoidance
+
+### Usage
+
+```python
+from obstacle_avoidance import (
+    AvoidanceConfig, AvoidanceRequest, ObstacleAvoider, TrafficAircraft,
+)
+
+avoider = ObstacleAvoider(AvoidanceConfig(horizontal_speed_mps=2.0))
+
+plan = avoider.plan(AvoidanceRequest(
+    position=Coordinate(lat, lon, rel_alt_m),   # where we are now
+    goal=Coordinate(lat, lon, rel_alt_m),       # waypoint we are flying to
+    traffic=(TrafficAircraft(
+        aircraft_index=3, lat=..., lon=..., altitude_agl_m=...,
+        speed_mps=..., heading_deg=...,
+        horizontal_keep_away_m=..., vertical_keep_away_m=...,
+    ), ...),
+    traffic_age_s=0.4,                          # how old the traffic sample is
+))
+
+plan.status                # PATH_FOUND or NO_PATH
+plan.reason                # why it is holding, e.g. "BLOCKED", "STALE_TRAFFIC"
+plan.east_mps, plan.north_mps, plan.up_mps   # ENU velocity to fly this cycle
+plan.next_waypoint         # the planner's next safe point, as a Coordinate
+plan.goal_distance_m, plan.goal_reached, plan.minimum_clearance_m
+```
+
+Call `plan` once per control cycle with the same `ObstacleAvoider` (it keeps
+heading hysteresis between calls) and `reset()` it when control is interrupted.
+
+### What it computes
+
+1. **Traffic prediction** — each aircraft whose vertical keep-away band
+   overlaps our current-to-goal altitude band becomes a circle of its
+   horizontal keep-away radius, moved forward by `traffic_age_s` and swept
+   along its heading for `prediction_horizon_s`.
+2. **Local planning** — `BendyRuler2D` searches candidate headings for a
+   two-segment lookahead path that keeps `clearance_margin_m` from every
+   circle, preferring the goal direction and the previous detour.
+3. **Command** — the first lookahead point becomes a horizontal velocity
+   capped at `horizontal_speed_mps`; altitude error becomes a vertical velocity
+   capped at `vertical_speed_mps`.
+
+### Safety contract
+
+- Every failure is a zero-velocity `NO_PATH` hold with a reason: stale or
+  future traffic, invalid or duplicate aircraft, too many predicted circles,
+  invalid position, or no safe path.
+- A returned path has both lookahead segments at or above the clearance margin.
+- Candidate ordering and ties are deterministic.
+
+The lower-level planner (`BendyRuler2D`, `PlanRequest`, `ObstacleSnapshot`,
+`CircleObstacle`) and `traffic_to_obstacles` are exported too, for callers that
+work in their own local frame. This is an original MIT-licensed implementation;
+ArduPilot BendyRuler is a behavioral reference only, no GPL source is copied.
+
+### Package layout
+
+| File | Responsibility |
+|---|---|
+| `models.py` | `TrafficAircraft`, `AvoidanceRequest`, `AvoidancePlan` and planner value objects |
+| `traffic.py` | traffic aircraft → predicted ENU exclusion circles |
+| `planner.py` | `BendyRuler2D` two-segment lookahead search |
+| `clearance.py`, `geometry.py` | clearance queries and 2D geometry |
+| `avoidance.py` | orchestration: `ObstacleAvoider.plan` |

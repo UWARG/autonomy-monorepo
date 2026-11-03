@@ -11,11 +11,21 @@ airside/
 │   ├── Dockerfile
 │   └── airside_entrypoint.sh
 ├── src/
-│   ├── airside_interfaces/
-│   ├── engine/
-│   └── wrapper/
+│   ├── airside_bringup/      # Launch file that starts the whole system
+│   ├── airside_interfaces/   # Custom ROS 2 messages
+│   ├── camera/               # camera, triggered_image_publisher
+│   ├── comms/                # traffic_listener (AEAC traffic in)
+│   ├── engine/               # manager (behavior-tree mission), rc_bridge, heartbeat + mission config
+│   └── navigation/           # position_controller
 └── warg.toml
 ```
+
+Packages are grouped by domain; each lists its nodes (executables) above.
+Everything is started by `src/airside_bringup/launch/airside.launch.py`
+(`ros2 launch airside_bringup airside.launch.py`).
+
+The `camera` package's Python module is `camera_ros`, so it does not shadow the
+monorepo `camera` library it wraps.
 
 ## Prerequisites
 
@@ -62,8 +72,12 @@ RUN pip install /monorepo/camera
 | Environment variable | Default | Description |
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
-| `MAP_MANAGER_DATA_DIR` | `/ros_ws/data` | Directory where the map manager stores target logs (mounted to `airside/data/` on the host) |
-| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `FCU_URL` | `serial:///dev/ttyAMA0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `AEAC_CONNECTION_TOKEN` | unset | AEAC team token for `traffic_listener`. Required for traffic, so without it lapping holds in place |
+| `AEAC_OWN_AIRCRAFT_INDEX` | unset | This aircraft's index in the AEAC traffic feed, if it appears there; it is removed from the obstacles |
+| `LAP_COUNT` | `3` | Laps to fly before reconnaissance |
+
+Put the AEAC values in `airside/.env` (gitignored); compose loads it if present.
 
 ### Networking
 
@@ -82,6 +96,54 @@ ROS logs (rclpy logger output and captured node stdout) are written to
 ### Behavior tree
 
 The engine is built with [py_trees_ros](https://py-trees-ros.readthedocs.io/en/latest/).  The tree is composed in `src/engine/engine/manager.py` and ticked every `TICK_PERIOD_MS` milliseconds.
+
+#### Mission
+
+1. **Record launch point**: once the pilot arms, the FCU home position (which
+   ArduPilot resets at arming) is read back and stored as the landing spot.
+2. **Lapping**: fly the waypoints in `config/waypoints.yaml` as a clockwise
+   sweep, starting from the side facing the launch point, for `LAP_COUNT` laps.
+   A lap ends back at the first waypoint, which also starts the next lap.
+3. **Reconnaissance**: the engine commands nothing and waits for the pilot to
+   flip the recon-complete RC switch (`RECON_COMPLETE_RC_CHANNEL`). The pilot
+   flies (switching out of GUIDED pauses the mission) and captures images on
+   manual triggers through `triggered_image_publisher`. Switching back to
+   GUIDED with the switch flipped continues to the land phase.
+4. **Land**: fly back over the launch point at `RETURN_ALTITUDE_M` and land.
+
+The engine never changes flight mode. The whole mission is wrapped in
+`PauseUnlessGuided`: it waits for the pilot to select GUIDED, freezes (keeping
+its progress) whenever the pilot switches to any other mode, and resumes when
+GUIDED is selected again. The only mode change it causes is the final land
+command, which puts the FCU in LAND.
+
+#### Position controller
+
+Behaviors never command MAVROS setpoints directly. `FlyToWaypoint` and
+`DescendToLandingPad` publish where they want to go to the always-running
+`position_controller` node (`navigation` package), the only publisher of
+MAVROS setpoints. At 10 Hz it runs gnc's `obstacle_avoidance.ObstacleAvoider`
+(see [gnc/README.md](../gnc/README.md#obstacle-avoidance)) on the target, the
+GPS fix and the latest `/aeac/traffic`, and publishes the avoider's next safe
+point as a position setpoint (the target itself once within 1 m).
+
+Lap waypoints are flown through if a `following` waypoint is sent alongside the
+position target. Once the drone is within `CORNER_LOOKAHEAD_M` of the target,
+the controller aims that leftover distance down the next leg instead A lap waypoint
+counts as reached within 3 m, or once the drone is abeam of it within 6 m
+(`LAP_WAYPOINT_ACCEPTANCE_RADIUS_M`, `WAYPOINT_PASS_RADIUS_M`).
+
+It fails closed. Missing, stale (over 2.5 s), unhealthy or disconnected
+traffic, a stale GPS fix or altitude, or no safe path holds the drone at the
+position where the hold began. Nothing is published unless the drone is armed
+in GUIDED. If the engine stops sending targets for 1.5 s, it holds once where
+the drone is and then stops publishing.
+
+| Topic | Type | Direction | Purpose |
+|---|---|---|---|
+| `/position_controller/target` | `airside_interfaces/PositionTarget` | subscribe | Target `lat`, `lon` and relative `alt` (m), plus an optional `following` waypoint |
+| `/aeac/traffic` | `airside_interfaces/TrafficSnapshot` | subscribe | AEAC traffic to avoid |
+| `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
 
 #### Adding a behavior
 
@@ -148,61 +210,17 @@ blackboard.register_key(key="altitude", access=py_trees.common.Access.WRITE)
 blackboard.altitude = 0.0
 ```
 
-### Map manager
+### Triggered image capture
 
-The `map_manager` node (in the `wrapper` package) is launched alongside the engine and records detected targets for post processing.
+`triggered_image_publisher` (`src/camera/camera_ros/triggered_image_publisher_node.py`)
+caches the latest `/camera/image_raw`, `/mavros/global_position/global` and
+`/mavros/imu/data`, and serves them as one bundle on the `/capture_image`
+service (`airside_interfaces/srv/CaptureImage`), with the image as JPEG. The
+IMS Survey view calls it over rosbridge.
 
-| Topic | Type | Direction | Purpose |
-|---|---|---|---|
-| `/capture/target_location` | `airside_interfaces/Target` | subscribe | A detected target: `colour` (a `utils.src.enums.Colours` member name, e.g. `"RED"`) and `location` (`airside_interfaces/Coordinate`: `lat`, `lon`, `alt`) |
-| `/trigger_post_processing` | `std_msgs/Empty` | subscribe | Snapshots the current target log to a timestamped file for post processing |
-
-Received targets are appended to `$MAP_MANAGER_DATA_DIR/targets.jsonl`, which is wiped at every startup (one file per run). Each trigger copies it to `targets_<YYYY-MM-DDTHH-MM-SS>.jsonl` in the same directory.
-
-### Building-space target localizer
-
-The `building_target_localizer` wrapper converts processed building planes and
-target points into firefighter-readable location descriptions. The non-ROS
-geometry and localization code lives in the top-level `perception` project.
-
-| Topic | Type | Direction | Purpose |
-|---|---|---|---|
-| `/processed_map` | `airside_interfaces/ProcessedMap` | subscribe | Complete building geometry and target snapshot |
-| `/targets_located` | `std_msgs/String` | publish | Newline-separated final target descriptions |
-
-Both topics use reliable, transient-local, depth-one QoS. Input geometry must
-use `header.frame_id = "mission_frd"`, where +x is north/forward, +y is
-east/right, and +z is down. Plane normals point out of the building and use
-`normal · point + offset = 0`.
-
-Each rectangular wing references two adjacent observed wall planes and gives
-the distance to each opposing wall. The node completes those walls, merges
-connected wings, removes internal faces, and derives outer and inside corners.
-All wings share the supplied ground plane and building height. Disconnected
-wings and footprints containing holes are rejected at snapshot level.
-
-Targets that cannot be snapped safely or have ambiguous geometry are omitted
-from the description string and logged by the wrapper. Other targets in the
-same snapshot continue to be reported. Plane covariance is row-major for
-`[normal.x, normal.y, normal.z, offset]`; target covariance is row-major for
-`[x, y, z]`. Each description includes the propagated 95th-percentile error.
-
-The default node parameters are:
-
-| Parameter | Default |
-|---|---:|
-| `expected_frame_id` | `mission_frd` |
-| `max_snap_distance_m` | `0.5` |
-| `surface_tie_tolerance_m` | `0.1` |
-| `near_wall_distance_m` | `5.0` |
-| `anchor_tie_tolerance_m` | `0.25` |
-| `wall_vertical_tolerance_deg` | `5.0` |
-| `wing_orthogonality_tolerance_deg` | `5.0` |
-| `wing_join_tolerance_m` | `0.05` |
-| `condition_epsilon` | `1e-6` |
-| `uncertainty_samples` | `1000` |
-| `uncertainty_seed` | `97` |
-| `max_unstable_sample_fraction` | `0.05` |
+```bash
+ros2 service call /capture_image airside_interfaces/srv/CaptureImage
+```
 
 ### ROS integration inside a behavior
 
@@ -216,3 +234,14 @@ def setup(self, **kwargs):
 ```
 
 Use `self._node` for all ROS 2 calls (subscriptions, publishers, service clients, action clients, timers).
+
+### AEAC traffic
+
+`comms/traffic_listener` subscribes to the AEAC competition server and turns
+each `traffic` event into one `airside_interfaces/TrafficSnapshot` on
+`/aeac/traffic`. A disconnect, bad message or missing token is published as an
+unhealthy snapshot with a `reason`.
+
+Airside only receives from AEAC. Our telemetry is sent by the separate
+[`aeac_telemetry`](../aeac_telemetry) project, and the IMS subscribes to
+traffic on its own connection.

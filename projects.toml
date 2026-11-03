@@ -32,5 +32,8 @@ path = "gesture_control"
 [projects.target_tracking]
 path = "target_tracking"
 
+[projects.aeac_telemetry]
+path = "aeac_telemetry"
+
 [projects.3DS_Groundside]
 path = "3DS_Groundside"
