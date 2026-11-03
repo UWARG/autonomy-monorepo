@@ -8,6 +8,7 @@ find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Coordinate.msg"
+  "msg/WaypointList.msg"
   "srv/CaptureImage.srv"
   "msg/TrafficAircraft.msg"
   "msg/TrafficSnapshot.msg"

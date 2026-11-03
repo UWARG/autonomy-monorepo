@@ -1,7 +1,7 @@
 // Flight view grid (lg):
-//   row 1:  Camera (5)   Target (4)    Attitude (3)
-//   row 2:  Script (8)   Nearby drones (4, spans rows 2-3)
-//   row 3:  Connection (3)   Log (5)
+//   row 1:  Map + traffic (7, spans rows 1-2)   Camera (5)
+//   row 2:                                       Attitude (5)
+//   row 3:  Script (5)   Log (4)   Connection (3)
 //
 // Survey view grid (lg): Capture (7)   Survey report (5)
 
@@ -11,11 +11,10 @@ import AttitudeWidget from './widgets/AttitudeWidget';
 import CameraWidget from './widgets/CameraWidget';
 import CaptureWidget from './widgets/CaptureWidget';
 import ConnectionWidget from './widgets/ConnectionWidget';
-import NearbyDronesWidget from './widgets/NearbyDronesWidget';
 import ScriptWidget from './widgets/ScriptWidget';
 import SurveyWidget from './widgets/SurveyWidget';
-import TargetWidget from './widgets/TargetWidget';
 import LogWidget from './widgets/LogWidget';
+import MapWidget from './widgets/MapWidget';
 import HeaderStatus from './widgets/Header';
 
 type View = 'flight' | 'survey';
@@ -34,31 +33,23 @@ function FlightView() {
                  lg:min-h-0 lg:flex-1 lg:overflow-y-auto
                  lg:[grid-template-rows:minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
     >
-      <div className="col-span-12 h-[340px] min-h-0 lg:col-span-5 lg:h-auto">
+      <div className="col-span-12 h-[640px] min-h-0 lg:col-span-7 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-auto">
+        <MapWidget traffic={traffic} />
+      </div>
+      <div className="col-span-12 h-[340px] min-h-0 md:col-span-7 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:h-auto">
         <CameraWidget />
       </div>
-      <div className="col-span-12 h-[340px] min-h-0 md:col-span-7 lg:col-span-4 lg:h-auto">
-        <TargetWidget />
-      </div>
-      <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
+      <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-5 lg:col-start-8 lg:row-start-2 lg:h-auto">
         <AttitudeWidget />
       </div>
-      <div className="col-span-12 h-[240px] min-h-0 lg:col-span-8 lg:h-auto">
+      <div className="col-span-12 h-[240px] min-h-0 lg:col-span-5 lg:col-start-1 lg:row-start-3 lg:h-auto">
         <ScriptWidget />
       </div>
-      <div className="col-span-12 h-[380px] min-h-0 lg:col-span-4 lg:row-span-2 lg:h-auto">
-        <NearbyDronesWidget
-          nearby={traffic.nearbyDrones}
-          connected={traffic.connected}
-          stale={traffic.nearbyDronesStale}
-          problem={traffic.trafficProblem}
-        />
-      </div>
-      <div className="col-span-12 h-[220px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
-        <ConnectionWidget />
-      </div>
-      <div className="col-span-12 h-[220px] min-h-0 md:col-span-7 lg:col-span-5 lg:h-auto">
+      <div className="col-span-12 h-[220px] min-h-0 md:col-span-7 lg:col-span-4 lg:col-start-6 lg:row-start-3 lg:h-auto">
         <LogWidget />
+      </div>
+      <div className="col-span-12 h-[220px] min-h-0 md:col-span-5 lg:col-span-3 lg:col-start-10 lg:row-start-3 lg:h-auto">
+        <ConnectionWidget />
       </div>
     </main>
   );

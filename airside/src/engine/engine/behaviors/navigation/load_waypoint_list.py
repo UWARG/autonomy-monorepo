@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import py_trees
 import rclpy.node
+from airside_interfaces.msg import Coordinate, WaypointList
 from ament_index_python.packages import get_package_share_directory
 from engine import blackboard_keys
+from rclpy.qos import DurabilityPolicy, QoSProfile
 from utils.src.waypoint_utils import parse_waypoints_file, sort_clockwise_sweep
 
 _WAYPOINTS_FILE_PARAMETER = "waypoints_file"
+_WAYPOINTS_TOPIC = "engine/waypoints"
 
 
 class LoadWaypointList(py_trees.behaviour.Behaviour):
@@ -19,6 +22,8 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
     was recorded). Writes the resulting list to ``waypoints``. Returns
     SUCCESS once loaded, FAILURE if the file is missing, malformed, or has
     no lap waypoints.
+
+    The ordered list is also published, latched, on ``engine/waypoints``.
     """
 
     def __init__(self, name: str = "LoadWaypointList") -> None:
@@ -40,6 +45,14 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         )
         if not self._node.has_parameter(_WAYPOINTS_FILE_PARAMETER):
             self._node.declare_parameter(_WAYPOINTS_FILE_PARAMETER, default_path)
+
+        self._waypoints_pub = self._node.create_publisher(
+            msg_type=WaypointList,
+            topic=_WAYPOINTS_TOPIC,
+            qos_profile=QoSProfile(
+                depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL
+            ),
+        )
 
     def update(self) -> py_trees.common.Status:
         waypoints_file = (
@@ -70,6 +83,13 @@ class LoadWaypointList(py_trees.behaviour.Behaviour):
         waypoints = sort_clockwise_sweep(lap_waypoints, home=launch_point)
 
         self.blackboard.set(blackboard_keys.WAYPOINTS, waypoints)
+        self._waypoints_pub.publish(
+            WaypointList(
+                waypoints=[
+                    Coordinate(lat=w.lat, lon=w.lon, alt=w.alt) for w in waypoints
+                ]
+            )
+        )
         self._node.get_logger().info(
             f"{self.name}: loaded {len(waypoints)} waypoints from "
             f"'{waypoints_file}' (launch point: {launch_point}): {waypoints}"
