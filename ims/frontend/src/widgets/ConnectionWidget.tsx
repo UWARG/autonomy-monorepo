@@ -6,13 +6,13 @@ import { ros } from '../ros.js';
 const DASH = '\u2014';
 
 const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
-  armed: { className: 'pill-ok', label: 'ARMED' },
-  off: { className: 'pill-bad', label: 'OFF' },
+  active: { className: 'pill-ok', label: 'ACTIVE' },
+  lost: { className: 'pill-bad', label: 'LOST' },
 };
 
 const STATUS_SUMMARY: Record<ConnectionStatus, string> = {
-  armed: 'MAVLink heartbeat nominal',
-  off: 'No heartbeat \u2014 drone unreachable',
+  active: 'MAVLink heartbeat nominal',
+  lost: 'No heartbeat \u2014 drone unreachable',
 };
 
 function Row({
@@ -53,15 +53,18 @@ export default function ConnectionWidget() {
       // might need to change values in the future.
       clearTimeout(timeoutId);
 
-      setConnection({status: 'armed', transport: 'placeholder', heartbeatHz: 1});
+      setConnection({status: 'active', transport: 'placeholder', heartbeatHz: 1});
 
       timeoutId = setTimeout(() => {
-        setConnection({status: 'off', transport: 'placeholder', heartbeatHz: 0});
+        setConnection({status: 'lost', transport: 'placeholder', heartbeatHz: 0});
       }, 5000);
     }
 
     poseTopic.subscribe(onHeartbeat);
-    return () => poseTopic.unsubscribe(onHeartbeat);
+    return () => {
+      clearTimeout(timeoutId);
+      poseTopic.unsubscribe(onHeartbeat);
+    }
   }, []);
 
   const pill = connection

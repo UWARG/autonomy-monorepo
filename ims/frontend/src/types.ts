@@ -2,7 +2,7 @@
  * Wire payloads mirror utils/src/messages.py. Envelope: { "type": "<tag>", "payload": {...} }.
  */
 
-export type ConnectionStatus = 'active' | 'degraded' | 'lost';
+export type ConnectionStatus = 'active' | 'lost';
 
 /**
  * payload for { "type": "connection" }
