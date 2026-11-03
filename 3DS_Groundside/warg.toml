@@ -1,7 +1,7 @@
 name = "3DS_Groundside"
 description = "Groundside operator tooling for 3DS autonomy."
 
-depends_on = []
+depends_on = ["utils"]
 
 [commands]
 setup = "uv sync"
