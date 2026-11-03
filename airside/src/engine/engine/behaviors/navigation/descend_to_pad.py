@@ -12,7 +12,7 @@ from engine.constants import (
 )
 from engine.ground_log import send_to_ground
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
-from airside_interfaces.msg import Coordinate
+from airside_interfaces.msg import Coordinate, PositionTarget
 from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandTOL
 from rclpy.qos import qos_profile_sensor_data
@@ -62,7 +62,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
         self._land_accepted = False
 
         self._target_pub = self._node.create_publisher(
-            msg_type=Coordinate,
+            msg_type=PositionTarget,
             topic=_POSITION_TARGET_TOPIC,
             qos_profile=10,
         )
@@ -155,7 +155,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.RUNNING
 
-        self._target_pub.publish(self._target)
+        self._target_pub.publish(PositionTarget(target=self._target))
 
         east_m, north_m = east_north_coordinate_offset_m(
             self._latest_fix.latitude,

@@ -9,6 +9,7 @@ import rclpy.node
 from airside_interfaces.msg import MissionStatus
 from engine import blackboard_keys
 from engine.behaviors.guided_mode_gate import PauseUnlessGuided
+from engine.constants import MISSION_STATUS_PERIOD_S
 from engine.ground_log import last_message
 from rclpy.qos import DurabilityPolicy, QoSProfile
 
@@ -24,14 +25,14 @@ _MISSION_COMPLETE = "MissionComplete"
 
 class MissionStatusPublisher:
     """
-    Summarizes the tree on ``engine/status`` after every tick: the mission
-    step and behaviour running, lap and waypoint progress, and the latest
-    ground message. Latched, so the ground station gets the current state as
-    soon as it connects.
+    Summarizes the tree on ``engine/status`` after a tick, at most every
+    ``MISSION_STATUS_PERIOD_S``: the mission step and behaviour running,
+    lap and waypoint progress, and the latest ground message.
     """
 
     def __init__(self, node: rclpy.node.Node) -> None:
         self._node = node
+        self._last_publish_ns: int | None = None
         self._publisher = node.create_publisher(
             MissionStatus,
             _STATUS_TOPIC,
@@ -46,6 +47,14 @@ class MissionStatusPublisher:
             self._blackboard.register_key(key=key, access=py_trees.common.Access.READ)
 
     def publish(self, tree: py_trees.trees.BehaviourTree) -> None:
+        now_ns = self._node.get_clock().now().nanoseconds
+        if (
+            self._last_publish_ns is not None
+            and now_ns - self._last_publish_ns < MISSION_STATUS_PERIOD_S * 1e9
+        ):
+            return
+        self._last_publish_ns = now_ns
+
         nodes = {node.name: node for node in tree.root.iterate()}
         tip = tree.root.tip()
 

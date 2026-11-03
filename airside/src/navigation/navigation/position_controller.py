@@ -7,7 +7,7 @@ import time
 
 import rclpy
 import rclpy.node
-from airside_interfaces.msg import Coordinate as CoordinateMsg
+from airside_interfaces.msg import PositionTarget
 from airside_interfaces.msg import TrafficSnapshot
 from mavros_msgs.msg import GlobalPositionTarget, State
 from obstacle_avoidance import (
@@ -21,7 +21,9 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64
 
+from utils.src.coordinates import enu_to_coordinate
 from utils.src.types import Coordinate
+from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 
 class PositionController(rclpy.node.Node):
@@ -31,7 +33,10 @@ class PositionController(rclpy.node.Node):
     setpoint at 10 Hz.
 
     The setpoint is the avoider's next safe point, or the target itself once
-    within tolerance. With no path to the target (e.g. traffic flying at us),
+    within tolerance. If the target comes with a following waypoint, the aim
+    point slides past the target onto the next leg once the drone is within
+    ``CORNER_LOOKAHEAD_M``, so the drone rounds the corner instead of
+    stopping. With no path to the target (e.g. traffic flying at us),
     the avoider backs away to the clearest reachable point rather than hold. Anything that makes avoidance impossible (no or stale
     traffic, stale position, no safe path) holds where the drone was when the
     hold began. Nothing is published unless armed in GUIDED. If the engine
@@ -46,8 +51,11 @@ class PositionController(rclpy.node.Node):
     POSITION_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
     GUIDED_MODE = "GUIDED"
     CONTROL_RATE_HZ = 10.0
-    # The engine republishes its target every tick (500 ms).
+    # The engine republishes its target every tick.
     TARGET_TIMEOUT_S = 1.5
+    # How far ahead of the drone, along the path, to aim when rounding a
+    # corner. Larger is smoother and faster but cuts the corner wider.
+    CORNER_LOOKAHEAD_M = 5.0
     POSITION_FRESHNESS_S = 1.0
 
     # Position-only setpoint: ignores velocity, acceleration and yaw fields.
@@ -67,6 +75,7 @@ class PositionController(rclpy.node.Node):
         self._avoider = ObstacleAvoider()
         self._state: State | None = None
         self._target: Coordinate | None = None
+        self._following: Coordinate | None = None
         self._target_received_s = -math.inf
         self._fix: NavSatFix | None = None
         self._fix_received_s = -math.inf
@@ -82,7 +91,7 @@ class PositionController(rclpy.node.Node):
             GlobalPositionTarget, self.POSITION_SETPOINT_TOPIC, 10
         )
         self.create_subscription(
-            CoordinateMsg, self.TARGET_TOPIC, self._target_callback, 10
+            PositionTarget, self.TARGET_TOPIC, self._target_callback, 10
         )
         self.create_subscription(
             TrafficSnapshot, self.TRAFFIC_TOPIC, self._traffic_callback, 10
@@ -104,8 +113,13 @@ class PositionController(rclpy.node.Node):
             f"avoiding traffic on '{self.TRAFFIC_TOPIC}'."
         )
 
-    def _target_callback(self, msg: CoordinateMsg) -> None:
-        self._target = Coordinate(msg.lat, msg.lon, msg.alt)
+    def _target_callback(self, msg: PositionTarget) -> None:
+        self._target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
+        self._following = (
+            Coordinate(msg.following[0].lat, msg.following[0].lon, msg.following[0].alt)
+            if msg.following
+            else None
+        )
         self._target_received_s = time.monotonic()
 
     def _traffic_callback(self, msg: TrafficSnapshot) -> None:
@@ -182,10 +196,11 @@ class PositionController(rclpy.node.Node):
         if not traffic.healthy:
             return self._hold(position, traffic.reason or "UNHEALTHY_TRAFFIC")
 
+        aim = self._aim_point(position)
         plan = self._avoider.plan(
             AvoidanceRequest(
                 position=position,
-                goal=self._target,
+                goal=aim,
                 traffic=self._traffic_aircraft,
                 traffic_age_s=now_s - self._traffic_received_s,
             )
@@ -199,7 +214,38 @@ class PositionController(rclpy.node.Node):
                 "No path to the target: backing away from traffic",
                 throttle_duration_sec=2.0,
             )
-        return self._target if plan.goal_reached else plan.next_waypoint
+        return aim if plan.goal_reached else plan.next_waypoint
+
+    def _aim_point(self, position: Coordinate) -> Coordinate:
+        """
+        The target, or with a following waypoint and the drone within
+        ``CORNER_LOOKAHEAD_M`` of the target, the point the leftover lookahead
+        distance along the next leg.
+        """
+
+        target, following = self._target, self._following
+        if following is None:
+            return target
+        to_target_m = math.hypot(
+            *east_north_coordinate_offset_m(
+                position.lat, position.lon, target.lat, target.lon
+            )
+        )
+        if to_target_m >= self.CORNER_LOOKAHEAD_M:
+            return target
+        leg_east_m, leg_north_m = east_north_coordinate_offset_m(
+            target.lat, target.lon, following.lat, following.lon
+        )
+        leg_m = math.hypot(leg_east_m, leg_north_m)
+        if leg_m == 0.0:
+            return target
+        fraction = min(self.CORNER_LOOKAHEAD_M - to_target_m, leg_m) / leg_m
+        return enu_to_coordinate(
+            target,
+            leg_east_m * fraction,
+            leg_north_m * fraction,
+            target.alt + (following.alt - target.alt) * fraction,
+        )
 
     def _hold(self, position: Coordinate | None, reason: str) -> Coordinate | None:
         """Latch the position where the hold began and keep returning it."""

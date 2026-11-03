@@ -7,7 +7,9 @@ GUIDED_MODE = "GUIDED"
 LAND_MODE = "LAND"
 
 # Behavior tree tick period, milliseconds.
-TICK_PERIOD_MS = 500.0
+TICK_PERIOD_MS = 100.0
+# Minimum period between engine/status publishes, seconds.
+MISSION_STATUS_PERIOD_S = 0.5
 # Whether or not to print the tree with Unicode characters on every tick.
 UNICODE_TREE_DEBUG = False
 
@@ -37,6 +39,14 @@ BASELINE_STREAM_RATE_HZ = 4
 
 # How close (meters) counts as having reached a waypoint.
 WAYPOINT_ACCEPTANCE_RADIUS_M = 1.0
+
+# How close (meters) counts as having reached a lap waypoint.
+LAP_WAYPOINT_ACCEPTANCE_RADIUS_M = 3.0
+
+# A lap waypoint also counts as reached once the drone flies abeam of it
+# (crosses the line through it perpendicular to the leg), provided it is
+# within this horizontal distance (meters).
+WAYPOINT_PASS_RADIUS_M = 6.0
 
 # Give up on a waypoint if not reached within this many seconds.
 WAYPOINT_NAV_TIMEOUT_S = 120.0

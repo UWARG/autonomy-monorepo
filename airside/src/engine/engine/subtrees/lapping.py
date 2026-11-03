@@ -5,6 +5,7 @@ from __future__ import annotations
 import py_trees
 
 from engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
+from engine.constants import LAP_WAYPOINT_ACCEPTANCE_RADIUS_M
 from engine.behaviors.navigation.lap_count import AnotherLapRemaining, SetLapCount
 from engine.behaviors.navigation.lap_timing import (
     RecordLapEnd,
@@ -21,7 +22,10 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             LoadNextWaypoint(),
-            FlyToWaypoint(),
+            FlyToWaypoint(
+                acceptance_radius_m=LAP_WAYPOINT_ACCEPTANCE_RADIUS_M,
+                fly_through=True,
+            ),
             StartLapTimer(),
         ],
     )

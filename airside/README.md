@@ -126,6 +126,12 @@ MAVROS setpoints. At 10 Hz it runs gnc's `obstacle_avoidance.ObstacleAvoider`
 GPS fix and the latest `/aeac/traffic`, and publishes the avoider's next safe
 point as a position setpoint (the target itself once within 1 m).
 
+Lap waypoints are flown through if a `following` waypoint is sent alongside the
+position target. Once the drone is within `CORNER_LOOKAHEAD_M` of the target,
+the controller aims that leftover distance down the next leg instead A lap waypoint
+counts as reached within 3 m, or once the drone is abeam of it within 6 m
+(`LAP_WAYPOINT_ACCEPTANCE_RADIUS_M`, `WAYPOINT_PASS_RADIUS_M`).
+
 It fails closed. Missing, stale (over 2.5 s), unhealthy or disconnected
 traffic, a stale GPS fix or altitude, or no safe path holds the drone at the
 position where the hold began. Nothing is published unless the drone is armed
@@ -134,7 +140,7 @@ the drone is and then stops publishing.
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|
-| `/position_controller/target` | `airside_interfaces/Coordinate` | subscribe | Target `lat`, `lon` and relative `alt` (m) |
+| `/position_controller/target` | `airside_interfaces/PositionTarget` | subscribe | Target `lat`, `lon` and relative `alt` (m), plus an optional `following` waypoint |
 | `/aeac/traffic` | `airside_interfaces/TrafficSnapshot` | subscribe | AEAC traffic to avoid |
 | `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
 

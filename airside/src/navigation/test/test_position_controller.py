@@ -4,7 +4,8 @@ import math
 
 import pytest
 import rclpy
-from airside_interfaces.msg import TrafficSnapshot
+from airside_interfaces.msg import Coordinate as CoordinateMsg
+from airside_interfaces.msg import PositionTarget, TrafficSnapshot
 from mavros_msgs.msg import State
 from obstacle_avoidance import TrafficAircraft
 from sensor_msgs.msg import NavSatFix
@@ -55,6 +56,46 @@ def test_near_target_goes_to_target_itself(controller) -> None:
     controller._target = enu_to_coordinate(HERE, 0.0, 0.5, 10.0)
 
     assert controller._next_setpoint(NOW) == controller._target
+
+
+def test_far_from_corner_ignores_following_waypoint(controller) -> None:
+    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
+    setpoint = controller._next_setpoint(NOW)
+
+    assert HERE.lat < setpoint.lat < TARGET.lat
+    assert setpoint.lon == pytest.approx(HERE.lon)
+
+
+def test_near_corner_aims_past_target_along_next_leg(controller) -> None:
+    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
+    place(controller, enu_to_coordinate(TARGET, 0.0, -2.0, 10.0))
+    setpoint = controller._next_setpoint(NOW)
+
+    # 2 m short of the corner with a 5 m lookahead: 3 m down the next leg.
+    expected = enu_to_coordinate(TARGET, 3.0, 0.0, 10.0)
+    assert setpoint.lat == pytest.approx(expected.lat)
+    assert setpoint.lon == pytest.approx(expected.lon)
+
+
+def test_corner_aim_point_stops_at_following_waypoint(controller) -> None:
+    following = enu_to_coordinate(TARGET, 1.0, 0.0, 12.0)
+    controller._following = following
+    place(controller, enu_to_coordinate(TARGET, 0.0, -0.5, 10.0))
+
+    setpoint = controller._next_setpoint(NOW)
+
+    assert setpoint.lat == pytest.approx(following.lat)
+    assert setpoint.lon == pytest.approx(following.lon)
+    assert setpoint.alt == following.alt
+
+
+def test_target_message_without_following_clears_it(controller) -> None:
+    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
+    controller._target_callback(
+        PositionTarget(target=CoordinateMsg(lat=TARGET.lat, lon=TARGET.lon, alt=TARGET.alt))
+    )
+
+    assert controller._following is None
 
 
 def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:

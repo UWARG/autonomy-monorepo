@@ -3,7 +3,7 @@ import ROSLIB from 'roslib';
 import { ros } from '../ros.js';
 import type { MissionStatus } from '../types';
 
-/** Latched by the engine after every tree tick (2 Hz). */
+/** Latched by the engine, at most every 0.5 s. */
 const STATUS_TOPIC = 'engine/status';
 const STATUS_STALE_MS = 3000;
 
