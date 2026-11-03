@@ -81,12 +81,12 @@ def load_photo_run(run_dir: Path, drone_id: str = "") -> Iterator[ImageMessage]:
             if bgr is None:
                 logger.warning("Could not read %s", record["file"])
                 continue
-            position = record["position"]
+            position = record.get("position") or {}
             attitude = record.get("attitude") or {}
             yield ImageMessage(
-                lat=position["lat"],
-                lon=position["lon"],
-                alt=position["alt"],
+                lat=position.get("lat", math.nan),
+                lon=position.get("lon", math.nan),
+                alt=position.get("alt", math.nan),
                 img=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB),
                 roll_deg=attitude.get("roll", math.nan),
                 pitch_deg=attitude.get("pitch", math.nan),

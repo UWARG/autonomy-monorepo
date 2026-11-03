@@ -10,6 +10,17 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def is_finite(value: object) -> bool:
+    """
+    True for a finite number. A missing value (None, JSON null) or anything
+    else must reject the photo, not crash the stitcher's worker thread.
+    """
+    try:
+        return math.isfinite(value)
+    except TypeError:
+        return False
+
+
 @dataclass
 class ImageMessage:
     """
@@ -33,11 +44,14 @@ class ImageMessage:
 
     def has_valid_position(self) -> bool:
         """
-        False when the drone had no GPS fix (the camera node writes NaN) or
-        reports a non-positive altitude.
+        False when the drone had no GPS fix (the camera node writes NaN, a
+        glitching receiver reports 0, 0) or reports a non-positive altitude.
         """
         values = (self.lat, self.lon, self.alt)
-        return all(math.isfinite(value) for value in values) and self.alt > 0
+        if not all(is_finite(value) for value in values):
+            return False
+        no_fix = abs(self.lat) < 1e-6 and abs(self.lon) < 1e-6
+        return not no_fix and self.alt > 0
 
     def has_valid_image(self) -> bool:
         """

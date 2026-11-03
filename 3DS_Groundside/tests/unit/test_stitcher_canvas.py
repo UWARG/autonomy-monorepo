@@ -88,6 +88,10 @@ def test_message_validity():
         math.nan, math.nan, math.nan, image, 0.0, 0.0
     ).has_valid_position()
     assert not ImageMessage(43.0, -80.0, 0.0, image, 0.0, 0.0).has_valid_position()
+    # A receiver with no fix may report exactly (0, 0).
+    assert not ImageMessage(0.0, 0.0, 20.0, image, 0.0, 0.0).has_valid_position()
+    # A missing value (JSON null) is rejected rather than raising.
+    assert not ImageMessage(None, -80.0, 20.0, image, 0.0, 0.0).has_valid_position()
     assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0).has_valid_image()
     assert not ImageMessage(
         43.0, -80.0, 20.0, image.astype(np.float64), 0.0, 0.0
@@ -142,6 +146,7 @@ def test_load_photo_run_reads_3ds_camera_format(tmp_path):
                 record["attitude"] = {"roll": 1.5, "pitch": -2.0}
             if number == 3:
                 record["attitude"] = None
+                del record["position"]
             index.write(json.dumps(record) + "\n")
 
     loaded = list(load_photo_run(tmp_path, drone_id="drone-01"))
@@ -157,3 +162,4 @@ def test_load_photo_run_reads_3ds_camera_format(tmp_path):
     assert (loaded[0].roll_deg, loaded[0].pitch_deg) == (1.5, -2.0)
     for message in loaded[1:]:
         assert math.isnan(message.roll_deg) and math.isnan(message.pitch_deg)
+    assert not loaded[2].has_valid_position()

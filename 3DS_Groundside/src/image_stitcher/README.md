@@ -130,15 +130,24 @@ The ones most likely to need changing for real flights:
 - `gps_error_m`: set to the real GPS accuracy.
 - `min_inliers`: raise it if wrong matches appear over repetitive ground.
 - `resolution_m`: fixed output metres per pixel (default: the photos' own).
-- `quality`: rejection limits (`QualityLimits`): `max_tilt_deg` (5),
-  `min_sharpness` (0.35) and `max_clipped_fraction` (0.2). The image
-  limits were picked on synthetic photos; check them on real ones.
+- `max_distance_m`: photos whose GPS is further than this from the first
+  accepted photo are rejected as glitches (400 m), so the whole survey must
+  lie within 400 m of where it starts.
+- `quality`: rejection limits (`QualityLimits`): `max_tilt_deg` (5, roll and
+  pitch combined), `min_sharpness` (0.32) and `max_clipped_fraction` (0.2).
+  The image limits were picked on synthetic photos; check them on real ones.
 
 ## Limitations / future work
 
 - Assumes flat ground and a straight-down camera. Hills and buildings will
   show small misalignments. Photos tilted past `max_tilt_deg` are rejected
-  rather than corrected.
+  rather than corrected, and smaller tilts are treated as straight down: at
+  25 m a 5 degree tilt moves the ground point below the drone by 2.2 m.
+  Correcting it needs the camera's mounting on the drone.
+- The blur check is less reliable on noisy photos: sensor noise looks like
+  fine detail. A median filter removes most of it, but in simulation even
+  mild noise (sigma 2 grey levels) can let a 5 px motion-blurred photo pass.
+  Tune `min_sharpness` on real photos from the flight camera.
 - The calibration file must match the camera and resolution being flown.
   After recalibrating (`airside_prec/camera_calibration.py` on the
   `precision_landing` branch), replace `camera_info.yaml`.
@@ -154,5 +163,5 @@ The ones most likely to need changing for real flights:
 
 ```bash
 uv run --extra dev pytest tests/unit             # fast, no XFeat
-uv run --extra dev pytest tests/integration      # XFeat end to end, ~30 s
+uv run --extra dev pytest tests/integration      # XFeat end to end, ~1 min
 ```

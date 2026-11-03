@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
-from src.image_stitcher.message import ImageMessage
+from src.image_stitcher.message import ImageMessage, is_finite
 
 # Grey levels counted as clipped: crushed to black or blown out to white.
 DARK_LEVEL = 10
@@ -37,14 +37,15 @@ class QualityLimits:
     photos and should be checked against real flight photos.
     """
 
-    # Largest roll or pitch (degrees). A tilted photo sees the ground at an
-    # angle, so its scale changes across the image and it can't line up with
-    # its neighbours by rotation, scale and shift alone.
+    # Largest angle (degrees) between the camera and straight down, from roll
+    # and pitch together. A tilted photo sees the ground at an angle, so its
+    # scale changes across the image and it can't line up with its neighbours
+    # by rotation, scale and shift alone.
     max_tilt_deg: float = 5.0
     # Lowest sharpness (see sharpness()). Sits between sharp synthetic photos
     # and slightly blurred ones (Gaussian sigma 0.7 px, 5 px motion), leaning
     # towards keeping photos; test_stitcher_quality.py checks a whole mission.
-    min_sharpness: float = 0.35
+    min_sharpness: float = 0.32
     # Largest fraction of pixels allowed to be clipped dark or bright.
     max_clipped_fraction: float = 0.2
 
@@ -58,10 +59,13 @@ def sharpness(img: np.ndarray) -> float:
     dim photo isn't mistaken for a blurry one.
 
     Measured along x, y and both diagonals, keeping the worst, because motion
-    blur only smears detail along the direction of motion.
+    blur only smears detail along the direction of motion. A 3 x 3 median
+    first removes most sensor noise, which would otherwise look like fine
+    detail, while keeping edges (and so blur) as they are.
     Returns 0 for a featureless image.
     """
-    grey = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    grey = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    grey = cv2.medianBlur(grey, 3).astype(np.float64)
     half = cv2.pyrDown(grey)
     scores = []
     for kernel in _DIRECTIONS:
@@ -80,13 +84,13 @@ def clipped_fractions(img: np.ndarray) -> tuple[float, float]:
     return float((grey <= DARK_LEVEL).mean()), float((grey >= BRIGHT_LEVEL).mean())
 
 
-def _is_finite(value: object) -> bool:
-    # A missing value (None, JSON null) must reject the photo, not crash the
-    # stitcher's worker thread.
-    try:
-        return math.isfinite(value)
-    except TypeError:
-        return False
+def tilt_deg(roll_deg: float, pitch_deg: float) -> float:
+    """
+    Angle between the camera axis and straight down for a camera rolled and
+    pitched by these angles. Both together tilt it more than either alone.
+    """
+    cos_tilt = math.cos(math.radians(roll_deg)) * math.cos(math.radians(pitch_deg))
+    return math.degrees(math.acos(min(1.0, cos_tilt)))
 
 
 def rejection_reason(message: ImageMessage, limits: QualityLimits) -> str | None:
@@ -94,9 +98,9 @@ def rejection_reason(message: ImageMessage, limits: QualityLimits) -> str | None
     Why the photo should not be used, or None if it is fine. Expects a valid
     H x W x 3 image.
     """
-    if not (_is_finite(message.roll_deg) and _is_finite(message.pitch_deg)):
+    if not (is_finite(message.roll_deg) and is_finite(message.pitch_deg)):
         return "no roll/pitch"
-    tilt = max(abs(message.roll_deg), abs(message.pitch_deg))
+    tilt = tilt_deg(message.roll_deg, message.pitch_deg)
     if tilt > limits.max_tilt_deg:
         return f"tilted {tilt:.1f} deg (limit {limits.max_tilt_deg:.1f})"
 

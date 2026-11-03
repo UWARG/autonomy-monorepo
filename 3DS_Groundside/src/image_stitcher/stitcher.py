@@ -84,6 +84,10 @@ class StitcherConfig:
     resolution_m: float | None = None
     # Largest allowed map side in pixels, guards against corrupt positions.
     max_map_size_px: int = 20_000
+    # Reject photos whose GPS is further than this (metres) from the first
+    # photo, i.e. GPS glitches. At 25 m this keeps the map within
+    # max_map_size_px; lower flights need a smaller value.
+    max_distance_m: float = 400.0
     # Limits for rejecting blurry, badly exposed or tilted photos.
     quality: QualityLimits = field(default_factory=QualityLimits)
 
@@ -206,12 +210,15 @@ class ImageStitcher:
             self._rejections.append((message.drone_id, message.image_id, reason))
             return False
 
-        if self._reference is None:
-            self._reference = (message.lat, message.lon)
-        east, north = gps_to_local(message.lat, message.lon, *self._reference)
+        # The first photo becomes the map's reference, but only once its
+        # features are extracted, so a photo that fails there never anchors
+        # the map.
+        reference = self._reference or (message.lat, message.lon)
+        east, north = gps_to_local(message.lat, message.lon, *reference)
         # Keep only the undistorted image so memory doesn't double.
         message = dataclasses.replace(message, img=self._camera.undistort(message.img))
         photo = _Photo(message, self._matcher.extract(message.img), east, north)
+        self._reference = reference
 
         self._place(photo, self._find_matches(photo))
         # Later photos only match against the upright features, so drop the
@@ -245,7 +252,7 @@ class ImageStitcher:
                 message = queue.popleft()
             except IndexError:
                 return count
-            self.add(message)
+            self._add_safely(message)
             count += 1
 
     def run(
@@ -274,19 +281,46 @@ class ImageStitcher:
                     break
                 stop.wait(poll_interval_s)
                 continue
-            added = self.add(message)
+            added = self._add_safely(message)
             if (
                 added
                 and output_dir is not None
                 and save_every
                 and self.image_count % save_every == 0
+                and self._save_logging_errors(output_dir)
             ):
-                self.save(next_map_path(output_dir))
                 saved_count = self.image_count
 
         # Skip the final save if the last periodic one already has every photo.
         if output_dir is not None and self.image_count > saved_count:
+            self._save_logging_errors(output_dir)
+
+    def _add_safely(self, message: ImageMessage) -> bool:
+        # One malformed queue item must not stop the stitcher for the rest
+        # of the flight: log it, record it as rejected and carry on.
+        count_before = self.image_count
+        try:
+            return self.add(message)
+        except Exception:
+            drone_id = str(getattr(message, "drone_id", ""))
+            image_id = str(getattr(message, "image_id", ""))
+            logger.exception("Failed to add %r from %r", image_id, drone_id)
+            if self.image_count > count_before:
+                # It failed after being placed (e.g. while refining), so it
+                # is on the map; don't also list it as rejected.
+                return True
+            self._rejections.append((drone_id, image_id, "error (see log)"))
+            return False
+
+    def _save_logging_errors(self, output_dir: Path) -> bool:
+        # A failed save (full disk, map too large) is logged and the
+        # stitcher keeps going; the next save tries again.
+        try:
             self.save(next_map_path(output_dir))
+            return True
+        except Exception:
+            logger.exception("Failed to save the map to %s", output_dir)
+            return False
 
     def render(self) -> StitchedMap:
         """
@@ -358,6 +392,11 @@ class ImageStitcher:
                 f"image is {width} x {height} but the camera is calibrated for "
                 f"{self._camera.width} x {self._camera.height}"
             )
+        if self._reference is not None:
+            east, north = gps_to_local(message.lat, message.lon, *self._reference)
+            distance = math.hypot(east, north)
+            if distance > self._config.max_distance_m:
+                return f"GPS position {distance:.0f} m from the first photo"
         return rejection_reason(message, self._config.quality)
 
     def _find_matches(self, photo: _Photo) -> dict[int, list[_Match]]:

@@ -7,7 +7,12 @@ import pytest
 
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.message import ImageMessage
-from src.image_stitcher.quality import QualityLimits, rejection_reason, sharpness
+from src.image_stitcher.quality import (
+    QualityLimits,
+    rejection_reason,
+    sharpness,
+    tilt_deg,
+)
 from src.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
 
 LIMITS = QualityLimits()
@@ -94,10 +99,43 @@ def test_dim_but_sharp_photo_passes(good):
     assert rejection_reason(scaled(good, 0.4), LIMITS) is None
 
 
+@pytest.mark.parametrize("noise_sigma", [2.0, 4.0])
+def test_noisy_or_compressed_sharp_photo_passes(good, noise_sigma):
+    # Sensor noise looks like fine detail and JPEG removes some; neither may
+    # get a sharp photo rejected.
+    rng = np.random.default_rng(0)
+    noise = rng.normal(0, noise_sigma, good.img.shape)
+    noisy = np.clip(good.img + noise, 0, 255).astype(np.uint8)
+    assert rejection_reason(dataclasses.replace(good, img=noisy), LIMITS) is None
+    _, encoded = cv2.imencode(".jpg", good.img, [cv2.IMWRITE_JPEG_QUALITY, 75])
+    jpeg = cv2.imdecode(encoded, cv2.IMREAD_UNCHANGED)
+    assert rejection_reason(dataclasses.replace(good, img=jpeg), LIMITS) is None
+
+
 @pytest.mark.parametrize(("roll", "pitch"), [(6.0, 0.0), (0.0, -6.0), (-20.0, 15.0)])
 def test_tilted_photo_is_rejected(good, roll, pitch):
     tilted = dataclasses.replace(good, roll_deg=roll, pitch_deg=pitch)
     assert rejection_reason(tilted, LIMITS).startswith("tilted")
+
+
+@pytest.mark.parametrize("sigma", [1.0, 2.0])
+def test_blurred_photo_with_sensor_noise_is_rejected(good, sigma):
+    # Noise looks like fine detail; without the median filter it lifts a
+    # blurred photo's score above the limit.
+    rng = np.random.default_rng(0)
+    blurred = cv2.GaussianBlur(good.img, (0, 0), sigma)
+    noisy = np.clip(blurred + rng.normal(0, 2.0, good.img.shape), 0, 255)
+    message = dataclasses.replace(good, img=noisy.astype(np.uint8))
+    assert rejection_reason(message, LIMITS).startswith("blurry")
+
+
+def test_roll_and_pitch_together_count_as_more_tilt(good):
+    assert tilt_deg(0.0, 0.0) == 0.0
+    assert tilt_deg(5.0, 0.0) == pytest.approx(5.0)
+    # 4.5 degrees each way is 6.4 degrees off vertical.
+    assert tilt_deg(4.5, 4.5) == pytest.approx(6.36, abs=0.01)
+    both = dataclasses.replace(good, roll_deg=4.5, pitch_deg=4.5)
+    assert rejection_reason(both, LIMITS).startswith("tilted")
 
 
 def test_tilt_limit_is_configurable(good):

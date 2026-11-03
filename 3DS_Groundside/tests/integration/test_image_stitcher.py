@@ -179,6 +179,103 @@ def test_run_loop_skips_duplicate_final_save(mission, matcher, camera, tmp_path)
     assert maps == ["map_001.png", "map_002.png"]
 
 
+def test_run_loop_survives_bad_queue_items(mission, matcher, camera, tmp_path):
+    # No GPS fix first (rejected, must not become the map's reference),
+    # then a far-away GPS jump, a non-message and good photos.
+    glitch = dataclasses.replace(
+        mission[0].message, lat=math.nan, image_id="glitch_nan"
+    )
+    # About 1.1 km north: a jump no drone in this mission could make.
+    far = dataclasses.replace(
+        mission[1].message, lat=mission[1].message.lat + 0.01, image_id="glitch_far"
+    )
+    good = [photo.message for photo in mission[:3]]
+    queue = deque([glitch, good[0], far, None, *good[1:]])
+    stop = threading.Event()
+    stop.set()
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.run(queue, stop, output_dir=tmp_path)
+
+    assert stitcher.image_count == 3
+    assert stitcher.reference == (good[0].lat, good[0].lon)
+    reasons = {image_id: reason for _, image_id, reason in stitcher.rejections}
+    assert reasons["glitch_nan"] == "no valid GPS position"
+    assert reasons["glitch_far"].startswith("GPS position")
+    assert reasons[""] == "error (see log)"
+    assert (tmp_path / "map_001.png").exists()
+
+
+def test_photo_that_fails_never_becomes_the_reference(mission, matcher, camera):
+    class FailsOnce:
+        def __init__(self):
+            self.calls = 0
+
+        def extract(self, img):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("extractor crashed")
+            return matcher.extract(img)
+
+        def __getattr__(self, name):
+            return getattr(matcher, name)
+
+    first, second = (photo.message for photo in mission[:2])
+    stitcher = ImageStitcher(matcher=FailsOnce(), camera=camera)
+    assert stitcher.process_queue(deque([first, second])) == 2
+
+    assert stitcher.image_count == 1
+    assert stitcher.reference == (second.lat, second.lon)
+    assert [reason for *_, reason in stitcher.rejections] == ["error (see log)"]
+
+
+def test_failure_after_placing_keeps_the_photo(mission, matcher, camera):
+    stitcher = ImageStitcher(StitcherConfig(refine_every=1), matcher, camera)
+
+    def broken_refine():
+        raise RuntimeError("solver failed")
+
+    stitcher.refine = broken_refine
+    assert stitcher.process_queue(deque([mission[0].message])) == 1
+    # Refining failed after the photo was placed: it stays on the map and is
+    # not also listed as rejected.
+    assert stitcher.image_count == 1
+    assert stitcher.rejections == []
+
+
+def test_glitch_as_first_photo_does_not_block_the_flight(mission, matcher, camera):
+    glitch = dataclasses.replace(mission[0].message, lat=0.0, lon=0.0)
+    good = [photo.message for photo in mission[1:3]]
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.process_queue(deque([glitch, *good]))
+    assert stitcher.image_count == 2
+    assert stitcher.reference == (good[0].lat, good[0].lon)
+
+
+def test_failed_save_does_not_stop_the_run(mission, matcher, camera, tmp_path):
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    real_save = stitcher.save
+    calls = []
+
+    def flaky_save(path):
+        calls.append(path)
+        if len(calls) == 2:
+            raise OSError("disk full")
+        real_save(path)
+
+    stitcher.save = flaky_save
+    queue = deque(photo.message for photo in mission[:4])
+    stop = threading.Event()
+    stop.set()
+    stitcher.run(queue, stop, output_dir=tmp_path, save_every=2)
+
+    # The save after photo 4 failed, so stopping saves the full map again.
+    assert stitcher.image_count == 4
+    assert len(calls) == 3
+    maps = sorted(tmp_path.glob("map_*.json"))
+    counts = [json.loads(path.read_text())["image_count"] for path in maps]
+    assert counts == [2, 4]
+
+
 def test_process_queue_drains_everything(mission, matcher, camera):
     queue = deque(photo.message for photo in mission[:3])
     stitcher = ImageStitcher(matcher=matcher, camera=camera)
@@ -267,6 +364,14 @@ def test_photo_with_no_overlap_is_still_placed_by_gps(ground, matcher, camera):
     stitched_map = stitcher.render()
     assert stitched_map.image_count == 1
     assert stitched_map.coverage.any()
+
+    # GPS is exact here, so the pixel straight below the drone (the principal
+    # point, not the image centre) must land on the drone's true position.
+    [(_, placement)] = stitcher.placements()
+    offset = np.array(gps_to_local(*stitcher.reference, *ground.origin))
+    below = apply(placement, [camera.principal_point])[0] + offset
+    truth = [photos[0].true_east, photos[0].true_north]
+    assert np.linalg.norm(below - truth) < 0.3
 
 
 def test_flight_at_two_altitudes_merges(ground, matcher, camera):

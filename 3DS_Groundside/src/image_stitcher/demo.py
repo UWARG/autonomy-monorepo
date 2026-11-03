@@ -2,7 +2,8 @@
 Stitches a synthetic multi-drone lawn mower mission and saves the result.
 
 Usage (from 3DS_Groundside/):
-    uv run python -m src.image_stitcher.demo [output_dir] [--gps-noise M] [--drones N]
+    uv run python -m src.image_stitcher.demo [output_dir] [--gps-noise M]
+        [--drones N] [--seed N]
 """
 
 from __future__ import annotations
