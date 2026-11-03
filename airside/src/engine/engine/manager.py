@@ -15,6 +15,7 @@ from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
 from engine.behaviors.navigation.record_launch_point import RecordLaunchPoint
 from engine.behaviors.navigation.takeoff import Takeoff
 from engine.constants import TICK_PERIOD_MS, UNICODE_TREE_DEBUG
+from engine.subtrees.abort import create_abort_subtree
 from engine.subtrees.land import create_land_subtree
 from engine.subtrees.lapping import create_lapping_subtree
 from engine.subtrees.target_reconnaissance import (
@@ -38,17 +39,23 @@ def create_root() -> py_trees.behaviour.Behaviour:
     holds the tree in RUNNING after landing.
 
     ```
-    Root [Sequence]
-    ├── ConfigureStreamRates
-    └── PauseUnlessGuided
-        └── Mission [Sequence]
-            ├── RecordLaunchPoint
-            ├── LoadWaypointList
-            ├── Takeoff
-            ├── Lapping
-            ├── TargetReconnaissance
-            ├── LandPhase
-            └── MissionComplete [Running]
+    SafetySupervisor [Selector]
+    ├── Abort
+    │   ├── CheckAbort
+    │   ├── RetryLand [Retry forever]
+    │   │   └── AbortLand
+    │   └── Aborted [Running]
+    └── Root [Sequence]
+        ├── ConfigureStreamRates
+        └── PauseUnlessGuided
+            └── Mission [Sequence]
+                ├── RecordLaunchPoint
+                ├── LoadWaypointList
+                ├── Takeoff
+                ├── Lapping
+                ├── TargetReconnaissance
+                ├── LandPhase
+                └── MissionComplete [Running]
     ```
     """
 
@@ -66,13 +73,19 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
-    return py_trees.composites.Sequence(
+    mission_root = py_trees.composites.Sequence(
         name="Root",
         memory=True,
         children=[
             ConfigureStreamRates(),
             PauseUnlessGuided(child=mission),
         ],
+    )
+
+    return py_trees.composites.Selector(
+        name="SafetySupervisor",
+        memory=False,
+        children=[create_abort_subtree(), mission_root],
     )
 
 
