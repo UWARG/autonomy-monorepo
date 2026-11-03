@@ -9,8 +9,8 @@ from engine.constants import LAP_WAYPOINT_ACCEPTANCE_RADIUS_M
 from engine.behaviors.navigation.lap_count import AnotherLapRemaining, SetLapCount
 from engine.behaviors.navigation.lap_timing import (
     RecordLapEnd,
+    RecordWaypointReached,
     ResetLapWaypoints,
-    StartLapTimer,
 )
 from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
 
@@ -26,7 +26,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
                 acceptance_radius_m=LAP_WAYPOINT_ACCEPTANCE_RADIUS_M,
                 fly_through=True,
             ),
-            StartLapTimer(),
+            RecordWaypointReached(),
         ],
     )
 

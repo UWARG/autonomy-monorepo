@@ -11,8 +11,11 @@ WAYPOINTS = "waypoints"
 # Where the drone was armed, at the return altitude; the mission lands here
 LAUNCH_POINT = "launch_point"
 
-# The next waypoint index to fly to
+# The next index to fly to
 WAYPOINT_INDEX = "waypoint_index"
+
+# Whether the current lap made it back to the first waypoint
+LAP_CLOSED = "lap_closed"
 
 # The waypoint currently being flown to
 CURRENT_WAYPOINT = "current_waypoint"

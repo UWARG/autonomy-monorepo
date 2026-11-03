@@ -110,7 +110,7 @@ class MissionStatusPublisher:
             status.waypoint_count = len(waypoints)
             # LoadNextWaypoint advances the index past the waypoint it loads.
             if index:
-                status.waypoint = min(index, len(waypoints))
+                status.waypoint = (index - 1) % len(waypoints) + 1
 
     def _get(self, key: str):
         try:

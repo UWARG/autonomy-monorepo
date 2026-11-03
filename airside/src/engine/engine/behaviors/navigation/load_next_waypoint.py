@@ -10,10 +10,11 @@ class LoadNextWaypoint(py_trees.behaviour.Behaviour):
     """
     Advances to the next waypoint in the current lap.
 
-    Reads ``waypoints`` and ``waypoint_index`` from the blackboard, writes the
-    waypoint at the index to ``current_waypoint``, and increments the index.
-    Also writes the waypoint after it to ``following_waypoint``.
-    Returns SUCCESS when a waypoint was loaded, FAILURE when the list is
+    The lap route is the waypoints followed by the first one again. Reads
+    ``waypoints`` and ``waypoint_index`` from the blackboard, writes the
+    route entry at the index to ``current_waypoint``, and increments the
+    index. Also writes the entry after it to ``following_waypoint``.
+    Returns SUCCESS when a waypoint was loaded, FAILURE when the route is
     exhausted.
     """
 
@@ -50,19 +51,22 @@ class LoadNextWaypoint(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.FAILURE
 
-        if index >= len(waypoints):
+        if index > len(waypoints):
             self._node.get_logger().info(
-                f"{self.name}: all {len(waypoints)} waypoints visited, lap complete"
+                f"{self.name}: lap complete"
             )
             return py_trees.common.Status.FAILURE
 
-        self.blackboard.set(blackboard_keys.CURRENT_WAYPOINT, waypoints[index])
+        waypoint = waypoints[index % len(waypoints)]
+        self.blackboard.set(blackboard_keys.CURRENT_WAYPOINT, waypoint)
         self.blackboard.set(
             blackboard_keys.FOLLOWING_WAYPOINT, self._following(waypoints, index)
         )
         self.blackboard.set(blackboard_keys.WAYPOINT_INDEX, index + 1)
+        closing = " (closing the lap)" if index == len(waypoints) else ""
         self._node.get_logger().info(
-            f"{self.name}: waypoint {index + 1}/{len(waypoints)}: {waypoints[index]}"
+            f"{self.name}: waypoint {index % len(waypoints) + 1}/{len(waypoints)}"
+            f"{closing}: {waypoint}"
         )
         return py_trees.common.Status.SUCCESS
 
@@ -71,10 +75,10 @@ class LoadNextWaypoint(py_trees.behaviour.Behaviour):
     ) -> Coordinate | None:
         """The waypoint flown to after ``waypoints[index]``, or None."""
 
-        if index + 1 < len(waypoints):
-            return waypoints[index + 1]
+        if index < len(waypoints):
+            return waypoints[(index + 1) % len(waypoints)]
         try:
             laps_remaining = self.blackboard.get(blackboard_keys.LAPS_REMAINING)
         except KeyError:
             return None
-        return waypoints[0] if laps_remaining > 0 else None
+        return waypoints[1 % len(waypoints)] if laps_remaining > 0 else None
