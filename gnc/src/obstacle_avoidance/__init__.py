@@ -1,6 +1,6 @@
 """Traffic-aware obstacle avoidance (an original 2D BendyRuler-style planner)."""
 
-from .avoidance import AvoidanceConfig, ObstacleAvoider
+from .avoidance import ESCAPE_REASON, AvoidanceConfig, ObstacleAvoider
 from .clearance import CircularObstacleField, ClearanceField
 from .models import (
     AvoidancePlan,
@@ -18,6 +18,7 @@ from .planner import BendyRuler2D, PlannerConfig
 from .traffic import traffic_to_obstacles
 
 __all__ = [
+    "ESCAPE_REASON",
     "AvoidanceConfig",
     "AvoidancePlan",
     "AvoidanceRequest",

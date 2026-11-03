@@ -108,3 +108,22 @@ def test_property_every_returned_segment_meets_clearance() -> None:
             field.segment_clearance(result.waypoint, result.second_waypoint) + 1e-9
             >= config.clearance_margin_m
         )
+
+
+def test_clear_direct_line_overrides_a_stale_detour_heading() -> None:
+    """Near the goal every heading ties within the hysteresis band; keeping the
+    old detour heading there made the drone circle the waypoint."""
+    planner = BendyRuler2D()
+    detour = planner.plan(request((CircleObstacle(Point2D(5.0, 0.0), 1.5),)))
+    assert detour.heading_rad is not None and detour.heading_rad != 0.0
+
+    near_goal = planner.plan(
+        PlanRequest(
+            start=Point2D(15.0, 0.0),
+            goal=Point2D(20.0, 0.0),
+            obstacles=ObstacleSnapshot((), 10.0),
+            now_s=10.0,
+        )
+    )
+    assert near_goal.heading_rad == 0.0
+    assert near_goal.waypoint == Point2D(20.0, 0.0)

@@ -49,6 +49,11 @@ class PauseUnlessGuided(py_trees.decorators.Decorator):
     def _state_callback(self, msg: State) -> None:
         self._latest_state = msg
 
+    @property
+    def paused(self) -> bool:
+        """True while the pilot has control (not in GUIDED) and the mission is held."""
+        return self._paused
+
     def tick(self) -> typing.Iterator[py_trees.behaviour.Behaviour]:
         mode = self._latest_state.mode if self._latest_state is not None else None
         if mode not in _AUTONOMY_MODES:

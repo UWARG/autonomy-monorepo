@@ -14,9 +14,17 @@ _STATUSTEXT_TOPIC = "mavros/statustext/send"
 _MAX_TEXT_LEN = 50
 
 _publishers: dict[rclpy.node.Node, Publisher] = {}
+_last_text = ""
+
+
+def last_message() -> str:
+    """The latest text sent to the ground, for the mission status."""
+    return _last_text
 
 
 def send_to_ground(node: rclpy.node.Node, text: str) -> None:
+    global _last_text
+    _last_text = text
     publisher = _publishers.get(node)
     if publisher is None:
         publisher = node.create_publisher(StatusText, _STATUSTEXT_TOPIC, 10)

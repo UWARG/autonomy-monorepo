@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -25,6 +26,11 @@ def generate_launch_description() -> LaunchDescription:
                 "lap_count",
                 default_value=EnvironmentVariable("LAP_COUNT", default_value="3"),
                 description="Number of laps to fly before reconnaissance",
+            ),
+            DeclareLaunchArgument(
+                "use_camera",
+                default_value=EnvironmentVariable("USE_CAMERA", default_value="true"),
+                description="Start the camera node (false for SITL, which has none)",
             ),
             Node(
                 package="mavros",
@@ -85,6 +91,7 @@ def generate_launch_description() -> LaunchDescription:
                 name="camera_node",
                 output="both",
                 parameters=[{"camera_type": "arducam"}],
+                condition=IfCondition(LaunchConfiguration("use_camera")),
             ),
             Node(
                 package="camera",

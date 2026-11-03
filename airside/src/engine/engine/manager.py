@@ -15,6 +15,7 @@ from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
 from engine.behaviors.navigation.record_launch_point import RecordLaunchPoint
 from engine.behaviors.navigation.takeoff import Takeoff
 from engine.constants import TICK_PERIOD_MS, UNICODE_TREE_DEBUG
+from engine.mission_status import MissionStatusPublisher
 from engine.subtrees.abort import create_abort_subtree
 from engine.subtrees.land import create_land_subtree
 from engine.subtrees.lapping import create_lapping_subtree
@@ -112,6 +113,7 @@ def main(args: list[str] | None = None) -> None:
         rclpy.try_shutdown()
         return
 
+    tree.add_post_tick_handler(MissionStatusPublisher(tree.node).publish)
     tree.tick_tock(period_ms=TICK_PERIOD_MS)
 
     try:

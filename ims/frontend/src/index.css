@@ -75,6 +75,9 @@
   line-height: 1.25;
   text-shadow: 0 0 3px #0c0f16, 0 0 3px #0c0f16, 0 0 2px #0c0f16;
 }
+.ims-map .leaflet-tooltip.ims-map-label-clear {
+  color: #c4ccd8;
+}
 .ims-map .leaflet-tooltip.ims-map-label::before {
   display: none;
 }

@@ -34,6 +34,8 @@ const COLORS = {
   setpoint: '#E879F9',
   course: '#34D17E',
   traffic: '#F59E0B',
+  /** Traffic we are vertically clear of: the avoider ignores it. */
+  trafficClear: '#9BA5B7',
 };
 
 type LatLon = { lat: number; lon: number };
@@ -91,13 +93,13 @@ const OFF_COURSE_TARGET_ICON = L.divIcon({
   </svg>`,
 });
 
-function trafficIcon(direction: number): L.DivIcon {
+function trafficIcon(direction: number, clear: boolean): L.DivIcon {
   return L.divIcon({
     className: 'ims-map-icon',
     iconSize: [22, 22],
     iconAnchor: [11, 11],
     html: `<svg width="22" height="22" viewBox="0 0 22 22">
-      <path d="M11 3 L16 18 L11 15 L6 18 Z" fill="${COLORS.traffic}" stroke="white" stroke-width="1.2"
+      <path d="M11 3 L16 18 L11 15 L6 18 Z" fill="${clear ? COLORS.trafficClear : COLORS.traffic}" stroke="white" stroke-width="1.2"
         stroke-linejoin="round" transform="rotate(${direction} 11 11)"/>
     </svg>`,
   });
@@ -304,14 +306,32 @@ function ReadoutRow({
 }
 
 /** AEAC feed health, most severe first. */
-function trafficPill(traffic: AeacTrafficState, count: number): { className: string; label: string } {
+function trafficPill(
+  traffic: AeacTrafficState,
+  count: number,
+  atAltitude: number,
+): { className: string; label: string } {
   if (traffic.trafficProblem) return { className: 'pill-bad', label: traffic.trafficProblem };
   if (!traffic.connected) return { className: 'pill-bad', label: 'AEAC OFFLINE' };
   if (!traffic.nearbyDrones) return { className: 'pill bg-edge text-ink-3', label: 'NO FEED' };
   if (traffic.nearbyDronesStale) return { className: 'pill-warn', label: 'TRAFFIC STALE' };
-  if (count) return { className: 'pill-accent', label: `${count} NEARBY` };
+  if (count && atAltitude) return { className: 'pill-warn', label: `${atAltitude}/${count} AT OUR ALT` };
+  if (count) return { className: 'pill-accent', label: `${count} NEARBY \u00B7 ALT CLEAR` };
   return { className: 'pill-ok', label: 'NO TRAFFIC' };
 }
+
+/**
+ * Whether an aircraft's vertical keep-away overlaps the altitudes we are flying
+ * between. Mirrors gnc obstacle_avoidance traffic_to_obstacles: aircraft outside
+ * the band are not obstacles (and not an AEAC breach, which needs both).
+ */
+function atOurAltitude(d: NearbyDrone, band: [number, number] | null): boolean {
+  if (!band) return true; // altitude unknown: assume the worst
+  return d.alt + d.vertical_keep_away >= band[0] && d.alt - d.vertical_keep_away <= band[1];
+}
+
+/** "+40 m" when the aircraft is above us. */
+const fmtVertical = (m: number) => `${m >= 0 ? '+' : '\u2212'}${Math.abs(Math.round(m))} m`;
 
 export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
   const { position, heading, relAlt, trail } = useOwnTrack();
@@ -326,6 +346,10 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
   const allDrones = traffic.nearbyDrones?.drones ?? [];
   const drones = showTraffic ? allDrones : [];
   const trafficStale = traffic.nearbyDronesStale;
+  const altBand: [number, number] | null =
+    relAlt == null ? null : [Math.min(relAlt, target?.alt ?? relAlt), Math.max(relAlt, target?.alt ?? relAlt)];
+  const conflictCount = allDrones.filter((d) => atOurAltitude(d, altBand)).length;
+  const verticalOffset = (d: NearbyDrone) => (relAlt == null ? null : d.alt - relAlt);
 
   const distTo = (p?: PositionMessage) =>
     position && p ? haversineM(position.lat, position.lon, p.lat, p.lon) : null;
@@ -348,7 +372,7 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
   // Without our own position or a course, centre on the traffic so it is still visible.
   const anchor = position ?? setpoint ?? target ?? waypoints[0] ?? allDrones[0];
 
-  const feedPill = trafficPill(traffic, allDrones.length);
+  const feedPill = trafficPill(traffic, allDrones.length, conflictCount);
   const navPill = !setpointStale
     ? { className: 'pill-accent', label: 'SETPOINT LIVE' }
     : !targetStale
@@ -416,20 +440,23 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
                 />
               )}
 
-              {drones.map((d) => (
-                <Circle
-                  key={`ka-${d.id}`}
-                  center={[d.lat, d.lon]}
-                  radius={d.horizontal_keep_away}
-                  pathOptions={{
-                    color: COLORS.traffic,
-                    weight: 1,
-                    dashArray: '3 3',
-                    fillOpacity: 0.1,
-                    opacity: trafficStale ? 0.35 : 0.9,
-                  }}
-                />
-              ))}
+              {drones.map((d) => {
+                const conflict = atOurAltitude(d, altBand);
+                return (
+                  <Circle
+                    key={`ka-${d.id}`}
+                    center={[d.lat, d.lon]}
+                    radius={d.horizontal_keep_away}
+                    pathOptions={{
+                      color: conflict ? COLORS.traffic : COLORS.trafficClear,
+                      weight: conflict ? 1.5 : 1,
+                      dashArray: conflict ? undefined : '2 4',
+                      fillOpacity: conflict ? 0.18 : 0.04,
+                      opacity: trafficStale ? 0.35 : conflict ? 0.95 : 0.6,
+                    }}
+                  />
+                );
+              })}
 
               {position && target && (
                 <Polyline
@@ -470,22 +497,33 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
                 </Marker>
               )}
 
-              {drones.map((d) => (
-                <Marker
-                  key={`tr-${d.id}`}
-                  position={[d.lat, d.lon]}
-                  icon={trafficIcon(d.direction)}
-                  opacity={trafficStale ? 0.4 : 1}
-                >
-                  <Tooltip permanent direction="auto" offset={[10, 0]} className="ims-map-label">
-                    <div className="font-semibold">{trafficName(d.name, d.id)}</div>
-                    <div>
-                      {distTo(d) != null && `${Math.round(distTo(d)!)} m · `}
-                      {Math.round(d.alt)} m alt · {d.speed.toFixed(1)} m/s
-                    </div>
-                  </Tooltip>
-                </Marker>
-              ))}
+              {drones.map((d) => {
+                const conflict = atOurAltitude(d, altBand);
+                const dz = verticalOffset(d);
+                return (
+                  <Marker
+                    key={`tr-${d.id}`}
+                    position={[d.lat, d.lon]}
+                    icon={trafficIcon(d.direction, !conflict)}
+                    opacity={trafficStale ? 0.4 : conflict ? 1 : 0.75}
+                  >
+                    <Tooltip
+                      permanent
+                      direction="auto"
+                      offset={[10, 0]}
+                      className={`ims-map-label ${conflict ? '' : 'ims-map-label-clear'}`}
+                    >
+                      <div className="font-semibold">{trafficName(d.name, d.id)}</div>
+                      <div>
+                        {distTo(d) != null && `${Math.round(distTo(d)!)} m · `}
+                        {Math.round(d.alt)} m alt
+                        {dz != null && ` (${fmtVertical(dz)})`} · {d.speed.toFixed(1)} m/s
+                      </div>
+                      {!conflict && <div>vertically clear</div>}
+                    </Tooltip>
+                  </Marker>
+                );
+              })}
 
               {setpoint && (
                 <Marker
@@ -560,11 +598,16 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
           stale={!!target && targetStale}
         />
         <ReadoutRow
-          color={COLORS.traffic}
+          color={nearest && !atOurAltitude(nearest.d, altBand) ? COLORS.trafficClear : COLORS.traffic}
           label={nearest ? trafficName(nearest.d.name, nearest.d.id) : 'Nearest'}
           coord={nearest?.d}
           alt={nearest?.d.alt}
-          extra={nearest ? `${fmtDist(nearest.dist)} ${fmtBearing(bearingTo(nearest.d))}` : DASH}
+          extra={
+            nearest
+              ? `${fmtDist(nearest.dist)} ${fmtBearing(bearingTo(nearest.d))}` +
+                (verticalOffset(nearest.d) != null ? ` ${fmtVertical(verticalOffset(nearest.d)!)}` : '')
+              : DASH
+          }
           dim={!nearest}
           stale={!!nearest && trafficStale}
         />

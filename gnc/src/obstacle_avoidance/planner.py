@@ -103,13 +103,21 @@ class BendyRuler2D:
             return PlanResult.no_path(NoPathReason.BLOCKED)
 
         best = min(candidates, key=self._sort_key)
-        selected = self._apply_hysteresis(
-            request=request,
-            field=field,
-            goal_heading=goal_heading,
-            candidates=candidates,
-            best=best,
-        )
+        direct = next((c for c in candidates if c.order == 0), None)
+        if direct is not None:
+            # With the direct line clear, fly it. Hysteresis only arbitrates
+            # between detours: near the goal every candidate's second leg ends
+            # on the goal, so costs tie within the hysteresis band and a stale
+            # detour heading would otherwise be kept, circling the goal.
+            selected = direct
+        else:
+            selected = self._apply_hysteresis(
+                request=request,
+                field=field,
+                goal_heading=goal_heading,
+                candidates=candidates,
+                best=best,
+            )
         self._previous_heading_rad = selected.heading_rad
         return PlanResult(
             status=PlanStatus.PATH_FOUND,

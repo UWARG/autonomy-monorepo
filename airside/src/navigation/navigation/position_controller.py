@@ -11,6 +11,7 @@ from airside_interfaces.msg import Coordinate as CoordinateMsg
 from airside_interfaces.msg import TrafficSnapshot
 from mavros_msgs.msg import GlobalPositionTarget, State
 from obstacle_avoidance import (
+    ESCAPE_REASON,
     AvoidanceRequest,
     ObstacleAvoider,
     PlanStatus,
@@ -30,7 +31,8 @@ class PositionController(rclpy.node.Node):
     setpoint at 10 Hz.
 
     The setpoint is the avoider's next safe point, or the target itself once
-    within tolerance. Anything that makes avoidance impossible (no or stale
+    within tolerance. With no path to the target (e.g. traffic flying at us),
+    the avoider backs away to the clearest reachable point rather than hold. Anything that makes avoidance impossible (no or stale
     traffic, stale position, no safe path) holds where the drone was when the
     hold began. Nothing is published unless armed in GUIDED. If the engine
     stops sending targets, it holds once where the drone is, then lets go.
@@ -192,6 +194,11 @@ class PositionController(rclpy.node.Node):
             return self._hold(position, plan.reason or "NO_PATH")
 
         self._hold_at = None
+        if plan.reason == ESCAPE_REASON:
+            self.get_logger().warning(
+                "No path to the target: backing away from traffic",
+                throttle_duration_sec=2.0,
+            )
         return self._target if plan.goal_reached else plan.next_waypoint
 
     def _hold(self, position: Coordinate | None, reason: str) -> Coordinate | None:

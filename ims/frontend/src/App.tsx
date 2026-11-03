@@ -1,17 +1,17 @@
 // Flight view grid (lg):
-//   row 1:  Map + traffic (7, spans rows 1-2)   Camera (5)
-//   row 2:                                       Attitude (5)
-//   row 3:  Script (5)   Log (4)   Connection (3)
+//   Map + traffic (8, all rows)   Mission (4)
+//                                 Connection (4)
+//                                 Log (4, takes the remaining height)
 //
 // Survey view grid (lg): Capture (7)   Survey report (5)
 
 import { useState } from 'react';
 import useAeacTraffic from './hooks/useAeacTraffic';
-import AttitudeWidget from './widgets/AttitudeWidget';
-import CameraWidget from './widgets/CameraWidget';
+import useLink, { type LinkState } from './hooks/useLink';
+import useMissionStatus, { type MissionStatusState } from './hooks/useMissionStatus';
 import CaptureWidget from './widgets/CaptureWidget';
 import ConnectionWidget from './widgets/ConnectionWidget';
-import ScriptWidget from './widgets/ScriptWidget';
+import MissionWidget from './widgets/MissionWidget';
 import SurveyWidget from './widgets/SurveyWidget';
 import LogWidget from './widgets/LogWidget';
 import MapWidget from './widgets/MapWidget';
@@ -24,32 +24,26 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'survey', label: 'Survey' },
 ];
 
-function FlightView() {
+function FlightView({ link, mission }: { link: LinkState; mission: MissionStatusState }) {
   const traffic = useAeacTraffic();
 
   return (
     <main
       className="mx-auto grid w-full max-w-[1400px] grid-cols-12 gap-4 px-5 py-4
                  lg:min-h-0 lg:flex-1 lg:overflow-y-auto
-                 lg:[grid-template-rows:minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
+                 lg:[grid-template-rows:auto_auto_minmax(160px,1fr)]"
     >
-      <div className="col-span-12 h-[640px] min-h-0 lg:col-span-7 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-auto">
+      <div className="col-span-12 h-[640px] min-h-0 lg:col-span-8 lg:col-start-1 lg:row-span-3 lg:row-start-1 lg:h-auto">
         <MapWidget traffic={traffic} />
       </div>
-      <div className="col-span-12 h-[340px] min-h-0 md:col-span-7 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:h-auto">
-        <CameraWidget />
+      <div className="col-span-12 min-h-0 md:col-span-6 lg:col-span-4 lg:col-start-9 lg:row-start-1">
+        <MissionWidget mission={mission} linked={link.rosbridge} />
       </div>
-      <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-5 lg:col-start-8 lg:row-start-2 lg:h-auto">
-        <AttitudeWidget />
+      <div className="col-span-12 min-h-0 md:col-span-6 lg:col-span-4 lg:col-start-9 lg:row-start-2">
+        <ConnectionWidget link={link} />
       </div>
-      <div className="col-span-12 h-[240px] min-h-0 lg:col-span-5 lg:col-start-1 lg:row-start-3 lg:h-auto">
-        <ScriptWidget />
-      </div>
-      <div className="col-span-12 h-[220px] min-h-0 md:col-span-7 lg:col-span-4 lg:col-start-6 lg:row-start-3 lg:h-auto">
+      <div className="col-span-12 h-[260px] min-h-0 lg:col-span-4 lg:col-start-9 lg:row-start-3 lg:h-auto">
         <LogWidget />
-      </div>
-      <div className="col-span-12 h-[220px] min-h-0 md:col-span-5 lg:col-span-3 lg:col-start-10 lg:row-start-3 lg:h-auto">
-        <ConnectionWidget />
       </div>
     </main>
   );
@@ -70,6 +64,8 @@ function SurveyView({ active }: { active: boolean }) {
 
 export default function App() {
   const [view, setView] = useState<View>('flight');
+  const link = useLink();
+  const mission = useMissionStatus();
 
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
@@ -91,14 +87,14 @@ export default function App() {
             ))}
           </nav>
           <div className="ml-auto">
-            <HeaderStatus />
+            <HeaderStatus link={link} mission={mission} />
           </div>
         </div>
       </header>
 
       {/* Both stay mounted so switching views keeps capture history and form state. */}
       <div className={view === 'flight' ? 'contents' : 'hidden'}>
-        <FlightView />
+        <FlightView link={link} mission={mission} />
       </div>
       <div className={view === 'survey' ? 'contents' : 'hidden'}>
         <SurveyView active={view === 'survey'} />
