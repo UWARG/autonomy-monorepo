@@ -56,10 +56,13 @@ export default function NearbyDronesWidget({
   nearby,
   connected,
   stale,
+  problem,
 }: {
   nearby?: NearbyDronesMessage;
   connected: boolean;
   stale: boolean;
+  /** Why airside's AEAC traffic feed is unhealthy, if it is. */
+  problem?: string;
 }) {
   const position = useOwnPosition();
 
@@ -88,9 +91,11 @@ export default function NearbyDronesWidget({
       : null;
 
   const noFeed = !nearby || stale;
-  const pill = !connected
-    ? { className: 'pill-bad', label: 'RELAY OFFLINE' }
-    : !nearby
+  const pill = problem
+    ? { className: 'pill-bad', label: problem }
+    : !connected
+      ? { className: 'pill-bad', label: 'AEAC OFFLINE' }
+      : !nearby
       ? { className: 'pill bg-edge text-ink-3', label: 'NO FEED' }
       : stale
         ? { className: 'pill-warn', label: 'STALE' }

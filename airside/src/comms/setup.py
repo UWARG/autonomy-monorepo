@@ -20,12 +20,11 @@ setup(
     tests_require=["pytest"],
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Comm links.",
+    description="Link to the AEAC competition server: receives AEAC traffic for obstacle avoidance.",
     license="MIT",
     entry_points={
         "console_scripts": [
             "traffic_listener = comms.traffic_listener_node:main",
-            "telemetry_sender = comms.telemetry_sender_node:main",
         ],
     },
 )

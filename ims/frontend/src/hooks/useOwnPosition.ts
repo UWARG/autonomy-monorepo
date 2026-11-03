@@ -11,7 +11,7 @@ interface NavSatFix {
   altitude: number;
 }
 
-/** Own GPS fix, straight from rosbridge (not routed through the relay). */
+/** Own GPS fix, from airside over rosbridge. */
 export default function useOwnPosition(): PositionMessage | undefined {
   const [position, setPosition] = useState<PositionMessage>();
 

@@ -14,6 +14,7 @@ airside/
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages
 │   ├── camera/               # camera, triggered_image_publisher
+│   ├── comms/                # traffic_listener (AEAC traffic in)
 │   ├── engine/               # manager (behavior-tree mission), rc_bridge, heartbeat + mission config
 │   └── navigation/           # position_controller
 └── warg.toml
@@ -72,9 +73,11 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `FCU_URL` | `serial:///dev/ttyAMA0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
-| `AEAC_CONNECTION_TOKEN` | unset | Secret used by both live AEAC WebSockets; set only in ignored `airside/.env` |
-| `AEAC_UAV_ID` | unset | Bidder-defined string in outgoing 1 Hz telemetry |
-| `AEAC_OWN_AIRCRAFT_INDEX` | `-1` | Verified server traffic index of this aircraft; live backup fails closed if unset |
+| `AEAC_CONNECTION_TOKEN` | unset | AEAC team token for `traffic_listener`. Required for traffic, so without it lapping holds in place |
+| `AEAC_OWN_AIRCRAFT_INDEX` | unset | This aircraft's index in the AEAC traffic feed, if it appears there; it is removed from the obstacles |
+| `LAP_COUNT` | `3` | Laps to fly before reconnaissance |
+
+Put the AEAC values in `airside/.env` (gitignored); compose loads it if present.
 
 ### Networking
 
@@ -115,13 +118,24 @@ command, which puts the FCU in LAND.
 
 #### Position controller
 
-Behaviors never command MAVROS setpoints directly. They publish where they
-want to go to the always-running `position_controller` node, which forwards
-each target to MAVROS.
+Behaviors never command MAVROS setpoints directly. `FlyToWaypoint` and
+`DescendToLandingPad` publish where they want to go to the always-running
+`position_controller` node (`navigation` package), the only publisher of
+MAVROS setpoints. At 10 Hz it runs gnc's `obstacle_avoidance.ObstacleAvoider`
+(see [gnc/README.md](../gnc/README.md#obstacle-avoidance)) on the target, the
+GPS fix and the latest `/aeac/traffic`, and publishes the avoider's next safe
+point as a position setpoint (the target itself once within 1 m).
+
+It fails closed. Missing, stale (over 2.5 s), unhealthy or disconnected
+traffic, a stale GPS fix or altitude, or no safe path holds the drone at the
+position where the hold began. Nothing is published unless the drone is armed
+in GUIDED. If the engine stops sending targets for 1.5 s, it holds once where
+the drone is and then stops publishing.
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|
 | `/position_controller/target` | `airside_interfaces/Coordinate` | subscribe | Target `lat`, `lon` and relative `alt` (m) |
+| `/aeac/traffic` | `airside_interfaces/TrafficSnapshot` | subscribe | AEAC traffic to avoid |
 | `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
 
 #### Adding a behavior
@@ -191,28 +205,15 @@ blackboard.altitude = 0.0
 
 ### Triggered image capture
 
-The default launch starts `triggered_image_publisher` (always running, respawned
-on exit), implemented in
-`src/camera/camera_ros/triggered_image_publisher_node.py`. It caches `/camera/image_raw`
-(`sensor_msgs/Image`), `/mavros/global_position/global` (`sensor_msgs/NavSatFix`),
-and `/mavros/imu/data` (`sensor_msgs/Imu`). Sensor topic names can be changed
-using ROS remapping.
-
-Send a request after all three sensor feeds are available:
+`triggered_image_publisher` (`src/camera/camera_ros/triggered_image_publisher_node.py`)
+caches the latest `/camera/image_raw`, `/mavros/global_position/global` and
+`/mavros/imu/data`, and serves them as one bundle on the `/capture_image`
+service (`airside_interfaces/srv/CaptureImage`), with the image as JPEG. The
+IMS Survey view calls it over rosbridge.
 
 ```bash
-ros2 topic pub --once /TriggerImageCapture airside_interfaces/msg/TriggerImageCapture "{command: 'capture'}"
+ros2 service call /capture_image airside_interfaces/srv/CaptureImage
 ```
-
-Groundside must subscribe to `/TriggeredImageCapture` with type
-`airside_interfaces/msg/TriggeredImageCapture`. Each accepted request publishes
-one message containing the latest image, GPS coordinates and IMU (including
-orientation). The outer header records packaging time; the original image and
-IMU timestamps are preserved. These are the latest independent readings, not
-time-synchronized measurements. Requests with missing inputs are logged and
-discarded; send another request once the feeds are ready. Other commands are
-ignored.
-
 
 ### ROS integration inside a behavior
 
@@ -227,37 +228,13 @@ def setup(self, **kwargs):
 
 Use `self._node` for all ROS 2 calls (subscriptions, publishers, service clients, action clients, timers).
 
-### Obstacle-aware lapping
+### AEAC traffic
 
-The lapping subtree uses `ObstacleAwareFlyToWaypoint`. It keeps ArduPilot in
-`GUIDED`, consumes a 360-degree `sensor_msgs/LaserScan` on
-`/obstacle_avoidance/scan`, and publishes ENU `geometry_msgs/TwistStamped`
-commands on `/mavros/setpoint_velocity/cmd_vel` at 10 Hz. No global-position
-setpoint is published while this behavior is active.
+`comms/traffic_listener` subscribes to the AEAC competition server and turns
+each `traffic` event into one `airside_interfaces/TrafficSnapshot` on
+`/aeac/traffic`. A disconnect, bad message or missing token is published as an
+unhealthy snapshot with a `reason`.
 
-The scan frame must be `base_link`. Finite ranges are obstacles and positive
-infinity is observed clear space. Empty, partial, stale, future-dated, frozen,
-wrong-frame, NaN, negative-infinity, or otherwise invalid scans are fail-closed:
-the behavior publishes zero velocity and remains `RUNNING`. Stale pose, GPS,
-altitude, or FC state has the same result. If the pilot leaves `GUIDED` or the
-vehicle is disarmed, the behavior releases setpoint ownership and publishes
-nothing until fresh scan and telemetry have arrived after returning to
-`GUIDED`.
-
-Planner state is published as `diagnostic_msgs/DiagnosticArray` on
-`/obstacle_avoidance/diagnostics`. The production scan adapter must honor this
-contract; the synthetic SITL publisher under
-`experiments/obstacle_avoidance/` is for
-qualification only and is not an OAK-D integration.
-
-The #144/#181 research material, SITL runners, qualification harness, plots,
-replay page, and flight-test Compose override are collected in
-[`experiments/obstacle_avoidance/`](experiments/obstacle_avoidance/README.md).
-
-The primary [live AEAC → BendyRuler2D path](experiments/obstacle_avoidance/aeac-bendy-ruler-flight-test.md)
-uses `compose.aeac-bendy.yaml`. It feeds complete server snapshots to
-`/aeac/live_traffic` and sends this UAV's telemetry at 1 Hz on a separate
-WebSocket. The synthetic static-obstacle launch still uses `/aeac/traffic`.
-The isolated A* launch on this branch is experimental; Honzik's #203 remains
-the separate fallback branch. Neither live path is approved for a physical
-flight until the real-server props-off checks pass.
+Airside only receives from AEAC. Our telemetry is sent by the separate
+[`aeac_telemetry`](../aeac_telemetry) project, and the IMS subscribes to
+traffic on its own connection.

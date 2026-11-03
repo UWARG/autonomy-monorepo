@@ -11,8 +11,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/CaptureImage.srv"
   "msg/TrafficAircraft.msg"
   "msg/TrafficSnapshot.msg"
-  "msg/Obstacle.msg"
-  "msg/ObstacleSnapshotStatus.msg"
   DEPENDENCIES sensor_msgs std_msgs
 )
 

@@ -1,9 +1,10 @@
-"""Lapping subtree with obstacle-aware waypoint navigation."""
+"""Lapping subtree: fly the waypoint list for the configured number of laps."""
 
 from __future__ import annotations
 
 import py_trees
 
+from engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
 from engine.behaviors.navigation.lap_count import AnotherLapRemaining, SetLapCount
 from engine.behaviors.navigation.lap_timing import (
     RecordLapEnd,
@@ -11,9 +12,6 @@ from engine.behaviors.navigation.lap_timing import (
     StartLapTimer,
 )
 from engine.behaviors.navigation.load_next_waypoint import LoadNextWaypoint
-from engine.behaviors.navigation.obstacle_aware_fly_to_waypoint import (
-    ObstacleAwareFlyToWaypoint,
-)
 
 
 def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
@@ -23,7 +21,7 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         memory=True,
         children=[
             LoadNextWaypoint(),
-            ObstacleAwareFlyToWaypoint(),
+            FlyToWaypoint(),
             StartLapTimer(),
         ],
     )

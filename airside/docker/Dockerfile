@@ -46,11 +46,11 @@ WORKDIR /ros_ws
 FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
-COPY obstacle-avoidance/ /monorepo/obstacle-avoidance/
+COPY gnc/ /monorepo/gnc/
 COPY utils/ /monorepo/utils/
 RUN pip install \
     "/monorepo/camera[oakd,arducam]" \
-    /monorepo/obstacle-avoidance \
+    /monorepo/gnc \
     /monorepo/utils
 
 COPY airside/src/ src/

@@ -18,13 +18,12 @@ setup(
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Position control between the engine and MAVROS.",
+    description="Position controller: engine targets, steered around AEAC traffic, to MAVROS.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "position_controller = navigation.position_controller_node:main",
-            "aeac_backup_controller = navigation.live_position_controller_node:main",
+            "position_controller = navigation.position_controller:main",
         ],
     },
 )

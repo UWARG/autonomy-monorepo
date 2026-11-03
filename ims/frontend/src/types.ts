@@ -50,7 +50,8 @@ export interface PositionMessage {
 
 /**
  * payload for { "type": "target" }
- * Mirrors TargetPayload in utils/src/messages.py.
+ *
+ * PROVISIONAL
  */
 export interface TargetMessage {
   /** degrees */
@@ -58,10 +59,9 @@ export interface TargetMessage {
   lon: number;
   label?: string;
   tracking?: boolean;
-  cluster?: number;
 }
 
-/** One aircraft in { "type": "nearby_drones" }; mirrors NearbyDronePayload. */
+/** One aircraft from an AEAC `traffic` event. */
 export interface NearbyDrone {
   id: number;
   name: string;
@@ -75,54 +75,9 @@ export interface NearbyDrone {
   vertical_keep_away: number; // meter
 }
 
-/** payload for { "type": "nearby_drones" }: full traffic snapshot; mirrors NearbyDronesPayload. */
+/** One complete AEAC traffic snapshot. */
 export interface NearbyDronesMessage {
   drones: NearbyDrone[];
-}
-
-/** AEAC flight modes (CONOPS 5.2.3 item 3.b.vii). */
-export type AeacFlightMode =
-  | 'off'
-  | 'idle'
-  | 'link-lost'
-  | 'failsafe'
-  | 'armed-pilot'
-  | 'armed-automatic';
-
-/** The packet the relay sent to AEAC (camelCase), built in ims/server/telemetry.py. */
-export interface AeacTelemetryPacket {
-  uavId: string;
-  unixTime: number; // seconds, ground station clock
-  latitude: number;
-  longitude: number;
-  altitudeAGL: number; // meter
-  horizontalPositionAccuracy: number;
-  verticalPositionAccuracy: number;
-  batteryPercentage: number | null;
-  mode: AeacFlightMode;
-  telemetryLinkStatus: number; // 0-1
-  rcLinkStatus: number; // 0-1
-}
-
-/** payload for { "type": "telemetry_sent" }; mirrors TelemetrySentPayload. */
-export interface TelemetrySentMessage {
-  packet: AeacTelemetryPacket;
-}
-
-/** payload for { "type": "aeac_ack" }; mirrors AeacAckPayload. */
-export interface AeacAckMessage {
-  unix_time: number; // the acknowledged packet's unixTime
-  inside_boundary: boolean;
-  too_close_to_traffic: boolean;
-}
-
-/** payload for { "type": "aeac_infraction" }; mirrors AeacInfractionPayload. */
-export interface AeacInfractionMessage {
-  last_infraction: string;
-  /** Cumulative per-type counts for this UAV, across sessions. */
-  counts: Record<string, number>;
-  armed_seconds: number;
-  received_at: number; // unix seconds, relay clock
 }
 
 /**
@@ -141,4 +96,22 @@ export interface StatusMessage {
  */
 export interface LogMessage {
   message: string;
+}
+
+/** rosbridge shape of the airside_interfaces/srv/CaptureImage response. */
+export interface CaptureImageResponse {
+  success: boolean;
+  message: string;
+  header: { stamp: { sec: number; nanosec: number }; frame_id: string };
+  /** sensor_msgs/CompressedImage; `data` is base64 JPEG, as rosbridge encodes uint8[]. */
+  image: { format: string; data: string };
+  location: { lat: number; lon: number; alt: number };
+  imu: { orientation: { x: number; y: number; z: number; w: number } };
+}
+
+/** One triggered photo, kept for the crew to review while counting deer. */
+export interface Capture {
+  id: string;
+  time: string;
+  imageUrl: string;
 }

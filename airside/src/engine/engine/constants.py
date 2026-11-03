@@ -22,9 +22,8 @@ MAVLINK_MSG_ID_HOME_POSITION = 242
 
 # Per-message stream rates requested from ArduPilot (message ID -> Hz).
 STREAM_RATE_REQUESTS_HZ = {
-    # MAVROS publishes ``mavros/state`` from HEARTBEAT. Keep the source rate
-    # comfortably above the obstacle controller's 1 s telemetry timeout so
-    # ordinary scheduling jitter cannot create a false stale-telemetry hold.
+    # MAVROS publishes ``mavros/state`` from HEARTBEAT; the position
+    # controller only commands while that state is fresh.
     MAVLINK_MSG_ID_HEARTBEAT: 2.0,
     MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
     MAVLINK_MSG_ID_RC_CHANNELS: 5.0,

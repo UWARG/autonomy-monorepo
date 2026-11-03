@@ -25,10 +25,15 @@ def listener(
     rclpy.shutdown()
 
 
-@pytest.mark.parametrize("raw", ["", "-1", "256", "1.5", "goose"])
-def test_own_aircraft_index_must_be_explicit_uint8(raw: str) -> None:
+@pytest.mark.parametrize("raw", ["-1", "256", "1.5", "goose"])
+def test_own_aircraft_index_must_be_uint8(raw: str) -> None:
     with pytest.raises(ValueError):
         parse_own_aircraft_index(raw)
+
+
+def test_own_aircraft_index_is_optional() -> None:
+    assert parse_own_aircraft_index("") is None
+    assert parse_own_aircraft_index("7") == 7
 
 
 def test_invalid_websocket_message_invalidates_snapshot(listener: TrafficListener) -> None:
@@ -87,11 +92,11 @@ def test_mock_websocket_snapshot_filters_own_aircraft(
     assert [aircraft.aircraft_index for aircraft in delivery.aircraft] == [3]
 
 
-def test_bendy_topic_gets_same_complete_snapshot(
+def test_traffic_topic_gets_complete_snapshot(
     listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     published = []
-    monkeypatch.setattr(listener, "_bendy_pub", SimpleNamespace(publish=published.append))
+    monkeypatch.setattr(listener, "_traffic_pub", SimpleNamespace(publish=published.append))
     listener._handle_message(
         json.dumps(
             {
@@ -127,11 +132,11 @@ def test_bendy_topic_gets_same_complete_snapshot(
     assert snapshot.aircraft[0].latitude_deg == 43.47
 
 
-def test_bendy_topic_empty_and_invalid_snapshots(
+def test_traffic_topic_empty_and_invalid_snapshots(
     listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     published = []
-    monkeypatch.setattr(listener, "_bendy_pub", SimpleNamespace(publish=published.append))
+    monkeypatch.setattr(listener, "_traffic_pub", SimpleNamespace(publish=published.append))
     listener._handle_message('{"event":"traffic","payload":{"traffic":[]}}')
     listener._handle_message("not-json")
     listener._publish_deliveries()

@@ -9,10 +9,13 @@ services:
     # Fallback if host networking is unavailable:
     # ports:
     #   - "14550:14550/udp"
+    # AEAC_CONNECTION_TOKEN and optional AEAC_OWN_AIRCRAFT_INDEX.
+    env_file:
+      - path: .env
+        required: false
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/ttyAMA0:115200}
-      OBSTACLE_SOURCE: ${OBSTACLE_SOURCE:-scan}
       ROS_LOG_DIR: /ros_ws/log/ros
     devices:
       - /dev/ttyAMA0:/dev/ttyAMA0

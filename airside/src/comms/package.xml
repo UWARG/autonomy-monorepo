@@ -3,7 +3,7 @@
 <package format="3">
   <name>comms</name>
   <version>0.1.0</version>
-  <description>Comm links.</description>
+  <description>Link to the AEAC competition server: receives AEAC traffic for obstacle avoidance.</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
@@ -11,10 +11,6 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
-  <depend>diagnostic_msgs</depend>
-  <depend>mavros_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>std_msgs</depend>
 
   <test_depend>python3-pytest</test_depend>
 

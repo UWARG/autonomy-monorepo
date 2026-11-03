@@ -16,7 +16,7 @@ setup(
         (f"share/{package_name}", ["package.xml"]),
         (
             f"share/{package_name}/config",
-["config/waypoints.yaml", "config/landing_pads.yaml"],
+            ["config/waypoints.yaml", "config/landing_pads.yaml"],
         ),
     ],
     install_requires=["setuptools"],
@@ -31,7 +31,6 @@ setup(
             "manager = engine.manager:main",
             "rc_bridge = engine.rc_bridge:main",
             "heartbeat = engine.heartbeat_node:main",
-            "synthetic_static_traffic = engine.synthetic_static_traffic:main",
         ],
     },
 )

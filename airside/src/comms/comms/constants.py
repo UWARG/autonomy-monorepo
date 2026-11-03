@@ -3,9 +3,7 @@
 # Environment variable holding the team's connection token.
 CONNECTION_TOKEN_ENV = "AEAC_CONNECTION_TOKEN"
 
-# Identity assigned by AEAC for this aircraft. Both are required by the live
-# backup launch; the index is used to remove our own aircraft from traffic.
-UAV_ID_ENV = "AEAC_UAV_ID"
+# Optional AEAC traffic index of this aircraft, removed from the traffic feed.
 OWN_AIRCRAFT_INDEX_ENV = "AEAC_OWN_AIRCRAFT_INDEX"
 
 # Environment variable that overrides the server's WebSocket URL.
@@ -25,10 +23,3 @@ RECONNECT_DELAY_S = 2.0
 # How often (Hz) traffic received from the server is handed on to ROS.
 PUBLISH_POLL_HZ = 10.0
 
-# AEAC telemetry compliance requires one update per second.
-TELEMETRY_SEND_HZ = 1.0
-# Poll faster than the send cadence so a delayed ROS timer does not produce
-# a catch-up packet <0.4 s after the preceding one (a CONOPS penalty).
-TELEMETRY_POLL_HZ = 10.0
-MIN_TELEMETRY_INTERVAL_S = 0.9
-TELEMETRY_INPUT_FRESHNESS_S = 2.5

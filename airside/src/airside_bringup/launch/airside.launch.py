@@ -22,27 +22,6 @@ def generate_launch_description() -> LaunchDescription:
                 description="MAVROS connection URL to ArduPilot",
             ),
             DeclareLaunchArgument(
-                "obstacle_source",
-                default_value=EnvironmentVariable(
-                    "OBSTACLE_SOURCE", default_value="scan"
-                ),
-                description="Exactly one obstacle source: traffic or scan",
-            ),
-            DeclareLaunchArgument(
-                "horizontal_speed_mps",
-                default_value=EnvironmentVariable(
-                    "OBSTACLE_HORIZONTAL_SPEED_MPS", default_value="2.0"
-                ),
-                description="Obstacle-aware horizontal velocity limit",
-            ),
-            DeclareLaunchArgument(
-                "traffic_topic",
-                default_value=EnvironmentVariable(
-                    "OBSTACLE_TRAFFIC_TOPIC", default_value="/aeac/traffic"
-                ),
-                description="TrafficSnapshot input for BendyRuler traffic mode",
-            ),
-            DeclareLaunchArgument(
                 "lap_count",
                 default_value=EnvironmentVariable("LAP_COUNT", default_value="3"),
                 description="Number of laps to fly before reconnaissance",
@@ -124,22 +103,20 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
+                package="comms",
+                executable="traffic_listener",
+                name="traffic_listener",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",
                 output="both",
                 parameters=[
                     {
-                        "obstacle_avoidance.source": LaunchConfiguration(
-                            "obstacle_source"
-                        ),
-                        "obstacle_avoidance.horizontal_speed_mps": ParameterValue(
-                            LaunchConfiguration("horizontal_speed_mps"),
-                            value_type=float,
-                        ),
-                        "obstacle_avoidance.traffic_topic": LaunchConfiguration(
-                            "traffic_topic"
-                        ),
                         "lap_count": ParameterValue(
                             LaunchConfiguration("lap_count"),
                             value_type=int,

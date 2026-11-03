@@ -1,4 +1,4 @@
-"""Listen to AEAC traffic and publish atomic ROS obstacle snapshots."""
+"""Listen to AEAC traffic and publish each server event as one ROS snapshot."""
 
 from __future__ import annotations
 
@@ -12,13 +12,8 @@ from urllib.parse import quote
 import rclpy
 import rclpy.node
 import websocket
-from airside_interfaces.msg import (
-    Coordinate,
-    Obstacle,
-    ObstacleSnapshotStatus,
-    TrafficAircraft as TrafficAircraftMsg,
-    TrafficSnapshot,
-)
+from airside_interfaces.msg import TrafficAircraft as TrafficAircraftMsg
+from airside_interfaces.msg import TrafficSnapshot
 from comms.constants import (
     CONNECT_TIMEOUT_S,
     CONNECTION_TOKEN_ENV,
@@ -47,9 +42,14 @@ class SnapshotDelivery:
     aircraft: tuple[TrafficAircraft, ...] = ()
 
 
-def parse_own_aircraft_index(raw: str) -> int:
-    """Parse the explicitly configured AEAC identity."""
+def parse_own_aircraft_index(raw: str) -> int | None:
+    """
+    Parses the AEAC traffic index of this aircraft. Empty means it is not in
+    the traffic feed, so nothing is filtered out.
+    """
 
+    if not raw.strip():
+        return None
     try:
         index = int(raw)
     except ValueError as error:
@@ -62,48 +62,50 @@ def parse_own_aircraft_index(raw: str) -> int:
 class TrafficListener(rclpy.node.Node):
     """Publish each server traffic event as one complete, sequenced snapshot."""
 
-    OBSTACLE_TOPIC = "position_controller/obstacle"
-    STATUS_TOPIC = "position_controller/obstacle_snapshot"
-    BENDY_TRAFFIC_TOPIC = "/aeac/live_traffic"
+    TRAFFIC_TOPIC = "/aeac/traffic"
 
     def __init__(self) -> None:
         super().__init__("traffic_listener")
-        self._obstacle_pub = self.create_publisher(Obstacle, self.OBSTACLE_TOPIC, 10)
-        self._status_pub = self.create_publisher(
-            ObstacleSnapshotStatus, self.STATUS_TOPIC, 10
-        )
-        self._bendy_pub = self.create_publisher(
-            TrafficSnapshot, self.BENDY_TRAFFIC_TOPIC, 10
+        self._traffic_pub = self.create_publisher(
+            TrafficSnapshot, self.TRAFFIC_TOPIC, 10
         )
         self._deliveries: queue.Queue[SnapshotDelivery] = queue.Queue()
         self._stop = threading.Event()
-        self._receiver_thread: threading.Thread | None = None
-        # A listener process can be respawned while the controller stays alive.
-        # Starting from wall-clock nanoseconds keeps the uint64 sequence
-        # increasing across such restarts instead of making the controller
-        # reject the restarted stream as old data.
+        # Starting from wall-clock nanoseconds keeps the sequence increasing
+        # across a respawn, so subscribers do not reject the new stream as old.
         self._sequence = time.time_ns()
         self._url = os.environ.get(WEBSOCKET_URL_ENV, "").strip() or DEFAULT_WEBSOCKET_URL
         self._token = os.environ.get(CONNECTION_TOKEN_ENV, "").strip()
+        self._config_valid = True
         try:
             self._own_aircraft_index = parse_own_aircraft_index(
                 os.environ.get(OWN_AIRCRAFT_INDEX_ENV, "")
             )
         except ValueError as error:
             self._own_aircraft_index = None
+            self._config_valid = False
             self.get_logger().error(f"Invalid '{OWN_AIRCRAFT_INDEX_ENV}': {error}")
 
         self.create_timer(1.0 / PUBLISH_POLL_HZ, self._publish_deliveries)
-        if not self._token or self._own_aircraft_index is None:
-            self._queue_unhealthy("MISSING_LIVE_AEAC_CONFIGURATION", connected=False)
+        if not self._token or not self._config_valid:
+            self.get_logger().error(
+                f"'{CONNECTION_TOKEN_ENV}' missing or AEAC config invalid; "
+                "publishing unhealthy traffic so avoidance holds"
+            )
+            # Republish so late subscribers still see why there is no traffic.
+            self.create_timer(
+                1.0,
+                lambda: self._queue_unhealthy(
+                    "MISSING_LIVE_AEAC_CONFIGURATION", connected=False
+                ),
+            )
             return
 
-        self._receiver_thread = threading.Thread(
+        threading.Thread(
             target=self._receive_loop, name="traffic_receiver", daemon=True
-        )
-        self._receiver_thread.start()
+        ).start()
         self.get_logger().info(
-            f"Traffic listener ready: '{self._url}' -> '{self.OBSTACLE_TOPIC}'"
+            f"Traffic listener ready: '{self._url}' -> '{self.TRAFFIC_TOPIC}'"
         )
 
     def _next_sequence(self) -> int:
@@ -177,67 +179,32 @@ class TrafficListener(rclpy.node.Node):
                 delivery = self._deliveries.get_nowait()
             except queue.Empty:
                 return
-            stamp = self.get_clock().now().to_msg()
-            indices: list[int] = []
-            if delivery.healthy:
-                for aircraft in delivery.aircraft:
-                    message = Obstacle()
-                    message.header.stamp = stamp
-                    message.header.frame_id = "wgs84"
-                    message.sequence = delivery.sequence
-                    message.aircraft_index = aircraft.aircraft_index
-                    message.horizontal_keep_away = aircraft.horizontal_keep_away_m
-                    message.vertical_keep_away = aircraft.vertical_keep_away_m
-                    message.position = Coordinate(
-                        lat=aircraft.lat,
-                        lon=aircraft.lon,
-                        alt=aircraft.altitude_agl_m,
-                    )
-                    message.speed = aircraft.speed_mps
-                    message.direction = aircraft.direction_deg
-                    self._obstacle_pub.publish(message)
-                    indices.append(aircraft.aircraft_index)
-
-            status = ObstacleSnapshotStatus()
-            status.header.stamp = stamp
-            status.header.frame_id = "wgs84"
-            status.sequence = delivery.sequence
-            status.connected = delivery.connected
-            status.healthy = delivery.healthy
-            status.reason = delivery.reason
-            status.aircraft_indices = indices
-            self._status_pub.publish(status)
-
-            # Publish the same complete server event atomically for #181's
-            # BendyRuler2D path. The synthetic fixture retains /aeac/traffic.
             snapshot = TrafficSnapshot()
-            snapshot.header.stamp = stamp
+            snapshot.header.stamp = self.get_clock().now().to_msg()
             snapshot.header.frame_id = "wgs84"
             snapshot.sequence = delivery.sequence
             snapshot.connected = delivery.connected
             snapshot.healthy = delivery.healthy
             snapshot.reason = delivery.reason
             snapshot.own_aircraft_index = (
-                self._own_aircraft_index
-                if self._own_aircraft_index is not None
-                else -1
+                -1 if self._own_aircraft_index is None else self._own_aircraft_index
             )
             if delivery.healthy:
-                for aircraft in delivery.aircraft:
-                    snapshot.aircraft.append(
-                        TrafficAircraftMsg(
-                            aircraft_index=aircraft.aircraft_index,
-                            name=aircraft.name,
-                            latitude_deg=aircraft.lat,
-                            longitude_deg=aircraft.lon,
-                            altitude_agl_m=aircraft.altitude_agl_m,
-                            speed_mps=aircraft.speed_mps,
-                            heading_deg_true=aircraft.direction_deg,
-                            horizontal_keepaway_m=aircraft.horizontal_keep_away_m,
-                            vertical_keepaway_m=aircraft.vertical_keep_away_m,
-                        )
+                snapshot.aircraft = [
+                    TrafficAircraftMsg(
+                        aircraft_index=aircraft.aircraft_index,
+                        name=aircraft.name,
+                        latitude_deg=aircraft.lat,
+                        longitude_deg=aircraft.lon,
+                        altitude_agl_m=aircraft.altitude_agl_m,
+                        speed_mps=aircraft.speed_mps,
+                        heading_deg_true=aircraft.direction_deg,
+                        horizontal_keepaway_m=aircraft.horizontal_keep_away_m,
+                        vertical_keepaway_m=aircraft.vertical_keep_away_m,
                     )
-            self._bendy_pub.publish(snapshot)
+                    for aircraft in delivery.aircraft
+                ]
+            self._traffic_pub.publish(snapshot)
 
     def destroy_node(self) -> None:
         self._stop.set()

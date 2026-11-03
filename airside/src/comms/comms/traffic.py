@@ -112,9 +112,9 @@ def parse_traffic(message: dict[str, Any]) -> tuple[list[TrafficAircraft], list[
 
 
 def parse_other_aircraft(
-    message: dict[str, Any], *, own_aircraft_index: int
+    message: dict[str, Any], *, own_aircraft_index: int | None
 ) -> tuple[tuple[TrafficAircraft, ...], list[str]]:
-    """Parse a snapshot and remove the explicitly configured own aircraft."""
+    """Parse a snapshot and remove our own aircraft, if it is in the feed."""
 
     aircraft, problems = parse_traffic(message)
     return (
