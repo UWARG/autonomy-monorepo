@@ -24,4 +24,5 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
     command: ros2 launch engine engine.launch.py
+    stop_grace_period: 45s
     restart: on-failure
