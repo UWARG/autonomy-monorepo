@@ -17,7 +17,7 @@ where it took off when told to.
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages and services
 │   ├── camera/               # camera: image stream + photo capture service
-│   ├── engine/               # manager (behavior-tree mission), heartbeat
+│   ├── engine/               # manager (behavior-tree mission), heartbeat, setpoint_link
 │   └── navigation/           # position_controller
 └── warg.toml
 ```
@@ -80,6 +80,38 @@ ros2 topic pub --once /mission/go_home std_msgs/msg/Empty
 ```
 
 Both topics are also reachable over rosbridge on port 9090.
+
+### Setpoint tester link
+
+For flight tests, the `setpoint_link` node (`engine` package) accepts the same
+two commands over plain TCP on port 7070, so a laptop can command the drone
+without ROS. Run the groundside tester from `3DS_Groundside/`:
+
+```bash
+uv run python -m src.setpoint_tester --host <drone-ip>
+> goto 43.4339 -80.5776 10
+-> setpoint lat=43.4339 lon=-80.5776 alt=10.0m
+OK: published setpoint (43.4339, -80.5776, 10.0) on /mission/setpoint
+> home
+```
+
+The protocol is one JSON object per line (UTF-8, `\n` terminated, at most
+1024 bytes), and every non-blank line gets one JSON reply line:
+
+| Ground sends | Published on |
+|---|---|
+| `{"type": "setpoint", "lat": 43.4339, "lon": -80.5776, "alt": 10.0}` | `/mission/setpoint` |
+| `{"type": "go_home"}` | `/mission/go_home` |
+
+| Drone replies | Meaning |
+|---|---|
+| `{"ok": true, "message": "published ..."}` | Published; the message warns if nothing (i.e. no engine) is subscribed |
+| `{"ok": false, "message": "rejected: ..."}` | Not published: invalid JSON, unknown command, or a setpoint the engine would reject |
+
+`ok` means the command was handed to the engine, not that the drone has flown
+there; follow progress in the engine logs or the GCS status text. Parameters:
+`host` (default `0.0.0.0`) and `port` (default `7070`). Like rosbridge, the
+link has no authentication, so only run it on a trusted network.
 
 ### Position controller
 
