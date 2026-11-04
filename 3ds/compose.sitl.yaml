@@ -15,8 +15,10 @@ services:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: tcp://${SITL_HOST:-127.0.0.1}:5762
       ROS_LOG_DIR: /ros_ws/log/ros
+      RECTIFIED_IMAGE_TOPIC: ${RECTIFIED_IMAGE_TOPIC:-}
     volumes:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
+      - ./data:/ros_ws/data
       - ..:/monorepo
     command: ros2 launch airside_bringup 3ds.launch.py
