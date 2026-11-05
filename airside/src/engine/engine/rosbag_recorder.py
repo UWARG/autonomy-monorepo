@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import time
@@ -24,12 +25,14 @@ class RosbagRecorder:
         self,
         output_directory: str | Path,
         topics: Sequence[str] = (),
+        exclude_topics: Sequence[str] = (),
         command: Sequence[str] = ("ros2", "bag", "record"),
         startup_timeout: float = 5.0,
         stop_timeout: float = 10.0,
     ):
         self.output_directory = Path(output_directory).expanduser().resolve()
         self.topics = tuple(topics)
+        self.exclude_topics = tuple(exclude_topics)
         self.command = tuple(command)
         self.startup_timeout = startup_timeout
         self.stop_timeout = stop_timeout
@@ -71,6 +74,9 @@ class RosbagRecorder:
                 *self.command, "--output", str(self._bag_path), "--storage", "sqlite3",
                 *(self.topics or ("--all",)),
             ]
+            if self.exclude_topics:
+                pattern = "^(" + "|".join(re.escape(topic) for topic in self.exclude_topics) + ")$"
+                arguments.extend(["--exclude", pattern])
             self._process = subprocess.Popen(
                 arguments, stdin=subprocess.DEVNULL, stdout=self._log,
                 stderr=subprocess.STDOUT, start_new_session=True,

@@ -51,9 +51,9 @@ class RecorderTests(unittest.TestCase):
             recorder.close()
         self.temp.cleanup()
 
-    def recorder(self, mode="normal", topics=()):
+    def recorder(self, mode="normal", topics=(), exclude_topics=()):
         recorder = RosbagRecorder(
-            self.root / "bags", topics=topics,
+            self.root / "bags", topics=topics, exclude_topics=exclude_topics,
             command=(sys.executable, str(self.script), mode),
             startup_timeout=.5, stop_timeout=.15,
         )
@@ -87,6 +87,20 @@ class RecorderTests(unittest.TestCase):
         self.assertNotIn("--all", arguments)
         self.assertIn("/heartbeat", arguments)
         self.assertIn("/camera/image_raw", arguments)
+
+    def test_exclude_topics_adds_anchored_exclude_pattern(self):
+        recorder = self.recorder(exclude_topics=("/camera/image_raw", "/lidar"))
+        self.assertTrue(recorder.set_recording(True).success)
+        arguments = json.loads((Path(recorder.status()["bag_path"]) / "arguments.json").read_text())
+        self.assertIn("--all", arguments)
+        pattern = arguments[arguments.index("--exclude") + 1]
+        self.assertEqual("^(/camera/image_raw|/lidar)$", pattern)
+
+    def test_no_exclude_topics_omits_exclude_argument(self):
+        recorder = self.recorder()
+        self.assertTrue(recorder.set_recording(True).success)
+        arguments = json.loads((Path(recorder.status()["bag_path"]) / "arguments.json").read_text())
+        self.assertNotIn("--exclude", arguments)
 
     def test_start_failure_is_reported_without_recording(self):
         recorder = self.recorder("fail")
