@@ -1,0 +1,14 @@
+services:
+  preflight-test:
+    build:
+      context: ..
+      dockerfile: 3ds/docker/Dockerfile
+    command:
+      - bash
+      - -lc
+      - >-
+        source /ros_ws/install/setup.bash &&
+        python3 -c 'import rclpy, diagnostic_updater' &&
+        python3 -m pytest -v
+        src/engine/test/test_preflight.py
+        src/engine/test/test_preflight_node.py
