@@ -29,11 +29,19 @@ class RosbagNode(Node):
             not isinstance(topic, str) or not topic.startswith("/") for topic in topics
         ):
             raise ValueError("topics must be an array of absolute ROS topic names")
-        self.recorder = RosbagRecorder(directory, topics=topics)
+        exclude_topics = self.declare_parameter(
+            "exclude_topics", [], ParameterDescriptor(dynamic_typing=True)
+        ).value
+        if not isinstance(exclude_topics, list) or any(
+            not isinstance(topic, str) or not topic.startswith("/") for topic in exclude_topics
+        ):
+            raise ValueError("exclude_topics must be an array of absolute ROS topic names")
+        self.recorder = RosbagRecorder(directory, topics=topics, exclude_topics=exclude_topics)
         self.publisher = self.create_publisher(String, "/ims/rosbag/status", 10)
         self.create_service(SetBool, "/ims/rosbag/set_recording", self.set_recording)
         self.create_service(Trigger, "/ims/rosbag/get_status", self.get_status)
         self.create_timer(.5, self.publish_status)
+        
 
     def set_recording(self, request, response):
         result = self.recorder.set_recording(request.data)

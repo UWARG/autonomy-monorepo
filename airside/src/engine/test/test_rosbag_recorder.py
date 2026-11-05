@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from engine.rosbag_recorder import RosbagRecorder
 
@@ -51,9 +52,9 @@ class RecorderTests(unittest.TestCase):
             recorder.close()
         self.temp.cleanup()
 
-    def recorder(self, mode="normal", topics=()):
+    def recorder(self, mode="normal", topics=(), exclude_topics=()):
         recorder = RosbagRecorder(
-            self.root / "bags", topics=topics,
+            self.root / "bags", topics=topics, exclude_topics=exclude_topics,
             command=(sys.executable, str(self.script), mode),
             startup_timeout=.5, stop_timeout=.15,
         )
@@ -88,6 +89,30 @@ class RecorderTests(unittest.TestCase):
         self.assertIn("/heartbeat", arguments)
         self.assertIn("/camera/image_raw", arguments)
 
+    def test_exclude_topics_on_humble_uses_anchored_regex(self):
+        recorder = self.recorder(exclude_topics=("/camera/image_raw", "/lidar"))
+        with mock.patch.dict(os.environ, {"ROS_DISTRO": "humble"}):
+            self.assertTrue(recorder.set_recording(True).success)
+        arguments = json.loads((Path(recorder.status()["bag_path"]) / "arguments.json").read_text())
+        self.assertIn("--all", arguments)
+        pattern = arguments[arguments.index("--exclude") + 1]
+        self.assertEqual("^(/camera/image_raw|/lidar)$", pattern)
+
+    def test_exclude_topics_on_newer_distro_uses_exclude_topics(self):
+        recorder = self.recorder(exclude_topics=("/camera/image_raw", "/lidar"))
+        with mock.patch.dict(os.environ, {"ROS_DISTRO": "jazzy"}):
+            self.assertTrue(recorder.set_recording(True).success)
+        arguments = json.loads((Path(recorder.status()["bag_path"]) / "arguments.json").read_text())
+        self.assertNotIn("--exclude", arguments)
+        start = arguments.index("--exclude-topics")
+        self.assertEqual(["/camera/image_raw", "/lidar"], arguments[start + 1:start + 3])
+
+    def test_no_exclude_topics_omits_exclude_argument(self):
+        recorder = self.recorder()
+        self.assertTrue(recorder.set_recording(True).success)
+        arguments = json.loads((Path(recorder.status()["bag_path"]) / "arguments.json").read_text())
+        self.assertNotIn("--exclude", arguments)
+        self.assertNotIn("--exclude-topics", arguments)
     def test_start_failure_is_reported_without_recording(self):
         recorder = self.recorder("fail")
         result = recorder.set_recording(True)
