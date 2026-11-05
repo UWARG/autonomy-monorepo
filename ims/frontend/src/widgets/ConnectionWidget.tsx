@@ -1,16 +1,17 @@
 import type { ConnectionMessage, ConnectionStatus } from '../types';
+import { useEffect, useState } from 'react';
+import ROSLIB from 'roslib';
+import { ros } from '../ros.js';
 
 const DASH = '\u2014';
 
 const STATUS_PILL: Record<ConnectionStatus, { className: string; label: string }> = {
   active: { className: 'pill-ok', label: 'ACTIVE' },
-  degraded: { className: 'pill-warn', label: 'DEGRADED' },
   lost: { className: 'pill-bad', label: 'LOST' },
 };
 
 const STATUS_SUMMARY: Record<ConnectionStatus, string> = {
   active: 'MAVLink heartbeat nominal',
-  degraded: 'Heartbeat irregular \u2014 check link quality',
   lost: 'No heartbeat \u2014 drone unreachable',
 };
 
@@ -31,11 +32,41 @@ function Row({
   );
 }
 
-export default function ConnectionWidget({
-  connection,
-}: {
-  connection?: ConnectionMessage;
-}) {
+interface Empty {
+
+}
+
+export default function ConnectionWidget() {
+  const [connection, setConnection] = useState<ConnectionMessage>();
+  
+
+  useEffect(() => {
+    const poseTopic = new ROSLIB.Topic<Empty>({
+      ros,
+      name: '/heartbeat',
+      messageType: 'std_msgs/Empty'
+    });
+
+    let timeoutId = 1;
+
+    const onHeartbeat = () => {
+      // might need to change values in the future.
+      clearTimeout(timeoutId);
+
+      setConnection({status: 'active', transport: 'placeholder', heartbeatHz: 1});
+
+      timeoutId = setTimeout(() => {
+        setConnection({status: 'lost', transport: 'placeholder', heartbeatHz: 0});
+      }, 5000);
+    }
+
+    poseTopic.subscribe(onHeartbeat);
+    return () => {
+      clearTimeout(timeoutId);
+      poseTopic.unsubscribe(onHeartbeat);
+    }
+  }, []);
+
   const pill = connection
     ? STATUS_PILL[connection.status]
     : { className: 'pill', label: 'NO DATA' };
