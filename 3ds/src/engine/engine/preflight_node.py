@@ -24,6 +24,13 @@ from engine.preflight import (
     prearm_check,
 )
 
+ROS_LEVELS = (
+    DiagnosticStatus.OK,
+    DiagnosticStatus.WARN,
+    DiagnosticStatus.ERROR,
+    DiagnosticStatus.STALE,
+)
+
 
 class PreflightNode(Node):
     def __init__(self):
@@ -55,7 +62,7 @@ class PreflightNode(Node):
         self._image_result = Check(STALE, "No image inspected")
         self._last_image_inspection = -math.inf
         self._image_stamp = None
-        self._subscriptions = [
+        self._inputs = [
             self.create_subscription(
                 Empty,
                 "/groundstation/heartbeat",
@@ -85,7 +92,7 @@ class PreflightNode(Node):
         for topic, msg_type, min_hz in topics:
             stream = Stream(self._settings["topic_timeout_s"], min_hz)
             self._topics[topic] = stream
-            self._subscriptions.append(
+            self._inputs.append(
                 self.create_subscription(
                     msg_type,
                     topic,
@@ -192,13 +199,13 @@ class PreflightNode(Node):
 
     def _report(self, name, stat):
         check = self._results[name]
-        stat.summary(check.level, check.message)
+        stat.summary(ROS_LEVELS[check.level], check.message)
         return stat
 
     def _report_readiness(self, stat):
         checks = self._results
         summary = overall(checks)
-        stat.summary(summary.level, summary.message)
+        stat.summary(ROS_LEVELS[summary.level], summary.message)
         stat.add("ready", str(summary.level == OK).lower())
         for name, check in checks.items():
             stat.add(name, check.message)

@@ -5,11 +5,12 @@ import pytest
 rclpy = pytest.importorskip("rclpy")
 pytest.importorskip("diagnostic_updater")
 
-from diagnostic_msgs.msg import DiagnosticArray
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus
 from engine.preflight import PREARM_CHECK
 from engine.preflight_node import PreflightNode
 from mavros_msgs.msg import State, SysStatus
 from rclpy.executors import SingleThreadedExecutor
+from rosbridge_library.internal.message_conversion import extract_values
 from sensor_msgs.msg import Image, NavSatFix
 from std_msgs.msg import Empty, Float64
 
@@ -26,6 +27,8 @@ def test_ros_readiness_startup_failure_recovery_and_timeout():
     results = []
 
     def receive(msg):
+        for check in extract_values(msg)["status"]:
+            assert isinstance(check["level"], int)
         results.extend(
             status
             for status in msg.status
@@ -84,7 +87,7 @@ def test_ros_readiness_startup_failure_recovery_and_timeout():
         )
 
     def ready(status):
-        return status.level == 0 and any(
+        return status.level == DiagnosticStatus.OK and any(
             value.key == "ready" and value.value == "true" for value in status.values
         )
 
