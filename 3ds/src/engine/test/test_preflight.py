@@ -1,5 +1,3 @@
-"""Hardware-free regression tests for preflight decisions."""
-
 import sys
 from pathlib import Path
 

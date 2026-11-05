@@ -1,5 +1,3 @@
-"""Publish 3DS preflight diagnostics for rosbridge groundstation clients."""
-
 import math
 from functools import partial
 from time import monotonic
@@ -207,7 +205,6 @@ class PreflightNode(Node):
         return stat
 
     def _publish(self):
-        # Evaluate once so every diagnostic in this update uses the same results.
         self._results = self._checks()
         self._updater.force_update()
 

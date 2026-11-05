@@ -23,9 +23,6 @@ where it took off when told to.
 ```
 
 Packages are grouped by domain; each lists its nodes (executables) above.
-Preflight readiness is published on `/diagnostics` by the engine's `preflight`
-node. See [PREFLIGHT.md](PREFLIGHT.md) for checks, the groundstation heartbeat
-contract, parameters, and validation.
 Everything is started by `src/airside_bringup/launch/3ds.launch.py`
 (`ros2 launch airside_bringup 3ds.launch.py`). The `camera` package's Python
 module is `camera_ros`, so it does not shadow the monorepo `camera` library it

@@ -1,5 +1,3 @@
-"""ROS integration test; runs under colcon in the Humble container."""
-
 from time import monotonic
 
 import pytest

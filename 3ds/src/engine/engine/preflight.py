@@ -1,5 +1,3 @@
-"""Preflight decisions independent of ROS, using monotonic receive times."""
-
 import math
 from collections import deque
 from dataclasses import dataclass
@@ -17,8 +15,6 @@ class Check:
 
 
 class Stream:
-    """Bounded receive history for freshness and minimum-rate checks."""
-
     def __init__(self, timeout: float, min_hz: float = 0.0):
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout must be finite and positive")
@@ -49,7 +45,6 @@ class Stream:
 
 
 def prearm_check(present: int, enabled: int, health: int, armed: bool) -> Check:
-    """Use positive SYS_STATUS evidence, never absence of STATUSTEXT errors."""
     if armed:
         return Check(ERROR, "Already armed; preflight readiness applies while disarmed")
     if not (present & enabled & PREARM_CHECK):
@@ -62,7 +57,6 @@ def prearm_check(present: int, enabled: int, health: int, armed: bool) -> Check:
 
 
 def image_check(data, width, height, step, encoding, min_mean, min_std) -> Check:
-    """Inspect supported 8-bit pixels, excluding padding and alpha channels."""
     channels = {"mono8": 1, "rgb8": 3, "bgr8": 3, "rgba8": 4, "bgra8": 4}
     if encoding not in channels:
         return Check(ERROR, f"Unsupported image encoding: {encoding}")
@@ -73,9 +67,9 @@ def image_check(data, width, height, step, encoding, min_mean, min_std) -> Check
         height, step
     )
     pixels = rows[:, : width * count].reshape(height, width, count)
-    # Sample at most roughly 64x64 pixels to keep the camera callback bounded.
+    # Sampling keeps large camera frames cheap to inspect.
     pixels = pixels[:: max(1, height // 64), :: max(1, width // 64), : min(count, 3)]
-    # Spatial variation, not variation between the RGB channels of a solid image.
+    # A solid red frame must not pass just because its RGB channels differ.
     mean = float(pixels.mean())
     std = float(pixels.astype(float).std(axis=(0, 1)).mean())
     if mean < min_mean:
