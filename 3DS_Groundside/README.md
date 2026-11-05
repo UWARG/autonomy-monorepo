@@ -15,6 +15,11 @@ Groundside operator tooling for 3DS autonomy.
 └── warg.toml
 ```
 
+## Modules
+
+- `src/image_stitcher/`: builds an orthomosaic map from drone photos. See
+  [its README](src/image_stitcher/README.md).
+
 ## Commands
 
 ```bash
