@@ -58,44 +58,58 @@ def test_near_target_goes_to_target_itself(controller) -> None:
     assert controller._next_setpoint(NOW) == controller._target
 
 
-def test_far_from_corner_ignores_following_waypoint(controller) -> None:
-    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
-    setpoint = controller._next_setpoint(NOW)
-
-    assert HERE.lat < setpoint.lat < TARGET.lat
-    assert setpoint.lon == pytest.approx(HERE.lon)
-
-
-def test_near_corner_aims_past_target_along_next_leg(controller) -> None:
-    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
+def test_path_aims_lookahead_along_it(controller) -> None:
+    previous = enu_to_coordinate(TARGET, 0.0, -30.0, 10.0)
+    controller._path = [previous, TARGET, enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)]
+    controller._target_index = 1
     place(controller, enu_to_coordinate(TARGET, 0.0, -2.0, 10.0))
     setpoint = controller._next_setpoint(NOW)
 
-    # 2 m short of the corner with a 5 m lookahead: 3 m down the next leg.
-    expected = enu_to_coordinate(TARGET, 3.0, 0.0, 10.0)
-    assert setpoint.lat == pytest.approx(expected.lat)
-    assert setpoint.lon == pytest.approx(expected.lon)
+    # Past the target and bending onto the next leg rather than stopping.
+    assert setpoint.lat > TARGET.lat
+    assert setpoint.lon > TARGET.lon
 
 
-def test_corner_aim_point_stops_at_following_waypoint(controller) -> None:
-    following = enu_to_coordinate(TARGET, 1.0, 0.0, 12.0)
-    controller._following = following
+def test_spline_is_reused_until_the_path_changes(controller) -> None:
+    previous = enu_to_coordinate(TARGET, 0.0, -30.0, 10.0)
+    controller._path = [previous, TARGET, enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)]
+    controller._target_index = 1
+    controller._next_setpoint(NOW)
+    spline = controller._spline
+    controller._next_setpoint(NOW)
+
+    assert controller._spline is spline
+    controller._path = [previous, TARGET]
+    controller._next_setpoint(NOW)
+    assert controller._spline is not spline
+
+
+def test_path_ending_at_target_stops_there(controller) -> None:
+    controller._path = [enu_to_coordinate(TARGET, 0.0, -30.0, 10.0), TARGET]
+    controller._target_index = 1
     place(controller, enu_to_coordinate(TARGET, 0.0, -0.5, 10.0))
 
-    setpoint = controller._next_setpoint(NOW)
-
-    assert setpoint.lat == pytest.approx(following.lat)
-    assert setpoint.lon == pytest.approx(following.lon)
-    assert setpoint.alt == following.alt
+    assert controller._next_setpoint(NOW) == TARGET
 
 
-def test_target_message_without_following_clears_it(controller) -> None:
-    controller._following = enu_to_coordinate(TARGET, 30.0, 0.0, 10.0)
+def test_path_not_through_target_is_ignored(controller) -> None:
+    msg = PositionTarget(
+        target=CoordinateMsg(lat=TARGET.lat, lon=TARGET.lon, alt=TARGET.alt),
+        path=[CoordinateMsg(lat=HERE.lat, lon=HERE.lon, alt=HERE.alt)],
+        target_index=0,
+    )
+    controller._target_callback(msg)
+
+    assert controller._path == []
+
+
+def test_target_message_without_path_clears_it(controller) -> None:
+    controller._path = [HERE, TARGET]
     controller._target_callback(
         PositionTarget(target=CoordinateMsg(lat=TARGET.lat, lon=TARGET.lon, alt=TARGET.alt))
     )
 
-    assert controller._following is None
+    assert controller._path == []
 
 
 def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:

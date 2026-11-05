@@ -20,8 +20,8 @@ LAP_CLOSED = "lap_closed"
 # The waypoint currently being flown to
 CURRENT_WAYPOINT = "current_waypoint"
 
-# The waypoint flown to after current_waypoint, or None if it is the last
-FOLLOWING_WAYPOINT = "following_waypoint"
+# The lap route around current_waypoint, as (waypoints, index of current_waypoint)
+WAYPOINT_PATH = "waypoint_path"
 
 # Time in seconds when the current lap started
 LATEST_LAP_START_TIME_SEC = "latest_lap_start_time_sec"

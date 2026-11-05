@@ -12,8 +12,10 @@ from airside_interfaces.msg import TrafficSnapshot
 from mavros_msgs.msg import GlobalPositionTarget, State
 from obstacle_avoidance import (
     ESCAPE_REASON,
+    AvoidanceConfig,
     AvoidanceRequest,
     ObstacleAvoider,
+    PlannerConfig,
     PlanStatus,
     TrafficAircraft,
 )
@@ -21,6 +23,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64
 
+from navigation.spline_path import SplinePath, aim_point
 from utils.src.coordinates import enu_to_coordinate
 from utils.src.types import Coordinate
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
@@ -28,19 +31,12 @@ from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 class PositionController(rclpy.node.Node):
     """
-    Takes the engine's position target, runs gnc obstacle avoidance against
-    the latest AEAC traffic, and publishes the result as a MAVROS position
-    setpoint at 10 Hz.
+    Takes the engine's position target, runs obstacle avoidance against traffic,
+    and publishes the result as a MAVROS guided position setpoint.
 
     The setpoint is the avoider's next safe point, or the target itself once
-    within tolerance. If the target comes with a following waypoint, the aim
-    point slides past the target onto the next leg once the drone is within
-    ``CORNER_LOOKAHEAD_M``, so the drone rounds the corner instead of
-    stopping. With no path to the target (e.g. traffic flying at us),
-    the avoider backs away to the clearest reachable point rather than hold. Anything that makes avoidance impossible (no or stale
-    traffic, stale position, no safe path) holds where the drone was when the
-    hold began. Nothing is published unless armed in GUIDED. If the engine
-    stops sending targets, it holds once where the drone is, then lets go.
+    within tolerance. If the target comes with a path through it, the drone
+    instead aims ahead along a smooth spline through the path.
     """
 
     TARGET_TOPIC = "position_controller/target"
@@ -51,14 +47,14 @@ class PositionController(rclpy.node.Node):
     POSITION_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
     GUIDED_MODE = "GUIDED"
     CONTROL_RATE_HZ = 10.0
-    # The engine republishes its target every tick.
     TARGET_TIMEOUT_S = 1.5
-    # How far ahead of the drone, along the path, to aim when rounding a
-    # corner. Larger is smoother and faster but cuts the corner wider.
-    CORNER_LOOKAHEAD_M = 5.0
+    # How far ahead of the drone, along the path, to aim on straights.
+    PATH_LOOKAHEAD_M = 16.0
+    # Approaching a waypoint, the lookahead shrinks to keep aiming at it, down
+    # to this. Bounds how far inside the spline the drone cuts a corner.
+    CORNER_LOOKAHEAD_M = 3.0
     POSITION_FRESHNESS_S = 1.0
 
-    # Position-only setpoint: ignores velocity, acceleration and yaw fields.
     TYPE_MASK = (
         GlobalPositionTarget.IGNORE_VX
         | GlobalPositionTarget.IGNORE_VY
@@ -72,10 +68,20 @@ class PositionController(rclpy.node.Node):
 
     def __init__(self) -> None:
         super().__init__("position_controller")
-        self._avoider = ObstacleAvoider()
+        self._avoider = ObstacleAvoider(
+            AvoidanceConfig(
+                planner=PlannerConfig(
+                    first_lookahead_m=self.PATH_LOOKAHEAD_M,
+                    map_freshness_s=2.5,
+                )
+            )
+        )
         self._state: State | None = None
         self._target: Coordinate | None = None
-        self._following: Coordinate | None = None
+        self._path: list[Coordinate] = []
+        self._target_index = 0
+        self._spline: SplinePath | None = None
+        self._spline_key: tuple | None = None
         self._target_received_s = -math.inf
         self._fix: NavSatFix | None = None
         self._fix_received_s = -math.inf
@@ -115,11 +121,11 @@ class PositionController(rclpy.node.Node):
 
     def _target_callback(self, msg: PositionTarget) -> None:
         self._target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
-        self._following = (
-            Coordinate(msg.following[0].lat, msg.following[0].lon, msg.following[0].alt)
-            if msg.following
-            else None
-        )
+        self._path = [Coordinate(point.lat, point.lon, point.alt) for point in msg.path]
+        self._target_index = msg.target_index if msg.target_index < len(self._path) else 0
+        if not self._path or self._path[self._target_index] != self._target:
+            # A path that does not run through the target is ignored.
+            self._path, self._target_index = [], 0
         self._target_received_s = time.monotonic()
 
     def _traffic_callback(self, msg: TrafficSnapshot) -> None:
@@ -218,34 +224,32 @@ class PositionController(rclpy.node.Node):
 
     def _aim_point(self, position: Coordinate) -> Coordinate:
         """
-        The target, or with a following waypoint and the drone within
-        ``CORNER_LOOKAHEAD_M`` of the target, the point the leftover lookahead
-        distance along the next leg.
+        The target, or with a path through it, the point ahead of the drone
+        along the spline through the path.
         """
 
-        target, following = self._target, self._following
-        if following is None:
+        target = self._target
+        if len(self._path) < 2:
             return target
-        to_target_m = math.hypot(
-            *east_north_coordinate_offset_m(
-                position.lat, position.lon, target.lat, target.lon
+
+        def local(point: Coordinate) -> tuple[float, float, float]:
+            east_m, north_m = east_north_coordinate_offset_m(
+                target.lat, target.lon, point.lat, point.lon
             )
+            return (east_m, north_m, point.alt)
+
+        key = (tuple(self._path), self._target_index)
+        if key != self._spline_key:
+            self._spline = SplinePath([local(point) for point in self._path])
+            self._spline_key = key
+        east_m, north_m, alt_m = aim_point(
+            self._spline,
+            self._target_index,
+            local(position),
+            self.PATH_LOOKAHEAD_M,
+            self.CORNER_LOOKAHEAD_M,
         )
-        if to_target_m >= self.CORNER_LOOKAHEAD_M:
-            return target
-        leg_east_m, leg_north_m = east_north_coordinate_offset_m(
-            target.lat, target.lon, following.lat, following.lon
-        )
-        leg_m = math.hypot(leg_east_m, leg_north_m)
-        if leg_m == 0.0:
-            return target
-        fraction = min(self.CORNER_LOOKAHEAD_M - to_target_m, leg_m) / leg_m
-        return enu_to_coordinate(
-            target,
-            leg_east_m * fraction,
-            leg_north_m * fraction,
-            target.alt + (following.alt - target.alt) * fraction,
-        )
+        return enu_to_coordinate(target, east_m, north_m, alt_m)
 
     def _hold(self, position: Coordinate | None, reason: str) -> Coordinate | None:
         """Latch the position where the hold began and keep returning it."""

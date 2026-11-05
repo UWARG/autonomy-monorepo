@@ -34,7 +34,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     of the waypoint, and FAILURE if the waypoint is not reached within
     ``WAYPOINT_NAV_TIMEOUT_S``.
 
-    With ``fly_through``, ``following_waypoint`` is sent along for corner rounding.
+    With ``fly_through``, ``waypoint_path`` is sent along for smooth pathing.
     """
 
     def __init__(
@@ -53,7 +53,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         )
         if fly_through:
             self.blackboard.register_key(
-                key=blackboard_keys.FOLLOWING_WAYPOINT,
+                key=blackboard_keys.WAYPOINT_PATH,
                 access=py_trees.common.Access.READ,
             )
 
@@ -116,13 +116,13 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         )
         if self._fly_through:
             try:
-                following = self.blackboard.get(blackboard_keys.FOLLOWING_WAYPOINT)
+                path, target_index = self.blackboard.get(blackboard_keys.WAYPOINT_PATH)
             except KeyError:
-                following = None
-            if following is not None:
-                self._target.following = [
-                    Coordinate(lat=following.lat, lon=following.lon, alt=following.alt)
-                ]
+                path, target_index = [], 0
+            self._target.path = [
+                Coordinate(lat=point.lat, lon=point.lon, alt=point.alt) for point in path
+            ]
+            self._target.target_index = target_index
 
         self._leg_start = self._latest_fix
         self._start_time_s = self._now_s()
