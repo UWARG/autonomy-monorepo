@@ -1,5 +1,7 @@
 """Tests for the Camera class."""
 
+import time
+
 from camera import Camera
 
 
@@ -18,8 +20,12 @@ def test_camera_init(_bullet_connect, camera_obj):
     assert camera_obj.width == 224
 
 
-def test_camera_update(_bullet_connect, camera_obj):
-    """Updating the camera produces a view matrix."""
+def test_camera_update(_bullet_connect, camera_obj, monkeypatch):
+    """Updating the view must not sleep and leave the sampled pose stale."""
+    def unexpected_sleep(_duration):
+        raise AssertionError("Camera pose update should not sleep")
+
+    monkeypatch.setattr(time, "sleep", unexpected_sleep)
     camera_obj.update()
     assert camera_obj.view_matrix is not None
 
