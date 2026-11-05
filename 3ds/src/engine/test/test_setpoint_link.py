@@ -228,7 +228,6 @@ def test_rejects_overlong_line_and_keeps_connection(link, listener, ground):
     assert reply["ok"] is False
     assert "longer than" in reply["message"]
 
-    # The tail of the long line was discarded, not parsed as a new line.
     assert ground.send(b'{"type": "go_home"}\n')["ok"] is True
     assert listener.spin_until(lambda: listener.go_homes)
 
