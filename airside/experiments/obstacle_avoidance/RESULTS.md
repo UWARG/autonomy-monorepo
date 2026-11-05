@@ -30,11 +30,9 @@ yield gate was added, followed by the three independent passing runs above.
 
 ## Not completed: hard flight-test gates
 
-- No real AEAC moving-traffic sample has been received. The local ignored
-  `.env` did not contain a usable `AEAC_CONNECTION_TOKEN`, so the receive-only
-  command stopped before opening a WebSocket. No telemetry was sent.
-- A real capture must be replayed into SITL with its original timing and
-  trajectory and pass the same measured-distance checks.
+- A real capture must be matched to the intended test course, then replayed
+  into SITL with its original timing and trajectory and pass the same
+  measured-distance checks.
 - The props-off two-WebSocket check still must verify the official endpoint,
   own aircraft index, WGS84/AGL fields, approximately 1 Hz receive/send rate,
   and end-to-end latency. Sending requires the team's explicit server test
@@ -44,3 +42,30 @@ yield gate was added, followed by the three independent passing runs above.
 
 Therefore this branch is ready for review and continued server qualification,
 but it is **not yet approved for a live props-on AEAC flight test**.
+
+## Route replay tooling check (2026-11-05)
+
+- Added route matching and timing-preserving SITL replay for receive-only
+  traffic JSONL. A generated crossing track intersected the first configured
+  waypoint leg and was replayed on a fresh SITL boot.
+- The generated-track smoke test passed: 38 snapshots replayed at
+  0.998–1.027 s intervals, FCU speed readback 1.5 m/s, observed peak
+  1.520 m/s, minimum margin 12.245 m outside the raw keep-away, one setpoint
+  owner, and the leg goal reached after yielding to crossing traffic.
+- A 180 s receive-only AEAC capture then succeeded without transmitting any
+  telemetry: 184 healthy snapshots over 178.134 s (mean interval 0.973 s,
+  median 0.987 s). Every snapshot contained moving indices 0 and 1. Both
+  reported 15 m/s and a 30 m horizontal keep-away; index 0 was at 50 m AGL
+  and index 1 at 80 m AGL. One interval was under 0.5 s and 18 exceeded
+  1.2 s, so 1 Hz is an expected cadence rather than a hard latency bound.
+- The checked-in Airside route is near Waterloo, while both captured tracks
+  are near Medicine Hat. The matcher therefore correctly returned
+  `NO_MOVING_ROUTE_MATCH`. The CONOPS says the prescribed 3–5 km lap course
+  is supplied shortly before the event; its flight-boundary coordinates are
+  not a substitute for that course. Sophie's test-course waypoints have not
+  been found in this repository or its remote branches.
+- Consequently the real server connection and moving traffic are verified,
+  but the claim that Sophie's obstacle crosses the intended route is still
+  **incomplete**. Three real-capture SITL trials cannot run until the matching
+  course waypoint YAML (and, for live autonomy, our confirmed aircraft
+  index) are available.

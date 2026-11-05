@@ -4,11 +4,35 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|multi|turn|dropout|blocked|pilot}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|multi|turn|dropout|blocked|pilot|replay}"
 case "$scenario" in
-    clear|moving|multi|turn|dropout|blocked|pilot) ;;
+    clear|moving|multi|turn|dropout|blocked|pilot|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
+capture_in_container=""
+route_in_container=""
+own_index=""
+if [[ "$scenario" == replay ]]; then
+    [[ -n "${2:-}" && -n "${3:-}" ]] || {
+        echo "usage: run_sitl_moving.sh replay <capture.jsonl> <confirmed-own-index> [route.yaml]" >&2
+        exit 2
+    }
+    own_index="$3"
+    [[ "$own_index" =~ ^[0-9]+$ ]] && (( own_index <= 255 )) || {
+        echo "confirmed own aircraft index must be 0..255" >&2
+        exit 2
+    }
+    capture_path="$(realpath "$2")"
+    route_path="$(realpath "${4:-$repo_root/airside/src/engine/config/waypoints.yaml}")"
+    for file_path in "$capture_path" "$route_path"; do
+        [[ -f "$file_path" && "$file_path" == "$repo_root/"* ]] || {
+            echo "replay input must be an existing file inside this worktree" >&2
+            exit 2
+        }
+    done
+    capture_in_container="/repo/${capture_path#"$repo_root/"}"
+    route_in_container="/repo/${route_path#"$repo_root/"}"
+fi
 
 docker_bin="${DOCKER_BIN:-docker}"
 if ! command -v "$docker_bin" >/dev/null 2>&1 && [[ -x /snap/bin/docker ]]; then
@@ -47,6 +71,9 @@ sleep 3
     -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-232}" \
     -e ROS_LOCALHOST_ONLY=1 \
     -e SCENARIO="$scenario" \
+    -e CAPTURE_FILE="$capture_in_container" \
+    -e ROUTE_FILE="$route_in_container" \
+    -e OWN_AIRCRAFT_INDEX="$own_index" \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
     warg/airside:latest bash -lc '
@@ -68,8 +95,15 @@ sleep 3
             /mavros/setpoint_raw/global /mavros/statustext/send \
             > /artifacts/rosbag.log 2>&1 &
         bag_pid=$!
-        timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
-            --scenario "$SCENARIO" --summary /artifacts/summary.json
+        if [[ "$SCENARIO" == replay ]]; then
+            timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_server_replay.py \
+                --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
+                --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
+                --summary /artifacts/summary.json
+        else
+            timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
+                --scenario "$SCENARIO" --summary /artifacts/summary.json
+        fi
         result=$?
         kill -INT -- -$bag_pid >/dev/null 2>&1 || true
         for _ in $(seq 1 40); do
