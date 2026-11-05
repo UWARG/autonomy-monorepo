@@ -10,32 +10,31 @@ from utils.src.types import Coordinate
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 from .clearance import CircularObstacleField
-from .geometry import angular_distance, heading, project
 from .models import (
     AvoidancePlan,
     AvoidanceRequest,
-    CircleObstacle,
-    NoPathReason,
     ObstacleSnapshot,
     PlanRequest,
     PlanStatus,
     Point2D,
+    TrafficAircraft,
 )
 from .planner import BendyRuler2D, PlannerConfig
-from .traffic import traffic_to_obstacles
+from .traffic import live_traffic_buffer_m, traffic_to_obstacles
 
 
 @dataclass(frozen=True, slots=True)
 class AvoidanceConfig:
-    horizontal_speed_mps: float = 2.0
+    horizontal_speed_mps: float = 1.5
     vertical_speed_mps: float = 1.0
     goal_tolerance_m: float = 1.0
     prediction_horizon_s: float = 3.0
     maximum_prediction_step_m: float = 1.0
     maximum_predicted_obstacles: int = 512
-    # AEAC traffic arrives at 1 Hz, so tolerate a couple of missed updates.
+    crossing_yield_horizon_s: float = 20.0
+    # Fail closed after a missed 1 Hz traffic snapshot.
     planner: PlannerConfig = field(
-        default_factory=lambda: PlannerConfig(map_freshness_s=2.5)
+        default_factory=lambda: PlannerConfig(map_freshness_s=1.5)
     )
 
     def __post_init__(self) -> None:
@@ -47,9 +46,16 @@ class AvoidanceConfig:
             self.maximum_predicted_obstacles,
         )
         if any(value <= 0 for value in positive):
-            raise ValueError("speeds, tolerances and prediction limits must be positive")
+            raise ValueError(
+                "speeds, tolerances and prediction limits must be positive"
+            )
         if self.prediction_horizon_s < 0.0:
             raise ValueError("prediction horizon must be non-negative")
+        if (
+            not math.isfinite(self.crossing_yield_horizon_s)
+            or self.crossing_yield_horizon_s <= 0.0
+        ):
+            raise ValueError("crossing yield horizon must be positive")
 
 
 def _valid_coordinate(point: Coordinate) -> bool:
@@ -58,10 +64,6 @@ def _valid_coordinate(point: Coordinate) -> bool:
         and -90.0 <= point.lat <= 90.0
         and -180.0 <= point.lon <= 180.0
     )
-
-
-# AvoidancePlan.reason while backing away from traffic with no path to the goal.
-ESCAPE_REASON = "ESCAPING_TRAFFIC"
 
 
 class ObstacleAvoider:
@@ -110,10 +112,29 @@ class ObstacleAvoider:
                 prediction_horizon_s=settings.prediction_horizon_s,
                 maximum_step_m=settings.maximum_prediction_step_m,
                 maximum_obstacles=settings.maximum_predicted_obstacles,
+                live_buffer=True,
+                all_altitudes=True,
+                own_speed_mps=settings.horizontal_speed_mps,
             )
         except ValueError as error:
             self.reset()
             return AvoidancePlan.hold(str(error), goal_distance_m=goal_distance_m)
+
+        crossing_reason = self._crossing_risk(
+            request.traffic,
+            goal_east_m,
+            goal_north_m,
+            age_s,
+            position.lat,
+            position.lon,
+        )
+        if crossing_reason is not None:
+            self.reset()
+            return AvoidancePlan.hold(
+                crossing_reason,
+                goal_distance_m=goal_distance_m,
+                obstacle_count=len(obstacles),
+            )
 
         result = self._planner.plan(
             PlanRequest(
@@ -123,18 +144,19 @@ class ObstacleAvoider:
                 now_s=0.0,
             )
         )
-        if result.reason is NoPathReason.BLOCKED:
-            # Holding still is not safe against moving traffic: an aircraft
-            # flying at us blocks every forward heading and then flies through
-            # the hovering drone. Back off to the clearest reachable point.
-            escape = self._escape(
-                position, Point2D(goal_east_m, goal_north_m), obstacles, goal_distance_m
-            )
-            if escape is not None:
-                return escape
         if result.status is PlanStatus.NO_PATH or result.waypoint is None:
+            hold_clearance_m = CircularObstacleField(obstacles).point_clearance(
+                Point2D(0.0, 0.0)
+            )
+            reason = (
+                "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED"
+                if hold_clearance_m < settings.planner.clearance_margin_m
+                else result.reason.value
+                if result.reason is not None
+                else "NO_PATH"
+            )
             return AvoidancePlan.hold(
-                result.reason.value if result.reason is not None else "NO_PATH",
+                reason,
                 goal_distance_m=goal_distance_m,
                 obstacle_count=len(obstacles),
             )
@@ -166,55 +188,80 @@ class ObstacleAvoider:
             obstacle_count=len(obstacles),
         )
 
-    def _escape(
+    def _crossing_risk(
         self,
-        position: Coordinate,
-        goal: Point2D,
-        obstacles: tuple[CircleObstacle, ...],
-        goal_distance_m: float,
-    ) -> AvoidancePlan | None:
-        """
-        A step to the point with the most clearance, or None to hold.
+        traffic: tuple[TrafficAircraft, ...],
+        goal_east_m: float,
+        goal_north_m: float,
+        age_s: float,
+        own_lat: float,
+        own_lon: float,
+    ) -> str | None:
+        """Yield before entering a moving crossing path; never use hold if unsafe."""
 
-        Searches all round (backwards too) at the planner's first lookahead.
-        A step qualifies only if nothing along it is closer to any keep-away
-        than the drone is now, and it ends clearer than here; ties go to the
-        heading nearest the goal. Altitude is held.
-        """
-
-        planner = self.config.planner
-        field = CircularObstacleField(obstacles)
-        start = Point2D(0.0, 0.0)
-        current_m = field.point_clearance(start)
-        goal_heading = heading(start, goal) if goal != start else 0.0
-        step_rad = math.radians(planner.candidate_step_deg)
-
-        best: tuple[float, float, Point2D] | None = None
-        for index in range(int(round(2 * math.pi / step_rad))):
-            candidate_heading = goal_heading + index * step_rad
-            end = project(start, candidate_heading, planner.first_lookahead_m)
-            if field.segment_clearance(start, end) < current_m - 1e-9:
-                continue
-            end_clearance_m = field.point_clearance(end)
-            if end_clearance_m <= current_m:
-                continue
-            key = (-end_clearance_m, angular_distance(candidate_heading, goal_heading), end)
-            if best is None or key[:2] < best[:2]:
-                best = key
-        if best is None:
+        distance_m = math.hypot(goal_east_m, goal_north_m)
+        if distance_m <= self.config.goal_tolerance_m:
             return None
-
-        end = best[2]
-        speed_mps = min(self.config.horizontal_speed_mps, planner.first_lookahead_m)
-        return AvoidancePlan(
-            status=PlanStatus.PATH_FOUND,
-            reason=ESCAPE_REASON,
-            east_mps=speed_mps * end.x / planner.first_lookahead_m,
-            north_mps=speed_mps * end.y / planner.first_lookahead_m,
-            up_mps=0.0,
-            next_waypoint=enu_to_coordinate(position, end.x, end.y, position.alt),
-            goal_distance_m=goal_distance_m,
-            goal_reached=False,
-            minimum_clearance_m=field.segment_clearance(start, end),
-            obstacle_count=len(obstacles),
-        )
+        own_speed = self.config.horizontal_speed_mps
+        own_east_mps = own_speed * goal_east_m / distance_m
+        own_north_mps = own_speed * goal_north_m / distance_m
+        horizon_s = min(self.config.crossing_yield_horizon_s, distance_m / own_speed)
+        should_yield = False
+        for aircraft in traffic:
+            if aircraft.speed_mps <= 0.1:
+                continue
+            heading_rad = math.radians(aircraft.heading_deg)
+            other_east_mps = aircraft.speed_mps * math.sin(heading_rad)
+            other_north_mps = aircraft.speed_mps * math.cos(heading_rad)
+            # Only traffic moving substantially across, rather than along,
+            # the direct route uses this time-to-closest-approach gate.
+            along_mps = (
+                other_east_mps * goal_east_m + other_north_mps * goal_north_m
+            ) / distance_m
+            if abs(along_mps) >= 0.5 * aircraft.speed_mps:
+                continue
+            east_m, north_m = east_north_coordinate_offset_m(
+                own_lat, own_lon, aircraft.lat, aircraft.lon
+            )
+            east_m += other_east_mps * age_s
+            north_m += other_north_mps * age_s
+            relative_east_mps = other_east_mps - own_east_mps
+            relative_north_mps = other_north_mps - own_north_mps
+            relative_speed_sq = relative_east_mps**2 + relative_north_mps**2
+            if relative_speed_sq <= 1e-9:
+                continue
+            closest_s = max(
+                0.0,
+                min(
+                    horizon_s,
+                    -(east_m * relative_east_mps + north_m * relative_north_mps)
+                    / relative_speed_sq,
+                ),
+            )
+            closest_m = math.hypot(
+                east_m + relative_east_mps * closest_s,
+                north_m + relative_north_mps * closest_s,
+            )
+            radius_m = (
+                aircraft.horizontal_keep_away_m
+                + live_traffic_buffer_m(aircraft.speed_mps, age_s, own_speed)
+                + self.config.planner.clearance_margin_m
+            )
+            if closest_m >= radius_m:
+                continue
+            hold_closest_s = max(
+                0.0,
+                min(
+                    horizon_s,
+                    -(east_m * other_east_mps + north_m * other_north_mps)
+                    / aircraft.speed_mps**2,
+                ),
+            )
+            hold_clearance_m = math.hypot(
+                east_m + other_east_mps * hold_closest_s,
+                north_m + other_north_mps * hold_closest_s,
+            )
+            if hold_clearance_m < radius_m:
+                return "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED"
+            should_yield = True
+        return "YIELD_CROSSING" if should_yield else None
