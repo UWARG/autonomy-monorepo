@@ -1,0 +1,14 @@
+# Runs tests with fake ROS messages. No camera, serial device, or drone required.
+services:
+  preflight-test:
+    build:
+      context: ..
+      dockerfile: 3ds/docker/Dockerfile
+    command:
+      - bash
+      - -lc
+      - >-
+        source /ros_ws/install/setup.bash &&
+        python3 -m pytest -v
+        src/engine/test/test_preflight.py
+        src/engine/test/test_preflight_node.py

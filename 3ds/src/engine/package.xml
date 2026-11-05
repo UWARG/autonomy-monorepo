@@ -11,6 +11,9 @@
 
   <depend>airside_interfaces</depend>
   <depend>rclpy</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>python3-numpy</depend>
   <depend>mavros</depend>
   <depend>mavros_msgs</depend>
   <depend>sensor_msgs</depend>
