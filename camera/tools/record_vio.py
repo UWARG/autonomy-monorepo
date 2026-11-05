@@ -1,173 +1,177 @@
-"""Record OAK-D VIO poses to CSV for hardware testing."""
+"""Record latest OAK-D VIO poses, with a reproducible trial manifest."""
 
 import argparse
 import csv
+from datetime import datetime, timezone
+import importlib.metadata
+import json
 import logging
 import math
 from pathlib import Path
+import platform
 import time
 
 from src.oakd import OakD
 
+CSV_FIELDS = [
+    "elapsed_receipt_s",
+    "received_monotonic_s",
+    "sdk_timestamp_s",
+    "x_m",
+    "y_m",
+    "z_m",
+    "qx",
+    "qy",
+    "qz",
+    "qw",
+]
 
-def main() -> int:
+
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--duration", type=float, default=60.0)
+    parser.add_argument("--warmup", type=float, default=5.0)
     parser.add_argument(
-        "--output",
-        type=Path,
-        required=True,
-        help="New CSV file to create.",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=60.0,
-        help="Recording duration in seconds.",
-    )
-    parser.add_argument(
-        "--warmup",
+        "--max-silence",
         type=float,
         default=5.0,
-        help="Warmup duration in seconds.",
+        help="Fail if no valid poses arrive for this many recording seconds.",
     )
-    args = parser.parse_args()
-
-    if not math.isfinite(args.duration) or args.duration <= 0:
-        parser.error("--duration must be finite and positive")
-
-    if not math.isfinite(args.warmup) or args.warmup < 0:
-        parser.error("--warmup must be finite and nonnegative")
-
-    if args.output.exists():
-        parser.error("Output file already exists; choose a new filename")
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s: %(message)s",
+    parser.add_argument(
+        "--camera-model",
+        default="not recorded",
+        help="Actual model from the camera label; not auto-detected.",
     )
-
-    camera = OakD(enable_vio=True)
-    positions = []
-    receipt_times = []
-    interrupted = False
-
+    parser.add_argument("--notes", default="")
+    args = parser.parse_args(argv)
+    for name in ("duration", "max_silence", "warmup"):
+        value = getattr(args, name)
+        if not math.isfinite(value) or value < 0 or (name != "warmup" and value == 0):
+            parser.error(
+                f"--{name.replace('_', '-')} must be finite and "
+                + ("nonnegative" if name == "warmup" else "positive")
+            )
+    manifest_path = args.output.with_suffix(".metadata.json")
+    if args.output.exists() or manifest_path.exists():
+        parser.error("Trial CSV or manifest already exists; choose a new filename")
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     try:
-        if not camera.initialize_camera():
-            logging.error("Camera initialization failed")
-            return 1
-
+        sdk_version = importlib.metadata.version("depthai")
+    except importlib.metadata.PackageNotFoundError:
+        sdk_version = "not installed"
+    manifest = {
+        "schema_version": 1,
+        "started_utc": datetime.now(timezone.utc).isoformat(),
+        "camera_model_user_supplied": args.camera_model,
+        "python": platform.python_version(),
+        "platform": platform.platform(),
+        "depthai_version": sdk_version,
+        "notes": args.notes,
+        "duration_requested_s": args.duration,
+        "warmup_s": args.warmup,
+        "max_silence_s": args.max_silence,
+        "csv": args.output.name,
+        "position_units": "metres",
+        "quaternion_order": "xyzw",
+        "coordinate_frame": "SDK local frame; no body/NED/GPS conversion",
+        "sampling": "latest-pose polling; intermediate SDK outputs may be discarded",
+        "status": "starting",
+        "samples": 0,
+    }
+    camera = OakD(enable_vio=True)
+    code = 1
+    first_position = last_position = None
+    first_receipt = last_receipt = None
+    max_distance = max_gap = 0.0
+    try:
         args.output.parent.mkdir(parents=True, exist_ok=True)
-
-        # Exclusive creation prevents overwriting earlier trials.
-        with args.output.open(
-            "x",
-            newline="",
-            encoding="utf-8",
-        ) as stream:
-            writer = csv.writer(stream)
-            writer.writerow(
-                [
-                    "elapsed_receipt_s",
-                    "received_monotonic_s",
-                    "sdk_timestamp_s",
-                    "x_m",
-                    "y_m",
-                    "z_m",
-                    "qx",
-                    "qy",
-                    "qz",
-                    "qw",
-                ]
-            )
-
-            print(
-                f"Keep the camera still during "
-                f"{args.warmup:g} seconds of warmup.",
-                flush=True,
-            )
-
-            warmup_end = time.monotonic() + args.warmup
-
-            while time.monotonic() < warmup_end:
-                camera.capture_pose()
-                time.sleep(0.005)
-
-            print("RECORDING — begin your trial now.", flush=True)
-            recording_start = time.monotonic()
-            recording_end = recording_start + args.duration
-
-            try:
-                while time.monotonic() < recording_end:
-                    pose = camera.capture_pose()
-
-                    if pose is not None:
-                        writer.writerow(
-                            [
-                                (
-                                    pose.received_monotonic_s
-                                    - recording_start
-                                ),
-                                pose.received_monotonic_s,
-                                pose.timestamp_s,
-                                *pose.position_m,
-                                *pose.orientation_xyzw,
-                            ]
+        # Reserve both files before touching the device. Never overwrite a trial.
+        with args.output.open("x", newline="", encoding="utf-8") as stream:
+            with manifest_path.open("x", encoding="utf-8") as metadata:
+                writer = csv.writer(stream)
+                writer.writerow(CSV_FIELDS)
+                try:
+                    if not camera.initialize_camera():
+                        raise RuntimeError(
+                            "Camera initialization failed; inspect SDK logs"
                         )
-                        positions.append(pose.position_m)
-                        receipt_times.append(
-                            pose.received_monotonic_s
-                        )
-
-                    time.sleep(0.005)
-
-            except KeyboardInterrupt:
-                interrupted = True
-                print("\nStopped early; preserving recorded samples.")
-
-    finally:
-        camera.close_camera()
-
-    print(f"Saved {len(positions)} pose samples to {args.output}")
-
-    if len(positions) < 2:
-        logging.error(
-            "Insufficient samples to assess VIO. "
-            "Inspect the camera and SDK logs."
-        )
+                    print(f"Keep still during {args.warmup:g}s warmup.", flush=True)
+                    warmup_end = time.monotonic() + args.warmup
+                    while time.monotonic() < warmup_end:
+                        camera.capture_pose()
+                        time.sleep(0.005)
+                    print(
+                        "RECORDING - begin the trial; hold still at both endpoints.",
+                        flush=True,
+                    )
+                    start = last_valid = time.monotonic()
+                    end = start + args.duration
+                    while time.monotonic() < end:
+                        pose = camera.capture_pose()
+                        if pose is not None:
+                            writer.writerow(
+                                [
+                                    pose.received_monotonic_s - start,
+                                    pose.received_monotonic_s,
+                                    pose.timestamp_s,
+                                    *pose.position_m,
+                                    *pose.orientation_xyzw,
+                                ]
+                            )
+                            stream.flush()
+                            manifest["samples"] += 1
+                            first_position = first_position or pose.position_m
+                            if first_receipt is None:
+                                first_receipt = pose.received_monotonic_s
+                            if last_receipt is not None:
+                                max_gap = max(
+                                    max_gap, pose.received_monotonic_s - last_receipt
+                                )
+                            last_position = pose.position_m
+                            last_receipt = pose.received_monotonic_s
+                            max_distance = max(
+                                max_distance, math.dist(first_position, last_position)
+                            )
+                            last_valid = time.monotonic()
+                        elif time.monotonic() - last_valid >= args.max_silence:
+                            raise RuntimeError(
+                                "No valid VIO poses within the silence timeout"
+                            )
+                        time.sleep(0.005)
+                    if manifest["samples"] < 2:
+                        raise RuntimeError("Insufficient pose samples")
+                    manifest["status"] = "complete"
+                    code = 0
+                except KeyboardInterrupt:
+                    manifest["status"] = "interrupted"
+                    code = 130
+                    print("\nInterrupted; preserving partial trial.")
+                except Exception as error:
+                    manifest["status"] = "failed"
+                    manifest["error"] = str(error)
+                    logging.exception("Trial failed")
+                finally:
+                    camera.close_camera()
+                    manifest["finished_utc"] = datetime.now(timezone.utc).isoformat()
+                    if manifest["samples"] >= 2:
+                        manifest["descriptive_metrics"] = {
+                            "endpoint_displacement_m": math.dist(
+                                first_position, last_position
+                            ),
+                            "maximum_distance_from_first_pose_m": max_distance,
+                            "maximum_receipt_gap_s": max_gap,
+                            "receipt_duration_s": last_receipt - first_receipt,
+                        }
+                    json.dump(manifest, metadata, indent=2, allow_nan=False)
+                    metadata.write("\n")
+        print(f"Saved {manifest['samples']} poses: {args.output}")
+        print(f"Trial status: {manifest['status']}; manifest: {manifest_path}")
+        print("Use tools.analyze_vio with measured ground truth to assess accuracy.")
+        return code
+    except OSError as error:
+        logging.error("Could not create trial files: %s", error)
         return 1
-
-    endpoint_distance = math.dist(positions[0], positions[-1])
-    maximum_distance = max(
-        math.dist(positions[0], position)
-        for position in positions
-    )
-    maximum_gap = max(
-        later - earlier
-        for earlier, later in zip(
-            receipt_times,
-            receipt_times[1:],
-        )
-    )
-
-    print(
-        f"Distance between first and last positions: "
-        f"{endpoint_distance:.4f} m"
-    )
-    print(
-        f"Maximum distance from first position: "
-        f"{maximum_distance:.4f} m"
-    )
-    print(f"Maximum host receipt gap: {maximum_gap:.4f} s")
-    print(
-        "These distances indicate drift only for a stationary "
-        "or return-to-start trial."
-    )
-    print(
-        "This records the latest polled poses, not every "
-        "estimator output. Receipt gaps are not sensor latency."
-    )
-
-    return 130 if interrupted else 0
 
 
 if __name__ == "__main__":
