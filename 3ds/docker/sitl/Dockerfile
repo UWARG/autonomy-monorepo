@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     python3 \
     python3-dev \
+    python3-empy \
     python3-lxml \
     python3-numpy \
     python3-pexpect \
@@ -38,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /ardupilot/build/sitl/bin/arducopter /ardupilot/arducopter
 COPY --from=builder /ardupilot/Tools/autotest/default_params/copter.parm /ardupilot/copter.parm
 COPY 3ds/docker/sitl/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 5762
 ENTRYPOINT ["/entrypoint.sh"]

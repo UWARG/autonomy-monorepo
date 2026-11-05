@@ -106,8 +106,16 @@ class SitlMissionTest(Node):
         )
         self._wait_for("initial GPS fix", self._has_valid_fix)
         self._assert_known_home_location()
+        self._wait_for(
+            "3DS engine setpoint subscription",
+            lambda: self._setpoint_pub.get_subscription_count() > 0,
+        )
 
         self._set_guided_mode()
+        self._wait_for(
+            "GUIDED mode state",
+            lambda: self._state is not None and self._state.mode == "GUIDED",
+        )
         self._arm_vehicle()
         self._wait_for(
             "armed GUIDED state",
@@ -175,11 +183,26 @@ class SitlMissionTest(Node):
             raise TestFailure(f"MAVROS rejected GUIDED mode request: {response}")
 
     def _arm_vehicle(self) -> None:
+        deadline = time.monotonic() + self._timeout_s
+        last_response = None
         request = CommandBool.Request()
         request.value = True
-        response = self._call_service(self._arming_client, request, "arm vehicle")
-        if response is None or not response.success:
-            raise TestFailure(f"MAVROS rejected arming request: {response}")
+
+        while time.monotonic() < deadline:
+            response = self._call_service(self._arming_client, request, "arm vehicle")
+            if response is not None and response.success:
+                return
+
+            last_response = response
+            self.get_logger().warning(
+                "ArduCopter rejected arming while it completes pre-arm checks; retrying"
+            )
+            self._spin_for(1.0)
+
+        raise TestFailure(
+            "MAVROS did not accept an arming request before the timeout: "
+            f"{last_response}"
+        )
 
     def _call_service(self, client, request, action: str):
         self._wait_for(f"{action} service", client.service_is_ready)
