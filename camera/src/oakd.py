@@ -4,6 +4,7 @@ OAK-D camera with optional Basalt visual-inertial odometry.
 
 import logging
 import math
+import threading
 import time
 
 import numpy as np
@@ -15,6 +16,7 @@ from .vio import VioPose
 
 
 VIO_QUEUE_SIZE = 8
+FRAME_TIMEOUT_S = 1.0
 
 
 class OakD(AbstractCamera):
@@ -31,8 +33,13 @@ class OakD(AbstractCamera):
         self._rgb_queue = None
         self._depth_queue = None
         self._vio_queue = None
+        self._vio_lock = threading.RLock()
 
     def initialize_camera(self) -> bool:
+        with self._vio_lock:
+            return self._initialize_camera()
+
+    def _initialize_camera(self) -> bool:
         # Release resources before starting a new pipeline.
         self.close_camera()
 
@@ -40,9 +47,7 @@ class OakD(AbstractCamera):
             import depthai as dai
 
             if self._enable_vio and not hasattr(dai.node, "BasaltVIO"):
-                raise RuntimeError(
-                    "This DepthAI build does not include BasaltVIO."
-                )
+                raise RuntimeError("This DepthAI build does not include BasaltVIO.")
 
             self._pipeline = dai.Pipeline()
 
@@ -107,6 +112,7 @@ class OakD(AbstractCamera):
                 )
 
             self._pipeline.start()
+            self._stop_event.clear()
             logging.info(
                 "OAK-D camera initialized successfully (VIO=%s)",
                 self._enable_vio,
@@ -124,6 +130,10 @@ class OakD(AbstractCamera):
         Intermediate queued estimates are discarded. Position and
         orientation remain in the SDK's local coordinate frame.
         """
+        with self._vio_lock:
+            return self._capture_pose()
+
+    def _capture_pose(self) -> VioPose | None:
         if self._vio_queue is None:
             return None
 
@@ -151,10 +161,7 @@ class OakD(AbstractCamera):
                     float(quaternion.qw),
                 )
 
-                if not all(
-                    math.isfinite(value)
-                    for value in (*position, *rotation)
-                ):
+                if not all(math.isfinite(value) for value in (*position, *rotation)):
                     raise ValueError("Pose contains a non-finite value")
 
                 norm = math.hypot(*rotation)
@@ -165,9 +172,7 @@ class OakD(AbstractCamera):
 
                 newest = VioPose(
                     position_m=position,
-                    orientation_xyzw=tuple(
-                        value / norm for value in rotation
-                    ),
+                    orientation_xyzw=tuple(value / norm for value in rotation),
                     timestamp_s=(
                         timestamp
                         if math.isfinite(timestamp) and timestamp > 0
@@ -188,13 +193,34 @@ class OakD(AbstractCamera):
         return newest
 
     def capture_frame(self) -> CameraFrame | None:
-        if self._rgb_queue is None or self._depth_queue is None:
+        with self._vio_lock:
+            rgb_queue = self._rgb_queue
+            depth_queue = self._depth_queue
+            pipeline = self._pipeline
+        if rgb_queue is None or depth_queue is None:
             logging.warning("OAK-D queues not initialized")
             return None
 
         try:
-            rgb_frame = self._rgb_queue.get().getCvFrame()
-            depth_frame = self._depth_queue.get().getCvFrame()
+            # Bounded polling lets AbstractCamera.stop() join its worker even
+            # when a camera disconnects and stops producing frames.
+            deadline = time.monotonic() + FRAME_TIMEOUT_S
+            rgb_message = depth_message = None
+            while time.monotonic() < deadline:
+                if self._stop_event.is_set() or self._pipeline is not pipeline:
+                    return None
+                if rgb_message is None:
+                    rgb_message = rgb_queue.tryGet()
+                if depth_message is None:
+                    depth_message = depth_queue.tryGet()
+                if rgb_message is not None and depth_message is not None:
+                    break
+                time.sleep(0.005)
+            if rgb_message is None or depth_message is None:
+                logging.warning("Timed out waiting for OAK-D RGB/depth frames")
+                return None
+            rgb_frame = rgb_message.getCvFrame()
+            depth_frame = depth_message.getCvFrame()
 
             return CameraFrame(
                 rgb=rgb_frame,
@@ -224,6 +250,10 @@ class OakD(AbstractCamera):
         return float(np.median(valid)) / 1000.0
 
     def close_camera(self) -> None:
+        with self._vio_lock:
+            self._close_camera()
+
+    def _close_camera(self) -> None:
         pipeline = self._pipeline
 
         self._pipeline = None
