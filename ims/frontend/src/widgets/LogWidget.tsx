@@ -51,7 +51,7 @@ export default function LogWidget() {
         <span className="text-[11px] text-ink-3">live · newest first</span>
       </header>
 
-      <div className="mt-3 flex-1 overflow-y-auto font-mono text-[12px] leading-relaxed">
+      <div className="widget-overflow mt-3 min-h-0 flex-1 font-mono text-[12px] leading-relaxed">
         {rows.length === 0 ? (
           <p className="text-[13px] text-ink-3">Awaiting log messages</p>
         ) : (

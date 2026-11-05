@@ -1,4 +1,5 @@
 import type { AttitudeMessage } from '../types';
+import type { WidgetConfig } from '../layout';
 import { useEffect, useState } from 'react';
 import ROSLIB from 'roslib';
 import { ros } from '../ros.js'
@@ -129,7 +130,7 @@ function Horizon({ attitude }: { attitude?: AttitudeMessage }) {
   );
 }
 
-export default function AttitudeWidget() {
+export default function AttitudeWidget({ config }: { config?: WidgetConfig }) {
   const [attitude, setAttitude] = useState<AttitudeMessage>();
 
   useEffect(() => {
@@ -152,26 +153,28 @@ export default function AttitudeWidget() {
   return (
     <section className="widget flex h-full min-h-[120px] flex-col overflow-hidden p-4"
       style={{
-        ['--att-sky' as string]: '#BFE0F5',
-        ['--att-ground' as string]: '#6E5744',
-        ['--att-edge' as string]: '#252C3A',
-        ['--att-tick' as string]: '#5E687A',
-        ['--att-accent' as string]: '#5B8DEF',
+        ['--att-sky' as string]: '#F1E4B8',
+        ['--att-ground' as string]: '#6A5A3A',
+        ['--att-edge' as string]: '#25231D',
+        ['--att-tick' as string]: '#766F5E',
+        ['--att-accent' as string]: '#F2C230',
       }}>
       <header className="flex items-center justify-between">
         <h2 className="widget-label">Attitude</h2>
         {!attitude && <span className="pill bg-edge text-ink-3">NO DATA</span>}
       </header>
 
-      <div className="mx-auto my-3 aspect-square w-full min-h-0 max-w-[220px] flex-1">
-        <Horizon attitude={attitude} />
-      </div>
+      {config?.visibleElements?.includes('horizon') !== false && (
+        <div className="mx-auto my-3 aspect-square w-full min-h-0 max-w-[220px] flex-1">
+          <Horizon attitude={attitude} />
+        </div>
+      )}
 
-      <div className="grid grid-cols-3 gap-2">
+      {config?.visibleElements?.includes('readouts') !== false && <div className="grid grid-cols-3 gap-2">
         <Readout label="Roll" value={attitude ? `${Math.round(toDeg(attitude.roll))}\u00B0` : DASH} />
         <Readout label="Pitch" value={attitude ? `${Math.round(toDeg(attitude.pitch))}\u00B0` : DASH} />
         <Readout label="Yaw" value={attitude ? `${headingDeg(attitude.yaw)}\u00B0` : DASH} />
-      </div>
+      </div>}
     </section>
   );
 }

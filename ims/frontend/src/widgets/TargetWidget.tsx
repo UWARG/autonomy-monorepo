@@ -116,11 +116,11 @@ export default function TargetWidget({
     <section
       className="widget flex h-full min-h-[120px] flex-col p-4"
       style={{
-        ['--tgt-map' as string]: '#EDF1F7',
-        ['--tgt-grid' as string]: '#C7D0DE',
-        ['--tgt-ink3' as string]: '#6B7688',
-        ['--tgt-drone' as string]: '#3B6FD4',
-        ['--tgt-target' as string]: '#1FA463',
+        ['--tgt-map' as string]: '#F7F5EE',
+        ['--tgt-grid' as string]: '#D8D1BC',
+        ['--tgt-ink3' as string]: '#766F5E',
+        ['--tgt-drone' as string]: '#F2C230',
+        ['--tgt-target' as string]: '#6E7F3A',
       }}
     >
       <header className="flex items-center justify-between gap-4">

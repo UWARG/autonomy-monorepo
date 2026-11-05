@@ -39,16 +39,16 @@ function CommandButton({
 }) {
   const toneClass =
     tone === 'warn'
-      ? 'text-warn'
+      ? 'ims-button-warn'
       : tone === 'bad'
-        ? 'text-bad'
-        : 'text-ink-2';
+        ? 'ims-button-danger'
+        : 'ims-button-success';
   return (
     <button
       type="button"
       disabled
       title="Mission commands aren't wired yet"
-      className={`flex-1 rounded-md border border-edge bg-card/60 py-2 text-[13px] font-semibold ${toneClass} opacity-40 cursor-not-allowed`}
+      className={`ims-button ${toneClass} flex-1 rounded-md py-2 text-[13px] font-semibold opacity-60 cursor-not-allowed`}
     >
       {label}
     </button>
@@ -65,7 +65,7 @@ export default function ScriptWidget({
   const pct = wp ? (wp.current / wp.total) * 100 : null;
 
   return (
-    <section className="widget flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
+    <section className="widget widget-overflow flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-baseline gap-2">
           <h2 className="widget-label">Mission Script</h2>
