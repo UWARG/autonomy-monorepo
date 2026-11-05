@@ -75,8 +75,11 @@ class RosbagRecorder:
                 *(self.topics or ("--all",)),
             ]
             if self.exclude_topics:
-                pattern = "^(" + "|".join(re.escape(topic) for topic in self.exclude_topics) + ")$"
-                arguments.extend(["--exclude", pattern])
+                if os.environ.get("ROS_DISTRO", "") == "humble":
+                    pattern = "^(" + "|".join(re.escape(topic) for topic in self.exclude_topics) + ")$"
+                    arguments.extend(["--exclude", pattern])
+                else:
+                    arguments.extend(["--exclude-topics", *self.exclude_topics])                
             self._process = subprocess.Popen(
                 arguments, stdin=subprocess.DEVNULL, stdout=self._log,
                 stderr=subprocess.STDOUT, start_new_session=True,
