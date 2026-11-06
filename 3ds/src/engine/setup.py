@@ -26,6 +26,7 @@ setup(
         "console_scripts": [
             "manager = engine.manager:main",
             "heartbeat = engine.heartbeat_node:main",
+            "setpoint_link = engine.setpoint_link_node:main",
         ],
     },
 )
