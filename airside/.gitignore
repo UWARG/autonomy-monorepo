@@ -3,4 +3,6 @@ install/
 log/
 data/
 .env
+experiments/obstacle_avoidance/captures/
+experiments/obstacle_avoidance/artifacts/
 

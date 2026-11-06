@@ -3,7 +3,11 @@ from itertools import pairwise
 
 import pytest
 
-from obstacle_avoidance import TrafficAircraft, traffic_to_obstacles
+from obstacle_avoidance import (
+    TrafficAircraft,
+    live_traffic_buffer_m,
+    traffic_to_obstacles,
+)
 
 LAT = 43.0
 LON = -80.0
@@ -44,15 +48,37 @@ def test_no_traffic_is_no_obstacles() -> None:
 
 def test_altitude_band_filters_irrelevant_aircraft() -> None:
     assert convert(aircraft(altitude_agl_m=30.0)) == ()
-    assert len(convert(aircraft(altitude_agl_m=20.0), altitude_band_m=(10.0, 25.0))) == 1
+    assert (
+        len(convert(aircraft(altitude_agl_m=20.0), altitude_band_m=(10.0, 25.0))) == 1
+    )
+
+
+def test_live_mode_keeps_all_altitudes_and_adds_age_speed_buffer() -> None:
+    far_above = aircraft(altitude_agl_m=80.0, speed_mps=4.0, horizontal_keep_away_m=3.0)
+    obstacles = convert(far_above, age_s=1.0, live_buffer=True, all_altitudes=True)
+
+    assert obstacles
+    assert all(item.radius_m == pytest.approx(3.0 + 13.75) for item in obstacles)
+    assert convert(far_above, age_s=1.0, live_buffer=True) == ()
+
+
+def test_live_buffer_has_five_metre_floor_and_rejects_invalid_values() -> None:
+    assert live_traffic_buffer_m(0.0, 0.0) == 5.0
+    assert live_traffic_buffer_m(4.0, 1.0) == pytest.approx(13.75)
+    with pytest.raises(ValueError, match="INVALID_TRAFFIC_BUFFER_INPUT"):
+        live_traffic_buffer_m(math.nan, 0.0)
 
 
 @pytest.mark.parametrize(
     ("heading_deg", "east_sign", "north_sign"),
     [(0.0, 0, 1), (90.0, 1, 0), (180.0, 0, -1), (270.0, -1, 0)],
 )
-def test_true_heading_maps_to_enu(heading_deg: float, east_sign: int, north_sign: int) -> None:
-    current = convert(aircraft(speed_mps=1.0, heading_deg=heading_deg), age_s=1.0)[0].center
+def test_true_heading_maps_to_enu(
+    heading_deg: float, east_sign: int, north_sign: int
+) -> None:
+    current = convert(aircraft(speed_mps=1.0, heading_deg=heading_deg), age_s=1.0)[
+        0
+    ].center
 
     for value, sign in ((current.x, east_sign), (current.y, north_sign)):
         if sign == 0:

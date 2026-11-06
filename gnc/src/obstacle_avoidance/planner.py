@@ -82,15 +82,18 @@ class BendyRuler2D:
         goal_distance = distance(request.start, request.goal)
         if goal_distance <= self.config.goal_tolerance_m:
             self.reset()
+            nearby = clearance_field or CircularObstacleField.from_snapshot(
+                request.obstacles
+            )
+            clearance_m = nearby.point_clearance(request.goal)
+            if clearance_m < self.config.clearance_margin_m:
+                return PlanResult.no_path(NoPathReason.BLOCKED)
             return PlanResult(
                 status=PlanStatus.PATH_FOUND,
                 waypoint=request.goal,
                 second_waypoint=request.goal,
                 heading_rad=None,
-                minimum_clearance_m=(
-                    clearance_field
-                    or CircularObstacleField.from_snapshot(request.obstacles)
-                ).point_clearance(request.goal),
+                minimum_clearance_m=clearance_m,
             )
 
         field = clearance_field or CircularObstacleField.from_snapshot(

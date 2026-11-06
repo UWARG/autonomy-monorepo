@@ -59,6 +59,19 @@ def test_fully_blocked_start_returns_no_path() -> None:
     assert result.reason is NoPathReason.BLOCKED
 
 
+def test_near_goal_does_not_report_success_inside_keep_away() -> None:
+    plan_request = PlanRequest(
+        start=Point2D(0.0, 0.0),
+        goal=Point2D(0.1, 0.0),
+        obstacles=ObstacleSnapshot((CircleObstacle(Point2D(0.1, 0.0), 1.0),), 10.0),
+        now_s=10.0,
+    )
+    result = BendyRuler2D().plan(plan_request)
+
+    assert result.status is PlanStatus.NO_PATH
+    assert result.reason is NoPathReason.BLOCKED
+
+
 def test_symmetric_detour_is_deterministically_counter_clockwise() -> None:
     obstacle = CircleObstacle(Point2D(5.0, 0.0), 1.5)
     headings = [

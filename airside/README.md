@@ -126,15 +126,21 @@ MAVROS setpoints. At 10 Hz it runs gnc's `obstacle_avoidance.ObstacleAvoider`
 (see [gnc/README.md](../gnc/README.md#obstacle-avoidance)) on the target, the
 GPS fix and the latest `/aeac/traffic`, and publishes the avoider's next safe
 point as a position setpoint (the target itself once within 1 m).
+Because the setpoint is position-only, actual horizontal speed is governed by
+the flight controller's Guided speed parameter (`WP_SPD` or legacy
+`WPNAV_SPEED`), not by `ObstacleAvoider.horizontal_speed_mps` alone.
 
 `FlyToWaypoint` sends the stretch of lap route around the target as `path`,
 and the controller aims ahead along a centripetal Catmull-Rom spline through it
 (`navigation/spline_path.py`). It aims `PATH_LOOKAHEAD_M` ahead on straights, and
 keeps aiming at the next waypoint while closing on it until within `CORNER_LOOKAHEAD_M`.
 
-It fails closed. Missing, stale (over 2.5 s), unhealthy or disconnected
-traffic, a stale GPS fix or altitude, or no safe path holds the drone at the
-position where the hold began. Nothing is published unless the drone is armed
+It fails closed. Missing, stale (over 1.5 s), unhealthy or disconnected
+traffic, an unconfirmed own-aircraft index, a stale GPS fix or altitude, or no
+safe path holds the drone at the position where the hold began. A persistent
+blocked route or traffic predicted to cross that hold point sends a MAVLink
+pilot-takeover warning; holding is not itself collision avoidance. The
+controller replans when fresh snapshots arrive. Nothing is published unless the drone is armed
 in GUIDED. If the engine stops sending targets for 1.5 s, it holds once where
 the drone is and then stops publishing.
 
@@ -143,6 +149,8 @@ the drone is and then stops publishing.
 | `/position_controller/target` | `airside_interfaces/PositionTarget` | subscribe | Target `lat`, `lon` and relative `alt` (m), plus an optional `path` through it (with the target at `target_index`) to fly smoothly |
 | `/aeac/traffic` | `airside_interfaces/TrafficSnapshot` | subscribe | AEAC traffic to avoid |
 | `/mavros/setpoint_raw/global` | `mavros_msgs/GlobalPositionTarget` | publish | Position-only GUIDED setpoint, relative-altitude frame |
+| `/position_controller/avoidance_status` | `std_msgs/String` | publish | 1 Hz JSON status with hold reason, snapshot age, and raw/expanded keep-away radii |
+| `/mavros/statustext/send` | `mavros_msgs/StatusText` | publish | Pilot takeover warning when a hold may be unsafe or a route remains blocked |
 
 #### Adding a behavior
 
