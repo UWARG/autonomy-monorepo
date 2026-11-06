@@ -113,6 +113,9 @@ but it is **not yet approved for a live props-on AEAC flight test**.
   later held on `STALE_TRAFFIC` after the finite capture ended. The minimum
   measured margin outside the raw 5 m keep-away was 6.816 m. A rosbag and
   summary were saved under the ignored `artifacts/replay-WMfRPwH5/` directory.
+  At replay start, the route-leg origin was about 12.85 m from moving index 1,
+  inside its nominal 14.75 m expanded radius (5 m raw keep-away plus 9.75 m
+  live buffer). This is consistent with the immediate conflict hold.
   This is a failed goal-completion test, not a qualified avoidance pass; the
   test-only index does not confirm our real aircraft identity.
 
