@@ -62,7 +62,7 @@ identify a moving aircraft index whose keep-away plus live buffer intersects
 the route. It reports the matching leg, capture interval range, and whether
 there is enough lead-in and duration to replay a complete leg. Use a
 confirmed `AEAC_OWN_AIRCRAFT_INDEX`; the tool does not infer our index.
-If Sophie's server test uses a different course, pass that course's waypoint
+If the server test uses a different course, pass that course's waypoint
 YAML to both commands.
 
 ```bash
