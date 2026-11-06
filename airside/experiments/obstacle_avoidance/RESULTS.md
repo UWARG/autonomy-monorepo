@@ -1,7 +1,7 @@
 # Moving traffic readiness results
 
-Test date: 2026-11-04. Branch base: #232 at
-`66e86706a782520ce161fec412e87c623aab555a`.
+Test date: 2026-11-04 through 2026-11-05. Branch base: #232 at
+`7c521c9596bb1007181b74e84b73d2474ba638a0`.
 
 ## Completed
 
@@ -48,10 +48,12 @@ but it is **not yet approved for a live props-on AEAC flight test**.
 - Added route matching and timing-preserving SITL replay for receive-only
   traffic JSONL. A generated crossing track intersected the first configured
   waypoint leg and was replayed on a fresh SITL boot.
-- The generated-track smoke test passed: 38 snapshots replayed at
-  0.998–1.027 s intervals, FCU speed readback 1.5 m/s, observed peak
-  1.520 m/s, minimum margin 12.245 m outside the raw keep-away, one setpoint
-  owner, and the leg goal reached after yielding to crossing traffic.
+- After rebasing onto #232's Catmull–Rom spline update, the generated-track
+  smoke test passed again: 36 snapshots replayed at 0.999–1.009 s intervals,
+  FCU speed readback 1.5 m/s, observed peak 1.513 m/s, minimum margin
+  11.959 m outside the raw keep-away, one setpoint owner, and the leg goal
+  reached after yielding to crossing traffic. The rebuilt Airside image also
+  passed all 70 `colcon test` checks.
 - A 180 s receive-only AEAC capture then succeeded without transmitting any
   telemetry: 184 healthy snapshots over 178.134 s (mean interval 0.973 s,
   median 0.987 s). Every snapshot contained moving indices 0 and 1. Both

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Kept LF-only via .gitattributes for execution from Windows worktrees.
 # Isolated ArduCopter + #232 position-controller SITL test; one scenario per run.
 set -euo pipefail
 
