@@ -60,14 +60,40 @@ but it is **not yet approved for a live props-on AEAC flight test**.
   reported 15 m/s and a 30 m horizontal keep-away; index 0 was at 50 m AGL
   and index 1 at 80 m AGL. One interval was under 0.5 s and 18 exceeded
   1.2 s, so 1 Hz is an expected cadence rather than a hard latency bound.
-- The checked-in Airside route is near Waterloo, while both captured tracks
-  are near Medicine Hat. The matcher therefore correctly returned
-  `NO_MOVING_ROUTE_MATCH`. The CONOPS says the prescribed 3–5 km lap course
-  is supplied shortly before the event; its flight-boundary coordinates are
-  not a substitute for that course. Sophie's test-course waypoints have not
-  been found in this repository or its remote branches.
-- Consequently the real server connection and moving traffic are verified,
-  but the claim that Sophie's obstacle crosses the intended route is still
-  **incomplete**. Three real-capture SITL trials cannot run until the matching
-  course waypoint YAML (and, for live autonomy, our confirmed aircraft
-  index) are available.
+- The checked-in Airside route is near Waterloo, while both tracks in this
+  first capture were near Medicine Hat. The matcher therefore correctly
+  returned `NO_MOVING_ROUTE_MATCH`. Later server-configuration screenshots
+  supplied the Waterloo aircraft-2 geometry described below, but aircraft 2
+  still has not appeared in the live WebSocket traffic feed.
+
+## Sophie aircraft 2 check (2026-11-06)
+
+- The server configuration screenshots identify the new blue obstacle as
+  aircraft 2, moving at 5 m/s and 10 m AGL between
+  `(43.433992, -80.577849)` and `(43.433916, -80.577873)`. Against the
+  checked-in three-point Waterloo lap, its transit segment comes within
+  0.037 m of route segment 0, so the configured paths do cross.
+- A new authenticated 60 s receive-only capture produced 57 healthy moving
+  snapshots at 0.842–1.218 s intervals. Every snapshot contained only
+  aircraft 0 and 1 from the Medicine Hat scenario; aircraft 2 appeared zero
+  times and no parser problem was reported. The client accepts indices
+  0–255 and does not filter index 2. This means aircraft 2 is configured in
+  the UI but is not currently emitted by this token/endpoint's live traffic
+  feed.
+- A screenshot-derived 1 Hz mock was replayed using the exact aircraft-2
+  transit points, speed and altitude. Its keep-away is not visible in the
+  screenshot, so 30 m and 5 m were tested only as explicitly provisional
+  values. At 30 m, the route-leg start is already inside the raw exclusion
+  zone and the controller correctly held. At 5 m, the conservative released
+  code stayed 11.805 m outside the raw keep-away but did not complete the leg;
+  it yielded to the continuously crossing traffic and requested pilot
+  takeover.
+- An experimental reduction of the live buffer briefly entered the
+  provisional 5 m raw keep-away by 0.027 m. That result was rejected and the
+  buffer change was fully reverted. No unqualified safety relaxation was
+  committed.
+
+The next server-side requirement is to activate aircraft 2 on the same
+WebSocket environment (or provide the correct test endpoint/session) and
+expose its actual horizontal/vertical keep-away. Only then can the real track
+replace the provisional mock and run the required three SITL trials.
