@@ -74,7 +74,7 @@ root README.
 
 - `Utils`: Shared enums and dataclasses used across all Airside modules.
 
-- `SITL-Plus` : Simulation for airside testing
+- `sitl-plus` : Simulation for airside testing
 
 - `airside`: ROS 2 Humble workspace for the airside architecture. See [airside/README.md](airside/README.md).
 

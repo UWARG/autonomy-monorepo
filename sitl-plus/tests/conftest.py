@@ -1,4 +1,4 @@
-"""Pytest fixtures for SITL-Plus tests."""
+"""Pytest fixtures for sitl-plus tests."""
 
 from pathlib import Path
 

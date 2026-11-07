@@ -1,4 +1,4 @@
-name = "SITL-Plus"
+name = "sitl-plus"
 description = "WARG's SITL archtecture"
 
 depends_on = []
