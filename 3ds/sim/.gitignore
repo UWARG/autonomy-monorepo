@@ -1,0 +1,5 @@
+evidence/
+mav.tlog*
+mav.parm
+*.log
+*.pid

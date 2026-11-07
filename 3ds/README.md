@@ -244,3 +244,24 @@ def setup(self, **kwargs):
 ```
 
 Use `self._node` for all ROS 2 calls (subscriptions, publishers, service clients, action clients, timers).
+
+## Read-only drone dashboard
+
+The React dashboard runs separately with Node 22+ and `npm run dev`. The regular
+ROS launch supplies rosbridge/rosapi and companion temperature telemetry; its
+existing mission, MAVROS and camera nodes remain unchanged. Docker serves ROS
+only and does not package or host the webpage.
+
+```bash
+cd 3ds/dashboard  # from the repository root
+npm ci
+npm run dev
+# Live: http://127.0.0.1:5173/
+# Demo without ROS: http://127.0.0.1:5173/?mode=mock
+```
+
+For airside hosting, run the Node server on the companion computer and access it
+through the network or an SSH tunnel. Running it only on a laptop is a ground-side
+test setup. See [dashboard/README.md](dashboard/README.md) for connection settings,
+onboard setup and checks, and [sim/README.md](sim/README.md) for optional simulation.
+`warg run 3ds test` runs `dashboard/check.sh`.

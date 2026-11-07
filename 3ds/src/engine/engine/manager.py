@@ -4,6 +4,7 @@ Entry-point for the 3DS behavior-tree engine.
 
 from __future__ import annotations
 
+import json
 import sys
 
 import py_trees
@@ -16,6 +17,8 @@ from engine.behaviors.navigation.takeoff import Takeoff
 from engine.constants import TICK_PERIOD_MS, UNICODE_TREE_DEBUG
 from engine.subtrees.land import create_land_subtree
 from engine.subtrees.setpoints import create_setpoints_subtree
+from engine.telemetry import snapshot
+from std_msgs.msg import String
 
 
 def create_root() -> py_trees.behaviour.Behaviour:
@@ -91,6 +94,17 @@ def main(args: list[str] | None = None) -> None:
         rclpy.try_shutdown()
         return
 
+    # Observer only: this timer never ticks the tree or changes mission state.
+    telemetry_publisher = tree.node.create_publisher(String, "/dashboard/tree", 1)
+
+    def publish_snapshot():
+        try:
+            payload = snapshot(root, tree.node.get_clock().now().nanoseconds / 1e9)
+            telemetry_publisher.publish(String(data=json.dumps(payload, allow_nan=False)))
+        except Exception as error:  # Monitoring must not interrupt the mission.
+            tree.node.get_logger().warning(f"Tree telemetry unavailable: {error}")
+
+    tree.node.create_timer(1.0, publish_snapshot)
     tree.tick_tock(period_ms=TICK_PERIOD_MS)
 
     try:
