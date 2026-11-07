@@ -13,9 +13,10 @@ esac
 capture_in_container=""
 route_in_container=""
 own_index=""
+replay_start_s=""
 if [[ "$scenario" == replay ]]; then
     [[ -n "${2:-}" && -n "${3:-}" ]] || {
-        echo "usage: run_sitl_moving.sh replay <capture.jsonl> <confirmed-own-index> [route.yaml]" >&2
+        echo "usage: run_sitl_moving.sh replay <capture.jsonl> <confirmed-own-index> --start-s <seconds> [--route route.yaml]" >&2
         exit 2
     }
     own_index="$3"
@@ -24,7 +25,31 @@ if [[ "$scenario" == replay ]]; then
         exit 2
     }
     capture_path="$(realpath "$2")"
-    route_path="$(realpath "${4:-$repo_root/airside/src/engine/config/waypoints.yaml}")"
+    route_path="$repo_root/airside/src/engine/config/waypoints.yaml"
+    shift 3
+    while (( $# )); do
+        case "$1" in
+            --start-s)
+                [[ $# -ge 2 ]] || { echo "--start-s requires a value" >&2; exit 2; }
+                replay_start_s="$2"
+                shift 2
+                ;;
+            --route)
+                [[ $# -ge 2 ]] || { echo "--route requires a value" >&2; exit 2; }
+                route_path="$2"
+                shift 2
+                ;;
+            *)
+                echo "unknown replay option: $1" >&2
+                exit 2
+                ;;
+        esac
+    done
+    [[ "$replay_start_s" =~ ^[0-9]+([.][0-9]+)?$ ]] || {
+        echo "--start-s must be a non-negative number" >&2
+        exit 2
+    }
+    route_path="$(realpath "$route_path")"
     for file_path in "$capture_path" "$route_path"; do
         [[ -f "$file_path" && "$file_path" == "$repo_root/"* ]] || {
             echo "replay input must be an existing file inside this worktree" >&2
@@ -75,6 +100,7 @@ sleep 3
     -e CAPTURE_FILE="$capture_in_container" \
     -e ROUTE_FILE="$route_in_container" \
     -e OWN_AIRCRAFT_INDEX="$own_index" \
+    -e REPLAY_START_S="$replay_start_s" \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
     warg/airside:latest bash -lc '
@@ -100,6 +126,7 @@ sleep 3
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_server_replay.py \
                 --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
                 --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
+                --replay-start-s "$REPLAY_START_S" \
                 --summary /artifacts/summary.json
         else
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \

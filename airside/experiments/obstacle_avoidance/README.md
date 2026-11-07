@@ -45,7 +45,7 @@ autonomous live avoidance, even though read-only capture can run without it.
 docker run --rm --network host --env-file airside/.env \
   -v "$PWD":/repo -w /repo warg/airside:latest \
   python3 airside/experiments/obstacle_avoidance/capture_server_traffic.py \
-  --duration-s 180 \
+  --duration-s 240 \
   --output airside/experiments/obstacle_avoidance/captures/receive-only.jsonl
 ```
 
@@ -55,12 +55,12 @@ server during this read-only test. The official server may provide no useful
 traffic until a team flight is active; if so, record the gap rather than
 claiming that mock traffic came from AEAC.
 
-## Match a captured track to the route and replay it
+## Match a captured track to the full route and replay it
 
 The matcher uses the Airside lap waypoints, including the closing leg, to
 identify a moving aircraft index whose keep-away plus live buffer intersects
 the route. It reports the matching leg, capture interval range, and whether
-there is enough lead-in and duration to replay a complete leg. Use a
+there is enough data to replay the complete closed route. Use a
 confirmed `AEAC_OWN_AIRCRAFT_INDEX`; the tool does not infer our index.
 If the server test uses a different course, pass that course's waypoint
 YAML to both commands.
@@ -69,21 +69,27 @@ YAML to both commands.
 python3 airside/experiments/obstacle_avoidance/server_traffic_replay.py \
   --capture airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
   --route airside/src/engine/config/waypoints.yaml \
-  --own-aircraft-index <confirmed-index>
+  --own-aircraft-index <confirmed-index> \
+  --replay-start-s 0
 
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh replay \
   airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
-  <confirmed-index>
+  <confirmed-index> --start-s 0
 ```
 
-Run the replay three times with a fresh SITL boot each time. The runner maps
-the matched route leg and captured aircraft into the same local SITL frame
-and publishes snapshots at their original relative times. Continuous
+Preselect three capture start times with enough data remaining for a complete
+lap, then run each one with a fresh SITL boot. Do not choose a start time after
+seeing whether it passes. The runner starts at the first Airside route point,
+flies each remaining point and closes the lap, while publishing captured
+traffic at its original relative times. For example, a long capture can be
+tested with `--start-s 0`, `--start-s 60`, and `--start-s 120`. Continuous
 simulator truth is interpolated between captured positions for distance
 measurement. This is a replay model, not ground truth of the original AEAC
 simulation between 1 Hz updates. The JSON summary records traffic cadence,
 the 1.5 m/s FCU readback, observed speed, raw keep-away margin, hold reasons,
-and pilot alerts. A persistently blocked leg fails goal completion; inspect
+and pilot alerts. Failed runs retain the same metrics, the completed waypoint
+count, setpoint publisher list, and rosbag. A persistently blocked route fails
+goal completion; inspect
 its hold and takeover evidence rather than treating hover as a successful
 avoidance run.
 

@@ -12,6 +12,8 @@ from pathlib import Path
 import yaml
 
 EARTH_RADIUS_M = 6_371_000.0
+NOMINAL_ROUTE_SPEED_MPS = 1.5
+REPLAY_COMPLETION_MARGIN_S = 20.0
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,21 @@ def load_route(path: Path) -> tuple[tuple[float, float], ...]:
     if len(points) < 2:
         raise ValueError("route needs at least two waypoints")
     return tuple(points)
+
+
+def load_route_altitudes(path: Path) -> tuple[float, ...]:
+    """Load the relative-altitude target for every route waypoint."""
+
+    source = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(source, dict) or not isinstance(source.get("waypoints"), list):
+        raise ValueError("route must contain a waypoints list")
+    altitudes = tuple(
+        _number(waypoint.get("alt"), "route altitude")
+        for waypoint in source["waypoints"]
+    )
+    if len(altitudes) < 2:
+        raise ValueError("route needs at least two waypoints")
+    return altitudes
 
 
 def load_capture(path: Path) -> tuple[Frame, ...]:
@@ -161,11 +178,63 @@ def _segment_distance(
     )
 
 
+def route_length_m(route: tuple[tuple[float, float], ...]) -> float:
+    """Length of one closed lap through the configured route."""
+
+    return sum(
+        math.hypot(*east_north(start, end))
+        for start, end in zip(route, route[1:] + route[:1])
+    )
+
+
+def required_replay_duration_s(
+    route: tuple[tuple[float, float], ...],
+) -> float:
+    """Minimum capture window for a nominal lap plus avoidance time."""
+
+    return route_length_m(route) / NOMINAL_ROUTE_SPEED_MPS + REPLAY_COMPLETION_MARGIN_S
+
+
+def validate_replay_window(
+    frames: tuple[Frame, ...],
+    route: tuple[tuple[float, float], ...],
+    start_s: float,
+) -> float:
+    """Validate an explicitly selected, timing-preserving full-lap window."""
+
+    if not math.isfinite(start_s) or start_s < frames[0].time_s:
+        raise ValueError("replay start must be within the capture")
+    required_s = required_replay_duration_s(route)
+    available_s = frames[-1].time_s - start_s
+    if available_s < required_s:
+        raise ValueError(
+            f"capture has {available_s:.1f}s after replay start; "
+            f"full route requires at least {required_s:.1f}s"
+        )
+    return start_s + required_s
+
+
+def mission_path_indices(
+    route_count: int, entry_index: int, *, next_lap: bool = True
+) -> tuple[tuple[int, ...], int]:
+    """Mirror the engine's closed-lap path window for one route entry."""
+
+    if route_count < 2 or not 1 <= entry_index <= route_count:
+        raise ValueError("invalid route entry")
+    last = route_count + 2 if next_lap else route_count
+    first = -1 if entry_index >= 1 else 0
+    entries = range(max(entry_index - 2, first), min(entry_index + 2, last) + 1)
+    indices = tuple(entry % route_count for entry in entries)
+    return indices, entry_index - entries.start
+
+
 def match_route(
     frames: tuple[Frame, ...],
     route: tuple[tuple[float, float], ...],
     *,
     own_index: int | None = None,
+    start_s: float | None = None,
+    end_s: float | None = None,
 ) -> RouteMatch | None:
     """Find a moving index whose captured position intersects an inflated route corridor."""
 
@@ -173,6 +242,10 @@ def match_route(
     sightings: dict[int, int] = {}
     candidates = []
     for frame in frames:
+        if start_s is not None and frame.time_s < start_s:
+            continue
+        if end_s is not None and frame.time_s > end_s:
+            continue
         for aircraft in frame.aircraft:
             if aircraft.index == own_index or aircraft.speed_mps <= 0.1:
                 continue
@@ -223,18 +296,6 @@ def match_route(
     )
 
 
-def replay_start_s(match: RouteMatch, frames: tuple[Frame, ...]) -> float:
-    """Choose a capture window that retains the original relative timestamps."""
-
-    lead_s = match.along_segment_m / 1.5
-    start_s = max(0.0, match.event_time_s - lead_s)
-    if match.event_time_s < lead_s - 2.0:
-        raise ValueError("capture lacks lead-in before route encounter")
-    if frames[-1].time_s - start_s < match.segment_length_m / 1.5 + 5.0:
-        raise ValueError("capture ends before the route leg can complete")
-    return start_s
-
-
 def truth_at(
     frames: tuple[Frame, ...], elapsed_s: float, index: int
 ) -> Aircraft | None:
@@ -268,19 +329,46 @@ def main() -> int:
     parser.add_argument("--capture", required=True, type=Path)
     parser.add_argument("--route", required=True, type=Path)
     parser.add_argument("--own-aircraft-index", type=int)
+    parser.add_argument("--replay-start-s", type=float, default=0.0)
     args = parser.parse_args()
     frames = load_capture(args.capture)
     route = load_route(args.route)
-    match = match_route(frames, route, own_index=args.own_aircraft_index)
+    try:
+        replay_end_s = validate_replay_window(frames, route, args.replay_start_s)
+    except ValueError as error:
+        print(
+            json.dumps(
+                {
+                    "result": "CAPTURE_INSUFFICIENT_FOR_REPLAY",
+                    "reason": str(error),
+                    "frames": len(frames),
+                    "capture_duration_s": frames[-1].time_s,
+                    "route_length_m": route_length_m(route),
+                    "required_duration_s": required_replay_duration_s(route),
+                    "replay_start_s": args.replay_start_s,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2
+    match = match_route(
+        frames,
+        route,
+        own_index=args.own_aircraft_index,
+        start_s=args.replay_start_s,
+        end_s=replay_end_s,
+    )
     if match is None:
         print(json.dumps({"result": "NO_MOVING_ROUTE_MATCH", "frames": len(frames)}))
         return 2
-    result = {"result": "MATCH", **match.__dict__}
-    try:
-        result["replay_start_s"] = replay_start_s(match, frames)
-    except ValueError as error:
-        result["result"] = "CAPTURE_INSUFFICIENT_FOR_REPLAY"
-        result["reason"] = str(error)
+    result = {
+        "result": "MATCH",
+        **match.__dict__,
+        "replay_start_s": args.replay_start_s,
+        "replay_end_s": replay_end_s,
+        "route_length_m": route_length_m(route),
+        "required_duration_s": required_replay_duration_s(route),
+    }
     print(json.dumps(result, sort_keys=True))
     return 0 if result["result"] == "MATCH" else 2
 

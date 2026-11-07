@@ -58,6 +58,8 @@ class Scenario(Node):
         self.sequence = time.time_ns()
         self.setpoint_count = 0
         self.status_reasons: set[str] = set()
+        self.max_traffic_age_s = 0.0
+        self.max_expanded_radii: dict[int, dict[str, float]] = {}
         self.alerts: list[str] = []
         self.min_raw_clearance_m = math.inf
         self.min_raw_clearance_event: dict[str, object] | None = None
@@ -155,7 +157,20 @@ class Scenario(Node):
         self.setpoint_count += 1
 
     def _status(self, msg: String) -> None:
-        self.status_reasons.add(json.loads(msg.data)["reason"])
+        payload = json.loads(msg.data)
+        self.status_reasons.add(payload["reason"])
+        age_s = payload.get("traffic_age_s")
+        if isinstance(age_s, (int, float)) and math.isfinite(age_s):
+            self.max_traffic_age_s = max(self.max_traffic_age_s, age_s)
+        for radius in payload.get("radii", []):
+            index = int(radius["aircraft_index"])
+            current = self.max_expanded_radii.get(index)
+            expanded_m = float(radius["expanded_radius_m"])
+            if current is None or expanded_m > current["max_expanded_radius_m"]:
+                self.max_expanded_radii[index] = {
+                    "raw_radius_m": float(radius["raw_radius_m"]),
+                    "max_expanded_radius_m": expanded_m,
+                }
 
     def _alert(self, msg: StatusText) -> None:
         self.alerts.append(msg.text)
@@ -417,6 +432,8 @@ class Scenario(Node):
             "min_raw_clearance_event": self.min_raw_clearance_event,
             "setpoint_count": self.setpoint_count,
             "status_reasons": sorted(self.status_reasons),
+            "max_traffic_age_s": round(self.max_traffic_age_s, 3),
+            "max_expanded_radii": self.max_expanded_radii,
             "pilot_alerts": self.alerts,
             "final_position_m": tuple(round(value, 2) for value in self.position()),
         }
@@ -437,6 +454,8 @@ def main() -> None:
             "result": "FAIL",
             "error": f"{type(error).__name__}: {error}",
             "status_reasons": sorted(node.status_reasons),
+            "max_traffic_age_s": round(node.max_traffic_age_s, 3),
+            "max_expanded_radii": node.max_expanded_radii,
             "min_raw_clearance_m": node.min_raw_clearance_m,
             "min_raw_clearance_event": node.min_raw_clearance_event,
             "final_position_m": tuple(round(value, 2) for value in node.position()),

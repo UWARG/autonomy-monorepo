@@ -1,33 +1,56 @@
 # Moving traffic flight-test results
 
-Status on 2026-11-06: **PR #237 is ready for review, but live obstacle avoidance is not ready for a props-on flight test.** This branch is based on #232 at `7c521c9`.
+Status on 2026-11-07: **PR #237 is ready for code review, but live obstacle
+avoidance is not ready for a props-on flight test.** This branch is based on
+#232 at `7c521c9`.
 
 ## Verified
 
-- `gnc` and replay tests: 149 passed. Rebuilt Airside image: 70 `colcon test` checks passed.
-- Mock SITL: moving crossing 3/3, plus clear, multi-aircraft, turn, data dropout, blocked route, and pilot takeover passed. In the moving, multi-aircraft, and turn runs, the FCU speed setting was 1.5 m/s, measured peak was at most 1.527 m/s, and the smallest raw keep-away margin was 13.963 m. Each run had one MAVROS setpoint publisher and saved a rosbag.
-- Generated-track SITL replay: 36 snapshots at about 1 Hz, goal reached, measured peak 1.513 m/s, and raw keep-away margin 11.959 m.
-- The separate #181 static-obstacle regression passed 3/3; its full readiness check passed 5/5.
-- Receive-only AEAC capture after the server scenario changed: 60 valid snapshots at 0.953–1.031 s intervals, with no parser errors and no telemetry sent. Every snapshot contained WebSocket indices 0, 1, and 2. Their coordinates matched the server screenshots:
+- Rebuilt Airside image: 70 `colcon test` checks passed. GNC and replay tests:
+  151 passed. Capture/replay image tests: 7 passed.
+- Mock SITL moving crossing passed 3/3. Clear, multi-aircraft, turn, dropout,
+  blocked-route, pilot-takeover, and generated-track replay tests also passed.
+- Mock runs used a 1.5 m/s FCU setting, measured at most 1.527 m/s, kept at
+  least 13.963 m outside raw keep-away, used one setpoint publisher, and saved
+  rosbags.
+- The separate #181 static-obstacle regression was rerun with an isolated
+  image: static passed 3/3 and the full readiness check passed 5/5.
+- A new 240 s receive-only AEAC capture recorded 231 moving snapshots at
+  0.918-1.110 s source intervals without sending telemetry. Indices 0, 1, and
+  2 were present. Moving index 1 passed within 0.188 m of route segment 2.
+- The replay tool now starts at the first route point and commands all three
+  waypoints in order, including the closing leg. It no longer starts on the
+  automatically selected encounter leg. Failed runs retain all safety metrics
+  and a rosbag.
 
-  | WebSocket index | Traffic track | Altitude | Speed |
-  | --- | --- | ---: | ---: |
-  | 0 | Three-point triangle | 50 m AGL | 5 m/s |
-  | 1 | Two-point moving track | 10 m AGL | 5 m/s |
-  | 2 | Stationary hold | 10 m AGL | 0 m/s |
+## Real-track full-route SITL: not passed
 
-  All three reported 5 m horizontal and 30 m vertical keep-away. The 50 m triangle is a server traffic track; the checked-in Airside route is a different 10 m triangle. The route matcher placed moving index 1 within 0.188 m of Airside route segment 2.
+Three preselected capture windows at 0, 60, and 120 seconds were run with a
+fresh SITL boot. Each window contained a real moving-route encounter. All
+three runs timed out at waypoint 1/3 after repeated crossing-yield and pilot
+takeover states; no run completed the route.
 
-## Real-track SITL: not passed
+| Start | Result | Peak speed | Minimum margin outside raw keep-away | Traffic |
+| ---: | --- | ---: | ---: | --- |
+| 0 s | FAIL, waypoint 1/3 | 1.511 m/s | 5.767 m | Fresh |
+| 60 s | FAIL, waypoint 1/3 | 1.505 m/s | 6.820 m | Fresh |
+| 120 s | FAIL, waypoint 1/3 | 1.518 m/s | 3.846 m | Became stale after capture ended |
 
-One diagnostic replay kept all three traffic aircraft by using test-only own index 255. The controller held, requested pilot takeover, and did not reach the route-leg goal. Its smallest measured margin outside the raw keep-away was 6.816 m. At replay start, the route-leg origin was 12.85 m from moving index 1, inside its 14.75 m expanded avoidance radius. The finite capture later became stale, so the controller continued to hold.
-
-The replay saved a rosbag and summary in the ignored `artifacts/replay-WMfRPwH5/` directory. Test-only index 255 does not establish our real aircraft index. This result is a failed goal-completion test despite staying outside the raw keep-away.
+Every run found exactly one MAVROS setpoint publisher and remained outside
+the 5 m raw horizontal keep-away. The fixed route and current traffic scenario
+are therefore safe-hold evidence, not a successful avoidance qualification.
+The runs used diagnostic own index 255; this does not establish the real UAV
+index. Artifacts are stored locally under ignored `artifacts/replay-*` paths.
 
 ## Before live props-on flight
 
-1. Resolve the real-track route blockage without reducing the raw keep-away. Pass three independent timing-preserving SITL replays with goal completion, separation, speed, data freshness, and one setpoint publisher checked.
-2. Confirm our aircraft index. Run the authorized props-off check for both WebSocket connections, WGS84/AGL fields, approximately 1 Hz send and receive rates, and end-to-end latency.
+1. Do not reduce raw keep-away to force a pass. The fixed route needs an
+   approved traffic or route change before goal-completion qualification can
+   pass; until then, keep hold/replan/pilot takeover behavior.
+2. Confirm the real aircraft index and run the authorized props-off check for
+   both WebSocket connections, WGS84/AGL fields, approximately 1 Hz send and
+   receive rates, and end-to-end latency.
 3. Keep the first physical flight at 1 m/s. The 1.5 m/s result is SITL-only.
 
-Earlier captures from the previous server scenario did not match this route. Screenshot-based mock tests used provisional keep-away values; the live capture above supersedes those assumptions. An experimental buffer reduction that breached keep-away was reverted.
+The PR should remain draft for flight-readiness purposes. It can still receive
+code review while the external flight gates remain open.

@@ -8,8 +8,11 @@ from server_traffic_replay import (
     east_north,
     load_capture,
     match_route,
-    replay_start_s,
+    mission_path_indices,
+    required_replay_duration_s,
+    route_length_m,
     truth_at,
+    validate_replay_window,
 )
 
 
@@ -45,7 +48,7 @@ def capture(tmp_path, positions):
 
 
 def test_matches_moving_aircraft_on_route_and_preserves_timing(tmp_path):
-    frames = capture(tmp_path, [10 + 0.5 * index for index in range(45)])
+    frames = capture(tmp_path, [10 + 0.5 * index for index in range(70)])
     route = ((43.0, -80.0), (43.0 + 30 / 111_195, -80.0))
     match = match_route(frames, route, own_index=1)
     assert match is not None
@@ -54,7 +57,7 @@ def test_matches_moving_aircraft_on_route_and_preserves_timing(tmp_path):
     assert match.centerline_distance_m < 0.1
     assert match.min_interval_s == pytest.approx(1.0)
     assert match.max_interval_s == pytest.approx(1.0)
-    assert replay_start_s(match, frames) >= 0.0
+    assert validate_replay_window(frames, route, 0.0) == pytest.approx(60.0, abs=0.1)
     midpoint = truth_at(frames, 15.5, 2)
     assert midpoint is not None
     assert east_north(route[0], (midpoint.lat, midpoint.lon))[1] == pytest.approx(
@@ -89,10 +92,27 @@ def test_no_route_match_when_traffic_is_far_or_is_our_aircraft(tmp_path):
     assert match_route(nearby, route, own_index=2) is None
 
 
-def test_replay_requires_lead_in_and_sufficient_duration(tmp_path):
+def test_replay_requires_enough_data_for_the_complete_route(tmp_path):
     frames = capture(tmp_path, [25] * 10)
     route = ((43.0, -80.0), (43.0 + 30 / 111_195, -80.0))
     match = match_route(frames, route)
     assert match is not None
-    with pytest.raises(ValueError, match="lead-in"):
-        replay_start_s(match, frames)
+    assert route_length_m(route) == pytest.approx(60.0, abs=0.1)
+    assert required_replay_duration_s(route) == pytest.approx(60.0, abs=0.1)
+    with pytest.raises(ValueError, match="full route requires"):
+        validate_replay_window(frames, route, 0.0)
+
+
+def test_match_is_limited_to_preselected_replay_window(tmp_path):
+    frames = capture(tmp_path, [200] * 20 + [10] * 50)
+    route = ((43.0, -80.0), (43.0 + 30 / 111_195, -80.0))
+    assert match_route(frames, route, start_s=0.0, end_s=19.0) is None
+    assert match_route(frames, route, start_s=20.0, end_s=69.0) is not None
+
+
+def test_mission_path_matches_closed_lap_window():
+    assert mission_path_indices(3, 1) == ((2, 0, 1, 2, 0), 2)
+    assert mission_path_indices(3, 2) == ((0, 1, 2, 0, 1), 2)
+    assert mission_path_indices(3, 3) == ((1, 2, 0, 1, 2), 2)
+    with pytest.raises(ValueError, match="invalid route entry"):
+        mission_path_indices(3, 0)
