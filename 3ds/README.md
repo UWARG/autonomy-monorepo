@@ -70,7 +70,7 @@ at `RETURN_ALTITUDE_M` and lands.
 |---|---|---|---|
 | `/mission/setpoint` | `airside_interfaces/Coordinate` | subscribe | Next location to photograph (`lat`, `lon`, relative `alt` in meters, at least `SETPOINT_MIN_ALTITUDE_M`) |
 | `/mission/go_home` | `std_msgs/Empty` | subscribe | Return home and land |
-| `/camera/capture` | `airside_interfaces/CapturePhoto` | service (camera node) | Saves the latest camera frame, tagged with the setpoint and measured position |
+| `/camera/capture` | `airside_interfaces/CapturePhoto` | service (camera node) | Checks the camera frame and saves it only if it passes |
 
 From the ground (or inside the container):
 
@@ -100,6 +100,24 @@ Each camera node start creates `$PHOTO_DATA_DIR/run_<YYYY-MM-DDTHH-MM-SS>/`
 and a `photos.jsonl` index with one record per photo: `stamp`, `file`,
 `setpoint` and `position` (each `lat`, `lon`, `alt`; `position` is NaN if no
 GPS fix was available).
+
+Set `RECTIFIED_IMAGE_TOPIC` in Compose (or the camera node's
+`rectified_image_topic` parameter) to the rectified feed used by the vehicle.
+The node accepts `rgb8`, `bgr8`, and `mono8` images. It does not publish a
+raw image stream. If no topic is configured, it reads the in-process camera
+when the service is called. The default simulator is a black-frame stub,
+so it will be rejected by the quality check.
+
+The camera rejects unavailable, malformed, stale, and low-sharpness frames.
+`max_frame_age_s` defaults to 0.5 seconds for rectified frames;
+`min_sharpness` defaults to 100.0 (variance of the grayscale Laplacian).
+Calibrate the sharpness threshold against the flight camera before deployment.
+A rejection leaves the photo dataset untouched and causes `TakePhoto` to
+return failure. Saved entries include `sharpness`, `frame_stamp_ns` and the
+latest MAVROS attitude sample when available, with its timestamp and signed
+offset from the frame time. The offset indicates how closely the sample
+matches the frame; the camera and IMU are not hardware-synchronized here.
+Rebuild the 3DS image to update both sides of the capture service.
 
 ## Prerequisites
 
@@ -239,7 +257,7 @@ The `BehaviourTree` runner passes `rclpy.Node` as the `node` keyword argument to
 ```python
 def setup(self, **kwargs):
     self._node = kwargs["node"]
-    self._sub = self._node.create_subscription(Image, "/camera/image_raw", self._cb, 10)
+    self._sub = self._node.create_subscription(Image, rectified_topic, self._cb, 10)
     self._pub = self._node.create_publisher(Twist, "/cmd_vel", 10)
 ```
 
