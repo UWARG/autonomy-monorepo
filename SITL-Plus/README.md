@@ -12,7 +12,7 @@ The simulation is split across processes:
 |---|---|---|
 | PyBullet sim (`main.py`) | Docker container | Physics engine, camera & range-finder simulation, Rerun logging |
 | ArduPilot SITL (`sim_vehicle.py`) | Docker container | Flight controller, MAVLink on TCP port 5761 |
-| Rerun Viewer (`uv run rerun`) | Host | Displays logged sensor data and drone pose |
+| Rerun Viewer (`warg run SITL-Plus rerun`) | Host | Displays logged sensor data and drone pose |
 | `rerun_airside.py` | Host | Drives the mission via MAVLink |
 
 Sensor data is simulated in the container and logged to Rerun over gRPC via `host.docker.internal`. UDP ports are still used internally:
@@ -47,15 +47,15 @@ Depth is stored in centimetres (`uint16`) and logged with `meter=100` so Rerun d
 Camera threads and the physics loop run concurrently; scene props (plane, barrels, hoop, etc.) are spawned in `main.py` for visual/ranging targets.
 
 ### Configuring sensors
-Cameras and range finders are defined in `src/sensor_ports.yaml`. This file is mounted into the container as a volume, so you can add or edit sensors and just restart the container (`docker compose up`) without rebuilding the image.
+Cameras and range finders are defined in `src/sensor_ports.yaml`. This file is mounted into the container as a volume, so you can add or edit sensors and just restart the container (`warg run SITL-Plus run`) without rebuilding the image.
 
 ### Visualization (Rerun)
 
 - App id: `SITL-Plus` (`rr.init` in `main.py`)
-- Transport: gRPC to `rerun+http://host.docker.internal:9876/proxy` (viewer on the **host**, `uv run rerun`)
+- Transport: gRPC to `rerun+http://host.docker.internal:9876/proxy` (viewer on the **host**, `warg run SITL-Plus rerun`)
 - Entities: `{port}_rgb_image`, `{port}_depth_map`, range streams, and the `drone` transform
 
-If a saved viewport layout gets stuck, reset the blueprint in the viewer or run `uv run rerun reset` on the host.
+If a saved viewport layout gets stuck, reset the blueprint in the viewer or run `warg run SITL-Plus rerun -- reset` on the host.
 
 ### Why Docker + host split
 
@@ -66,24 +66,30 @@ ArduPilot and the PyBullet model stay in Linux (image build clones ArduPilot and
 Build the image once:
 
 ```bash
-docker compose build
+warg run SITL-Plus setup
 ```
 
 ## Run
 
-terminal 1 — start the Rerun viewer:
+terminal 1 — start the Rerun viewer (host):
 ```bash
-uv run rerun
+warg run SITL-Plus rerun
 ```
 
 terminal 2 — start the container (headless PyBullet + ArduPilot SITL):
 ```bash
-docker compose up
+warg run SITL-Plus run
 ```
 
-terminal 3 — mission controller:
+terminal 3 — mission controller (host):
 ```bash
 warg run SITL-Plus rerun_airside
+```
+
+Stop the container:
+
+```bash
+warg run SITL-Plus compose-down
 ```
 
 ## Local SITL (no Docker)

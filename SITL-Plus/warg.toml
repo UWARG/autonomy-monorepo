@@ -4,11 +4,14 @@ description = "WARG's SITL archtecture"
 depends_on = []
 
 [commands]
-setup = "uv sync"
+setup = "docker compose build"
 build = "uv build"
+run = "docker compose up"
+compose-up = "docker compose up -d"
+compose-down = "docker compose down"
 test = "uv run --extra dev pytest"
-run = "uv run python -m main"
-rerun_airside="uv run python tests/integration_tests/rerun_airside.py"
+rerun = "uv run rerun"
+rerun_airside = "uv run python tests/integration_tests/rerun_airside.py"
 lint = "uv run --extra dev ruff check ."
 
 [ci]
