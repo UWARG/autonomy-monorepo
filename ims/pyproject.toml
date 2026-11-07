@@ -1,7 +1,7 @@
 [project]
 name = "ims"
 version = "0.1.0"
-description = "Intelligent Monitoring System — WebSocket server and React dashboard."
+description = "Intelligent Monitoring System — rosbridge-backed React dashboard."
 license = "MIT"
 requires-python = ">=3.9"
 dependencies = []

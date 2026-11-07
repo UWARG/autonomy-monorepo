@@ -1,11 +1,13 @@
 /**
- * Wire payloads mirror utils/src/messages.py. Envelope: { "type": "<tag>", "payload": {...} }.
+ * Payload shapes the widgets consume. The envelope form described the deleted
+ * WebSocket contract (utils/src/messages.py); live data now arrives as ROS
+ * messages over rosbridge and the widgets map those into these shapes.
  */
 
 export type ConnectionStatus = 'active' | 'degraded' | 'lost';
 
 /**
- * payload for { "type": "connection" }
+ * Link state as the Connection panel and header strip present it.
  */
 export interface ConnectionMessage {
   status: ConnectionStatus;
@@ -14,8 +16,8 @@ export interface ConnectionMessage {
 }
 
 /**
- * payload for { "type": "attitude" }
- * Mirrors AttitudePayload in utils/src/messages.py (the wire contract).
+ * Attitude in the widgets' own terms; AttitudeWidget derives it from
+ * geometry_msgs/PoseStamped.
  */
 export interface AttitudeMessage {
   /** radians;  */
@@ -28,7 +30,7 @@ export interface AttitudeMessage {
 }
 
 /**
- * payload for { "type": "camera" }
+ * Camera frame metadata for the Camera panel (no pixels).
  */
 export interface CameraMessage {
   src?: string;
@@ -38,8 +40,8 @@ export interface CameraMessage {
 }
 
 /**
- * payload for { "type": "position" } — the drone's global position.
- * Mirrors PositionPayload in utils/src/messages.py.
+ * Global position, currently supplied to TargetWidget as a prop; #191 wires the
+ * widget to sensor_msgs/NavSatFix, which does not carry this shape.
  */
 export interface PositionMessage {
   /** degrees */
@@ -49,9 +51,9 @@ export interface PositionMessage {
 }
 
 /**
- * payload for { "type": "target" }
+ * A detected target for the Position / Target panel.
  *
- * PROVISIONAL 
+ * PROVISIONAL
  */
 export interface TargetMessage {
   /** degrees */
@@ -62,19 +64,10 @@ export interface TargetMessage {
 }
 
 /**
- * payload for { "type": "status" } — mission/script state.
- *
+ * Mission/script state for the Mission Script panel.
  */
 export interface StatusMessage {
   task: string;
   state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
   text: string;
-}
-
-/**
- * payload for { "type": "log" }
- *
- */
-export interface LogMessage {
-  message: string;
 }
