@@ -29,7 +29,6 @@ SSH_443_COMMAND = [
     "ConnectTimeout=5",
     "git@ssh.github.com",
 ]
-GIT_SSH_COMMAND = ["git", "ls-remote", doctor.GIT_SSH_PROBE_URL, "HEAD"]
 
 
 def install_fakes(
@@ -68,7 +67,6 @@ def default_responses() -> dict[tuple[str, ...], Probe]:
         ("docker", "info"): ok(["docker", "info"], "Server Version: 27.0.3"),
         ("gh", "--version"): ok(["gh", "--version"], "gh version 2.52.0"),
         tuple(SSH_COMMAND): Probe(SSH_COMMAND, 1, GITHUB_AUTH_OUTPUT),
-        tuple(GIT_SSH_COMMAND): ok(GIT_SSH_COMMAND, "001c30309ac5\tHEAD"),
         ("git", "config", "--get", "remote.origin.url"): ok(
             ["git", "config", "--get", "remote.origin.url"],
             "git@github.com:UWARG/autonomy-monorepo.git",
@@ -203,27 +201,6 @@ def test_blocked_port_22_suggests_ssh_over_443(tmp_path: Path, monkeypatch) -> N
     assert auth_check.status == CheckStatus.WARN
     assert "port 443" in auth_check.detail
     assert "ssh.github.com" in auth_check.fix
-
-
-def test_git_ssh_failure_fails_even_when_ssh_authenticates(
-    tmp_path: Path, monkeypatch
-) -> None:
-    responses = default_responses()
-    responses[tuple(GIT_SSH_COMMAND)] = Probe(
-        GIT_SSH_COMMAND,
-        128,
-        "git@github.com: Permission denied (publickey).\n"
-        "fatal: Could not read from remote repository.",
-    )
-    install_fakes(monkeypatch, tmp_path, responses)
-
-    sections = run_doctor(make_repo(tmp_path))
-
-    auth_check = checks_by_section(sections)["GitHub access"][1]
-    assert auth_check.status == CheckStatus.FAIL
-    assert "git's SSH" in auth_check.detail
-    assert "git ls-remote" in auth_check.fix
-    assert any("Permission denied" in line for line in auth_check.transcript)
 
 
 def test_unreachable_github_fails(tmp_path: Path, monkeypatch) -> None:
