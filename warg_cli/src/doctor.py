@@ -12,9 +12,14 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
+from constants import (
+    BOOTCAMP_UPSTREAM,
+    PROJECT_MANIFEST_FILENAME,
+    ROOT_REGISTRY_FILENAME,
+)
 
 MIN_GIT_VERSION = (2, 36)
+GIT_SSH_PROBE_URL = f"git@github.com:{BOOTCAMP_UPSTREAM}.git"
 
 
 class CheckStatus(str, Enum):
@@ -242,12 +247,26 @@ def _github_ssh_check() -> Check:
         ]
     )
     if authenticated(probe):
+        # Git can use a different ssh than the one on PATH (Git for Windows
+        # bundles its own), so confirm git itself can reach GitHub over SSH.
+        git_probe = run_probe(["git", "ls-remote", GIT_SSH_PROBE_URL, "HEAD"])
+        if git_probe.code != 0:
+            return Check(
+                CheckStatus.FAIL,
+                "ssh authenticates to GitHub, but git's SSH connection failed. "
+                "Cloning will fall back to HTTPS and pushing will fail.",
+                fix=(
+                    f"Run 'git ls-remote {GIT_SSH_PROBE_URL}' to see git's error. "
+                    "Git may be using a different ssh than your shell."
+                ),
+                transcript=[probe.transcript, git_probe.transcript],
+            )
         match = re.search(r"Hi ([^!\s]+)!", probe.output)
         username = f" as {match.group(1)}" if match else ""
         return Check(
             CheckStatus.OK,
             f"Authenticated to GitHub over SSH{username}.",
-            transcript=[probe.transcript],
+            transcript=[probe.transcript, git_probe.transcript],
         )
 
     fallback = run_probe(

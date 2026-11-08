@@ -102,6 +102,11 @@ class GitAdapter:
             Path(line.strip()) for line in result.stdout.splitlines() if line.strip()
         ]
 
+    def _config_value(self, key: str) -> str | None:
+        result = self._run("config", "--get", key, check=False)
+        value = result.stdout.strip()
+        return value if result.returncode == 0 and value else None
+
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
             ["git", *args],
