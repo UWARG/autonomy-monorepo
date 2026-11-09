@@ -67,15 +67,18 @@ class StitcherConfig:
     ransac_threshold_px: float = 3.0
     # Most already-placed photos to try matching each new photo against.
     max_neighbours: int = 6
-    # Worst GPS error expected (metres). Widens the neighbour search.
+    # Worst GPS error expected (metres). Widens the neighbour search, and a
+    # cluster's photos must spread 4 times this far before its place on the
+    # map is trusted.
     gps_error_m: float = 5.0
     # Reject an image match that puts a photo this far (metres) from its GPS.
     max_gps_disagreement_m: float = 15.0
     # Two photos' scales should differ only by their altitude ratio; allowed
     # relative error before a match is rejected as wrong.
     max_scale_error: float = 0.25
-    # A cluster's photos must spread at least this far (metres) before its
-    # rotation and scale are fitted from GPS.
+    # A cluster's GPS positions must spread at least this far (metres) before
+    # its rotation and scale are fitted from GPS. The photos themselves must
+    # also spread 4 x gps_error_m, which is usually the stricter limit.
     min_anchor_spread_m: float = 5.0
     # Re-solve all poses together every this many photos (0 = only when
     # rendering). Removes drift; cost grows with the number of photos.
@@ -542,7 +545,7 @@ class ImageStitcher:
         several times the GPS error; before that, a few bad GPS readings could
         misplace the cluster itself and wrongly reject good matches.
         """
-        if _gps_spread(self._members(cluster)) < 4 * self._config.gps_error_m:
+        if _gps_spread(self._members(cluster)) < self._min_trusted_spread_m():
             return True
         frame_to_local, anchored = self._georeference(cluster)
         if not anchored:
@@ -571,11 +574,7 @@ class ImageStitcher:
         members = self._members(cluster)
         centres = self._centres(members)
         gps = np.array([[photo.east, photo.north] for photo in members])
-        metres_per_frame_px = float(
-            np.median(
-                [self._metres_per_px(photo) / scale_of(photo.pose) for photo in members]
-            )
-        )
+        metres_per_frame_px = self._metres_per_frame_px(members)
         to_origin = np.eye(3)
         to_origin[:2, 2] = -centres.mean(axis=0)
         to_gps = np.eye(3)
@@ -587,7 +586,8 @@ class ImageStitcher:
         """
         Best-fit rotation, scale and shift from a cluster's frame to local
         metres, matching where its photo centres are in the frame to their GPS
-        positions. None if the photos are too few or too close together.
+        positions. None if the photos are too few or too close together, by
+        either GPS or the images.
         """
         if cluster in self._fit_cache:
             return self._fit_cache[cluster]
@@ -596,9 +596,14 @@ class ImageStitcher:
         centres = self._centres(members)
         gps = np.array([[photo.east, photo.north] for photo in members])
         fit = None
+        # GPS noise alone can pass the GPS check, so the images must also show
+        # the photos really are apart. Fitting noise to photos that barely
+        # moved would blow up the scale.
         if (
             len(members) >= 2
             and _gps_spread(members) >= self._config.min_anchor_spread_m
+            and _furthest_from_mean(centres) * self._metres_per_frame_px(members)
+            >= self._min_trusted_spread_m()
         ):
             # Image y points down but north points up, so flip y first and
             # fit a reflection-free similarity.
@@ -617,8 +622,25 @@ class ImageStitcher:
         point = self._camera.principal_point
         return np.array([apply(photo.pose, point)[0] for photo in photos])
 
+    def _min_trusted_spread_m(self) -> float:
+        """
+        How far a cluster's photos must spread (metres) before its position
+        on the map stands out from the GPS error.
+        """
+        return 4 * self._config.gps_error_m
+
     def _metres_per_px(self, photo: _Photo) -> float:
         return self._camera.metres_per_px(photo.message.alt)
+
+    def _metres_per_frame_px(self, photos: list[_Photo]) -> float:
+        """
+        Ground metres per pixel of the cluster frame, from the calibration.
+        """
+        return float(
+            np.median(
+                [self._metres_per_px(photo) / scale_of(photo.pose) for photo in photos]
+            )
+        )
 
 
 def _gps_spread(photos: list[_Photo]) -> float:
@@ -626,4 +648,11 @@ def _gps_spread(photos: list[_Photo]) -> float:
     Furthest any photo's GPS position is from the group's average, in metres.
     """
     gps = np.array([[photo.east, photo.north] for photo in photos])
-    return float(np.linalg.norm(gps - gps.mean(axis=0), axis=1).max())
+    return _furthest_from_mean(gps)
+
+
+def _furthest_from_mean(points: np.ndarray) -> float:
+    """
+    Largest distance from an (N, 2) array of points to their average.
+    """
+    return float(np.linalg.norm(points - points.mean(axis=0), axis=1).max())
