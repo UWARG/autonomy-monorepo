@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import L from 'leaflet';
 import {
   Circle,
+  CircleMarker,
   MapContainer,
   Marker,
   Polyline,
@@ -17,6 +18,7 @@ import useOwnTrack from '../hooks/useOwnTrack';
 import { bearingDeg, haversineM } from '../geo';
 import type { AeacTrafficState } from '../hooks/useAeacTraffic';
 import type { NearbyDrone, PositionMessage } from '../types';
+import type { TrackerState } from '../hooks/useTracker';
 
 const DASH = '—';
 
@@ -36,6 +38,8 @@ const COLORS = {
   traffic: '#F59E0B',
   /** Traffic we are vertically clear of: the avoider ignores it. */
   trafficClear: '#9BA5B7',
+  tracker: '#34D17E',
+  trackerPath: '#3B6FD4',
 };
 
 type LatLon = { lat: number; lon: number };
@@ -333,19 +337,23 @@ function atOurAltitude(d: NearbyDrone, band: [number, number] | null): boolean {
 /** "+40 m" when the aircraft is above us. */
 const fmtVertical = (m: number) => `${m >= 0 ? '+' : '\u2212'}${Math.abs(Math.round(m))} m`;
 
-export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
+/**
+ * Flight view passes `traffic`; Task 2 passes `tracker` instead, which draws the tracker's path,
+ * shows the drone-to-tracker distance, and drops the traffic and FOLLOW controls.
+ */
+export default function MapWidget({ traffic, tracker }: { traffic?: AeacTrafficState; tracker?: TrackerState }) {
   const { position, heading, relAlt, trail } = useOwnTrack();
   const { setpoint, setpointStale, target, targetStale, waypoints } = useNavigation();
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(!tracker);
   const [fitKey, setFitKey] = useState(0);
   const [showTraffic, setShowTraffic] = useState(true);
 
   const currentIdx = target
     ? waypoints.findIndex((w) => haversineM(w.lat, w.lon, target.lat, target.lon) < SAME_POINT_M)
     : -1;
-  const allDrones = traffic.nearbyDrones?.drones ?? [];
+  const allDrones = traffic?.nearbyDrones?.drones ?? [];
   const drones = showTraffic ? allDrones : [];
-  const trafficStale = traffic.nearbyDronesStale;
+  const trafficStale = traffic?.nearbyDronesStale ?? false;
   const altBand: [number, number] | null =
     relAlt == null ? null : [Math.min(relAlt, target?.alt ?? relAlt), Math.max(relAlt, target?.alt ?? relAlt)];
   const conflictCount = allDrones.filter((d) => atOurAltitude(d, altBand)).length;
@@ -361,6 +369,7 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
     ...(position ? [position] : []),
     ...(setpoint ? [setpoint] : []),
     ...(target ? [target] : []),
+    ...(tracker?.fixes ?? []),
   ];
   const nearest =
     position && allDrones.length
@@ -370,9 +379,10 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
       : null;
 
   // Without our own position or a course, centre on the traffic so it is still visible.
-  const anchor = position ?? setpoint ?? target ?? waypoints[0] ?? allDrones[0];
+  const anchor = position ?? setpoint ?? target ?? waypoints[0] ?? tracker?.latest ?? allDrones[0];
 
-  const feedPill = trafficPill(traffic, allDrones.length, conflictCount);
+  const feedPill = traffic && trafficPill(traffic, allDrones.length, conflictCount);
+  const trackerDist = tracker?.latest ? distTo({ ...tracker.latest, alt: 0 }) : null;
   const navPill = !setpointStale
     ? { className: 'pill-accent', label: 'SETPOINT LIVE' }
     : !targetStale
@@ -392,7 +402,7 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className={feedPill.className}>{feedPill.label}</span>
+          {feedPill && <span className={feedPill.className}>{feedPill.label}</span>}
           <span className={navPill.className}>{navPill.label}</span>
         </div>
       </header>
@@ -538,30 +548,65 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
                 </Marker>
               )}
 
+              {tracker && tracker.fixes.length > 1 && (
+                <Polyline positions={tracker.fixes.map(ll)} pathOptions={{ color: COLORS.trackerPath, weight: 2.5 }} />
+              )}
+              {tracker?.latest && position && (
+                <Polyline
+                  positions={[ll(position), ll(tracker.latest)]}
+                  pathOptions={{ color: COLORS.tracker, weight: 1.5, dashArray: '4 4', opacity: 0.8 }}
+                />
+              )}
+              {tracker?.latest && (
+                <CircleMarker
+                  center={ll(tracker.latest)}
+                  radius={6}
+                  pathOptions={{ color: 'white', weight: 2, fillColor: COLORS.tracker, fillOpacity: tracker.stale ? 0.4 : 1 }}
+                >
+                  <Tooltip direction="top" offset={[0, -8]}>
+                    Tracker · {fmtCoord(tracker.latest)}
+                    {trackerDist != null && ` · ${fmtDist(trackerDist)}`}
+                  </Tooltip>
+                </CircleMarker>
+              )}
+
               <OffscreenTraffic drones={drones} stale={trafficStale} distTo={distTo} />
 
               {position && <Marker position={ll(position)} icon={droneIcon(heading)} zIndexOffset={300} />}
             </MapContainer>
 
             <div className="absolute right-2 top-2 z-[1000] flex gap-1.5">
-              <MapButton
-                active={showTraffic}
-                onClick={() => setShowTraffic((s) => !s)}
-                title="Show AEAC traffic and keep-away zones"
-              >
-                TRAFFIC
-              </MapButton>
+              {traffic && (
+                <MapButton
+                  active={showTraffic}
+                  onClick={() => setShowTraffic((s) => !s)}
+                  title="Show AEAC traffic and keep-away zones"
+                >
+                  TRAFFIC
+                </MapButton>
+              )}
               <MapButton onClick={() => setFitKey((k) => k + 1)} title="Fit course, drone and setpoint">
                 FIT
               </MapButton>
-              <MapButton
-                active={follow}
-                onClick={() => setFollow((f) => !f)}
-                title="Keep the drone centred (dragging the map turns this off)"
-              >
-                FOLLOW
-              </MapButton>
+              {!tracker && (
+                <MapButton
+                  active={follow}
+                  onClick={() => setFollow((f) => !f)}
+                  title="Keep the drone centred (dragging the map turns this off)"
+                >
+                  FOLLOW
+                </MapButton>
+              )}
             </div>
+
+            {tracker && (
+              <div className="pointer-events-none absolute bottom-6 right-2 z-[1000] rounded-lg border border-edge bg-app/80 px-3 py-2 text-right backdrop-blur">
+                <div className="widget-label">Drone → tracker</div>
+                <div className={`font-mono text-3xl font-bold tabular-nums ${tracker.stale ? 'text-ink-3' : 'text-ink'}`}>
+                  {fmtDist(trackerDist)}
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex h-full items-center justify-center text-[12px] text-ink-3">
@@ -597,20 +642,22 @@ export default function MapWidget({ traffic }: { traffic: AeacTrafficState }) {
           dim={!target}
           stale={!!target && targetStale}
         />
-        <ReadoutRow
-          color={nearest && !atOurAltitude(nearest.d, altBand) ? COLORS.trafficClear : COLORS.traffic}
-          label={nearest ? trafficName(nearest.d.name, nearest.d.id) : 'Nearest'}
-          coord={nearest?.d}
-          alt={nearest?.d.alt}
-          extra={
-            nearest
-              ? `${fmtDist(nearest.dist)} ${fmtBearing(bearingTo(nearest.d))}` +
-                (verticalOffset(nearest.d) != null ? ` ${fmtVertical(verticalOffset(nearest.d)!)}` : '')
-              : DASH
-          }
-          dim={!nearest}
-          stale={!!nearest && trafficStale}
-        />
+        {traffic && (
+          <ReadoutRow
+            color={nearest && !atOurAltitude(nearest.d, altBand) ? COLORS.trafficClear : COLORS.traffic}
+            label={nearest ? trafficName(nearest.d.name, nearest.d.id) : 'Nearest'}
+            coord={nearest?.d}
+            alt={nearest?.d.alt}
+            extra={
+              nearest
+                ? `${fmtDist(nearest.dist)} ${fmtBearing(bearingTo(nearest.d))}` +
+                  (verticalOffset(nearest.d) != null ? ` ${fmtVertical(verticalOffset(nearest.d)!)}` : '')
+                : DASH
+            }
+            dim={!nearest}
+            stale={!!nearest && trafficStale}
+          />
+        )}
       </footer>
     </section>
   );

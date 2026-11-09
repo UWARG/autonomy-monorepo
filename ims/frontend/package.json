@@ -10,11 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-<<<<<<< HEAD
     "leaflet": "^1.9.4",
-=======
     "mqtt": "^5.16.1",
->>>>>>> origin/record-tracker-movement
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-leaflet": "^5.0.0",
