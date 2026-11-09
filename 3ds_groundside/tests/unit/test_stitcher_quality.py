@@ -22,7 +22,9 @@ LIMITS = QualityLimits()
 def good():
     ground = make_ground(width_px=1600, height_px=1200)
     rgb, _ = take_photo(ground, Camera.load(), 40.0, -30.0, 25.0, 20.0)
-    return ImageMessage(43.0, -80.0, 25.0, rgb, roll_deg=1.0, pitch_deg=-2.0)
+    return ImageMessage(
+        43.0, -80.0, 25.0, rgb, roll_deg=1.0, pitch_deg=-2.0, yaw_deg=20.0
+    )
 
 
 def scaled(message, gain):
@@ -149,3 +151,9 @@ def test_tilt_limit_is_configurable(good):
 def test_unknown_attitude_is_rejected(good, roll, pitch):
     unknown = dataclasses.replace(good, roll_deg=roll, pitch_deg=pitch)
     assert rejection_reason(unknown, LIMITS) == "no roll/pitch"
+
+
+@pytest.mark.parametrize("yaw", [math.nan, None, math.inf])
+def test_unknown_yaw_is_rejected(good, yaw):
+    unknown = dataclasses.replace(good, yaw_deg=yaw)
+    assert rejection_reason(unknown, LIMITS) == "no yaw"

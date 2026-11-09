@@ -83,21 +83,23 @@ def test_canvas_refuses_runaway_size():
 
 def test_message_validity():
     image = np.zeros((4, 4, 3), dtype=np.uint8)
-    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0).has_valid_position()
+    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0, 0.0).has_valid_position()
     assert not ImageMessage(
-        math.nan, math.nan, math.nan, image, 0.0, 0.0
+        math.nan, math.nan, math.nan, image, 0.0, 0.0, 0.0
     ).has_valid_position()
-    assert not ImageMessage(43.0, -80.0, 0.0, image, 0.0, 0.0).has_valid_position()
+    assert not ImageMessage(43.0, -80.0, 0.0, image, 0.0, 0.0, 0.0).has_valid_position()
     # A receiver with no fix may report exactly (0, 0).
-    assert not ImageMessage(0.0, 0.0, 20.0, image, 0.0, 0.0).has_valid_position()
+    assert not ImageMessage(0.0, 0.0, 20.0, image, 0.0, 0.0, 0.0).has_valid_position()
     # A missing value (JSON null) is rejected rather than raising.
-    assert not ImageMessage(None, -80.0, 20.0, image, 0.0, 0.0).has_valid_position()
-    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0).has_valid_image()
     assert not ImageMessage(
-        43.0, -80.0, 20.0, image.astype(np.float64), 0.0, 0.0
+        None, -80.0, 20.0, image, 0.0, 0.0, 0.0
+    ).has_valid_position()
+    assert ImageMessage(43.0, -80.0, 20.0, image, 0.0, 0.0, 0.0).has_valid_image()
+    assert not ImageMessage(
+        43.0, -80.0, 20.0, image.astype(np.float64), 0.0, 0.0, 0.0
     ).has_valid_image()
     assert not ImageMessage(
-        43.0, -80.0, 20.0, image[..., 0], 0.0, 0.0
+        43.0, -80.0, 20.0, image[..., 0], 0.0, 0.0, 0.0
     ).has_valid_image()
 
 

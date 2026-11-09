@@ -2,7 +2,7 @@
 Measures the stitcher on synthetic missions with known ground truth. Produces
 the "Accuracy" figures in the README (simulated).
 
-Usage (from 3ds_groundside/, about 7 minutes for the default 5 seeds):
+Usage (from 3ds_groundside/, about 3 minutes for the default 5 seeds):
     uv run python -m src.image_stitcher.evaluate [--seeds N]
 """
 
@@ -73,6 +73,7 @@ def run_mission(
         gps_noise_m=gps_error_m,
         altitude_noise_m=0.3,
         heading_noise_deg=3.0,
+        yaw_noise_deg=5.0,
         drone_count=3,
         seed=seed,
     )

@@ -16,9 +16,16 @@ import pytest
 from src.image_stitcher import evaluate
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.features import XFeatMatcher
-from src.image_stitcher.geo import FLIP_Y, apply, fit_similarity, gps_to_local
+from src.image_stitcher.geo import (
+    FLIP_Y,
+    apply,
+    fit_similarity,
+    gps_to_local,
+    local_to_gps,
+)
+from src.image_stitcher.message import ImageMessage
 from src.image_stitcher.stitcher import ImageStitcher, StitcherConfig
-from src.image_stitcher.synthetic import lawn_mower_mission, make_ground
+from src.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
 
 GPS_NOISE_M = 1.0
 
@@ -43,7 +50,7 @@ def mission(ground, camera):
     """
     Three drones, 1 m GPS error, small heading and altitude wobble, and the
     heading flipping 180 degrees every row. Photos have the real camera's
-    lens distortion. The stitcher is told none of the headings.
+    lens distortion, and the reported yaw has compass error.
     """
     photos = lawn_mower_mission(
         ground,
@@ -52,6 +59,7 @@ def mission(ground, camera):
         gps_noise_m=GPS_NOISE_M,
         altitude_noise_m=0.3,
         heading_noise_deg=3.0,
+        yaw_noise_deg=5.0,
         drone_count=3,
         seed=1,
     )
@@ -219,11 +227,11 @@ def test_photo_that_fails_never_becomes_the_reference(mission, matcher, camera):
         def __init__(self):
             self.calls = 0
 
-        def extract(self, img):
+        def extract(self, img, yaw_deg):
             self.calls += 1
             if self.calls == 1:
                 raise RuntimeError("extractor crashed")
-            return matcher.extract(img)
+            return matcher.extract(img, yaw_deg)
 
         def __getattr__(self, name):
             return getattr(matcher, name)
@@ -381,6 +389,44 @@ def test_photo_with_no_overlap_is_still_placed_by_gps(ground, matcher, camera):
     below = apply(placement, [camera.principal_point])[0] + offset
     truth = [photos[0].true_east, photos[0].true_north]
     assert np.linalg.norm(below - truth) < 0.3
+    # Its yaw orients it, so the whole footprint is right, not just the centre.
+    corners_px = np.array([[0, 0], [639, 0], [639, 479], [0, 479]])
+    errors = apply(placement, corners_px) + offset
+    errors -= apply(photos[0].true_image_to_local, corners_px)
+    assert np.linalg.norm(errors, axis=1).max() < 0.3
+
+
+def test_photos_at_unrelated_headings_match(ground, matcher, camera):
+    # A lawn mower path only flies at two opposite headings, which would
+    # still line up if yaw were applied backwards. These would not.
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    for index, heading in enumerate([30.0, 75.0, 200.0]):
+        east, north = 40.0 + 3.0 * index, -30.0
+        rgb, _ = take_photo(ground, camera, east, north, 25.0, heading)
+        lat, lon = local_to_gps(east, north, *ground.origin)
+        assert stitcher.add(
+            ImageMessage(lat, lon, 25.0, rgb, 0.0, 0.0, heading, image_id=str(index))
+        )
+    assert stitcher.cluster_count == 1
+
+
+def test_poor_compass_still_forms_one_map(ground, matcher, camera):
+    # Yaw only lines photos up for matching, so errors much larger than a
+    # good compass's must not bend the map or split it.
+    photos = lawn_mower_mission(
+        ground,
+        camera,
+        altitude_m=25.0,
+        gps_noise_m=GPS_NOISE_M,
+        yaw_noise_deg=12.0,
+        seed=8,
+    )
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    for photo in photos:
+        assert stitcher.add(photo.message)
+    assert stitcher.cluster_count == 1
+    _, relative = placement_errors(stitcher, photos, ground)
+    assert relative < 0.1 * GPS_NOISE_M
 
 
 def test_flight_at_two_altitudes_merges(ground, matcher, camera):
@@ -431,7 +477,7 @@ def test_repeating_ground_does_not_fool_it(ground, matcher, camera):
     stitcher.add(east.message)
 
     assert stitcher.cluster_count == 2
-    # Placed by GPS alone. Its heading is unknown, so only check its centre.
+    # Placed by GPS alone, so only check its centre.
     message, placed = stitcher.placements()[-1]
     assert message.image_id == east.message.image_id
     offset = np.array(gps_to_local(*stitcher.reference, *repeating.origin))

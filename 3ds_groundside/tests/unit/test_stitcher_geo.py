@@ -71,15 +71,3 @@ def test_fit_similarity_through_flip_handles_image_axes():
     pixels = np.random.default_rng(1).random((10, 2)) * [640, 480]
     fitted = fit_similarity(apply(FLIP_Y, pixels), apply(truth, pixels)) @ FLIP_Y
     np.testing.assert_allclose(fitted, truth, atol=1e-9)
-
-
-@pytest.mark.parametrize("turns", [0, 1, 2, 3])
-def test_unrotate_points_inverts_rot90(turns):
-    from src.image_stitcher.features import unrotate_points
-
-    image = np.zeros((4, 6), dtype=np.uint8)
-    image[1, 4] = 255  # the marked pixel is at x=4, y=1
-    rotated = np.rot90(image, turns)
-    y, x = np.argwhere(rotated == 255)[0]
-    original = unrotate_points(np.array([[x, y]], dtype=np.float32), turns, 6, 4)
-    np.testing.assert_array_equal(original, [[4, 1]])

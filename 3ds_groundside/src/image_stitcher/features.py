@@ -7,8 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 import torch
+
+from src.image_stitcher.geo import apply, to_3x3
 
 # XFeat isn't pip installable, so it is loaded from its GitHub repo with
 # torch.hub. The first run downloads the code and weights (about 6 MB) into
@@ -23,9 +26,19 @@ XFEAT_WEIGHTS_URL = (
 
 # XFeat is not rotation invariant: it stops recognising points once an image
 # is turned more than roughly 45 degrees. Drones on a lawn mower path turn
-# 180 degrees every row, so features are extracted from the image rotated by
-# each quarter turn, and matching tries all of them.
-QUARTER_TURNS = (0, 1, 2, 3)
+# 180 degrees every row, so every photo is turned north-up with the drone's
+# yaw before extracting features.
+#
+# Resampling a photo softens it, so a photo whose yaw is this close (degrees)
+# to a quarter turn is just given that quarter turn, which loses nothing. Two
+# such photos can end up twice this far apart, plus any compass error. In
+# simulation 40 degrees apart dropped some pairs below the inlier limit, and
+# 20 did not.
+MAX_QUARTER_TURN_ERROR_DEG = 10.0
+
+# Any other turn leaves empty corners, and the edge of the photo then looks
+# like a strong feature. Keypoints this close (pixels) to it are dropped.
+EDGE_MARGIN_PX = 16
 
 
 @dataclass
@@ -42,21 +55,6 @@ class Features:
 
     def __len__(self) -> int:
         return len(self.keypoints)
-
-
-@dataclass
-class ImageFeatures:
-    """
-    Features of one image, extracted once per quarter turn.
-
-    by_turn[k] came from the image rotated k * 90 degrees counterclockwise.
-    """
-
-    by_turn: dict[int, Features]
-
-    @property
-    def upright(self) -> Features:
-        return self.by_turn[0]
 
 
 class XFeatMatcher:
@@ -77,20 +75,28 @@ class XFeatMatcher:
         self._xfeat = load_xfeat(top_k)
         self._min_cosine_similarity = min_cosine_similarity
 
-    def extract(self, rgb: np.ndarray) -> ImageFeatures:
+    def extract(self, rgb: np.ndarray, yaw_deg: float) -> Features:
         """
-        Finds keypoints in an H x W x 3 RGB image at every quarter turn.
+        Finds keypoints in an H x W x 3 RGB image whose top faces yaw_deg
+        clockwise from north. Keypoints are returned in the image's own pixels.
         """
         height, width = rgb.shape[:2]
-        by_turn = {}
-        for turns in QUARTER_TURNS:
-            rotated = np.ascontiguousarray(np.rot90(rgb, turns))
-            features = self._extract_one(rotated)
-            features.keypoints = unrotate_points(
-                features.keypoints, turns, width, height
-            )
-            by_turn[turns] = features
-        return ImageFeatures(by_turn)
+        turns = round(yaw_deg / 90)
+        if abs(yaw_deg - 90 * turns) <= MAX_QUARTER_TURN_ERROR_DEG:
+            north_up, north_up_to_image = quarter_turn(rgb, turns)
+            margin_px = 0
+        else:
+            north_up, north_up_to_image = rotate_north_up(rgb, yaw_deg)
+            margin_px = EDGE_MARGIN_PX
+        found = self._extract_one(north_up)
+        keypoints = apply(north_up_to_image, found.keypoints).astype(np.float32)
+        keep = inside_photo(keypoints, width, height, margin_px)
+        return Features(
+            keypoints=keypoints[keep],
+            descriptors=found.descriptors[
+                torch.from_numpy(keep).to(found.descriptors.device)
+            ],
+        )
 
     def match(self, a: Features, b: Features) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -146,21 +152,59 @@ def load_xfeat(top_k: int) -> torch.nn.Module:
     return xfeat
 
 
-def unrotate_points(
-    points: np.ndarray, turns: int, width: int, height: int
+def quarter_turn(rgb: np.ndarray, turns: int) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Turns an image clockwise by this many quarter turns, losslessly.
+
+    Returns the turned image and the 3 x 3 transform from its pixels back to
+    the original image's pixels.
+    """
+    height, width = rgb.shape[:2]
+    last_x, last_y = width - 1, height - 1
+    to_original = {
+        0: [[1, 0, 0], [0, 1, 0]],
+        1: [[0, 1, 0], [-1, 0, last_y]],
+        2: [[-1, 0, last_x], [0, -1, last_y]],
+        3: [[0, -1, last_x], [1, 0, 0]],
+    }[turns % 4]
+    # np.rot90 turns counterclockwise.
+    turned = np.ascontiguousarray(np.rot90(rgb, -turns % 4))
+    return turned, to_3x3(np.array(to_original, dtype=np.float64))
+
+
+def rotate_north_up(rgb: np.ndarray, yaw_deg: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Turns an image whose top faces yaw_deg so that its top faces north, on a
+    canvas big enough to hold all of it.
+
+    Returns the turned image and the 3 x 3 transform from its pixels back to
+    the original image's pixels.
+    """
+    height, width = rgb.shape[:2]
+    centre = ((width - 1) / 2, (height - 1) / 2)
+    # North is yaw_deg counterclockwise of the image's top, so the image turns
+    # clockwise by yaw_deg. OpenCV's positive angles are counterclockwise.
+    rotation = cv2.getRotationMatrix2D(centre, -yaw_deg, 1.0)
+    cos_abs, sin_abs = abs(rotation[0, 0]), abs(rotation[0, 1])
+    new_width = int(np.ceil(width * cos_abs + height * sin_abs))
+    new_height = int(np.ceil(width * sin_abs + height * cos_abs))
+    rotation[0, 2] += (new_width - 1) / 2 - centre[0]
+    rotation[1, 2] += (new_height - 1) / 2 - centre[1]
+    turned = cv2.warpAffine(rgb, rotation, (new_width, new_height))
+    return turned, to_3x3(cv2.invertAffineTransform(rotation))
+
+
+def inside_photo(
+    points: np.ndarray, width: int, height: int, margin_px: float
 ) -> np.ndarray:
     """
-    Maps (x, y) points found in np.rot90(image, turns) back to the original
+    Boolean mask of the (N, 2) pixel points at least margin_px inside a
     width x height image.
     """
     x, y = points[:, 0], points[:, 1]
-    turns %= 4
-    if turns == 0:
-        original = (x, y)
-    elif turns == 1:
-        original = (width - 1 - y, x)
-    elif turns == 2:
-        original = (width - 1 - x, height - 1 - y)
-    else:
-        original = (y, height - 1 - x)
-    return np.stack(original, axis=1).astype(np.float32)
+    return (
+        (x >= margin_px)
+        & (x <= width - 1 - margin_px)
+        & (y >= margin_px)
+        & (y <= height - 1 - margin_px)
+    )

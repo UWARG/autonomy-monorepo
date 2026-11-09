@@ -44,6 +44,7 @@ def main() -> None:
         gps_noise_m=args.gps_noise,
         altitude_noise_m=0.3,
         heading_noise_deg=3.0,
+        yaw_noise_deg=5.0,
         drone_count=args.drones,
         seed=args.seed,
     )

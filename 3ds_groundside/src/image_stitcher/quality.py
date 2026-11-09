@@ -100,6 +100,8 @@ def rejection_reason(message: ImageMessage, limits: QualityLimits) -> str | None
     """
     if not (is_finite(message.roll_deg) and is_finite(message.pitch_deg)):
         return "no roll/pitch"
+    if not is_finite(message.yaw_deg):
+        return "no yaw"
     tilt = tilt_deg(message.roll_deg, message.pitch_deg)
     if tilt > limits.max_tilt_deg:
         return f"tilted {tilt:.1f} deg (limit {limits.max_tilt_deg:.1f})"

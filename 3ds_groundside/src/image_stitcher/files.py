@@ -90,6 +90,7 @@ def load_photo_run(run_dir: Path, drone_id: str = "") -> Iterator[ImageMessage]:
                 img=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB),
                 roll_deg=attitude.get("roll", math.nan),
                 pitch_deg=attitude.get("pitch", math.nan),
+                yaw_deg=attitude.get("yaw", math.nan),
                 drone_id=drone_id,
                 image_id=record["file"],
             )

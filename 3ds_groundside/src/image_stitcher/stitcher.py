@@ -20,7 +20,9 @@ refine.py) so small errors don't pile up along chains of photos.
 
 Each cluster is placed on the map with a single best-fit rotation, scale and
 shift against all of its photos' GPS positions, so individual GPS errors
-average out instead of blurring the map. No heading is needed.
+average out instead of blurring the map. Yaw only turns photos north-up for
+matching and orients clusters too small to fit, so compass error can't bend
+the map.
 """
 
 from __future__ import annotations
@@ -38,13 +40,15 @@ import numpy as np
 
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.canvas import Canvas, MapBounds
-from src.image_stitcher.features import ImageFeatures, XFeatMatcher
+from src.image_stitcher.features import Features, XFeatMatcher
 from src.image_stitcher.files import next_map_path, write_map
 from src.image_stitcher.geo import (
     FLIP_Y,
     apply,
+    average_rotation,
     fit_similarity,
     gps_to_local,
+    image_axes_to_local,
     scale_of,
     to_3x3,
 )
@@ -117,7 +121,7 @@ class StitchedMap:
 class _Photo:
     # Holds the undistorted image; all pixels below are in it.
     message: ImageMessage
-    features: ImageFeatures
+    features: Features
     # GPS position in local metres.
     east: float
     north: float
@@ -220,13 +224,11 @@ class ImageStitcher:
         east, north = gps_to_local(message.lat, message.lon, *reference)
         # Keep only the undistorted image so memory doesn't double.
         message = dataclasses.replace(message, img=self._camera.undistort(message.img))
-        photo = _Photo(message, self._matcher.extract(message.img), east, north)
+        features = self._matcher.extract(message.img, message.yaw_deg)
+        photo = _Photo(message, features, east, north)
         self._reference = reference
 
         self._place(photo, self._find_matches(photo))
-        # Later photos only match against the upright features, so drop the
-        # rotated copies to save memory.
-        photo.features = ImageFeatures({0: photo.features.upright})
         self._photos.append(photo)
         self._unrefined.add(photo.cluster)
         self._fit_cache.clear()
@@ -421,40 +423,32 @@ class ImageStitcher:
         self, photo: _Photo, other: _Photo
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """
-        The RANSAC-verified matching points between two photos, trying each
-        quarter turn of the new photo (headings are unknown), or None if
+        The RANSAC-verified matching points between two photos, or None if
         they don't convincingly overlap.
         """
         config = self._config
-        best = None
-        for features in photo.features.by_turn.values():
-            points_new, points_other = self._matcher.match(
-                features, other.features.upright
-            )
-            if len(points_new) < config.min_inliers:
-                continue
-            affine, inliers = cv2.estimateAffinePartial2D(
-                points_new,
-                points_other,
-                method=cv2.RANSAC,
-                ransacReprojThreshold=config.ransac_threshold_px,
-            )
-            if affine is None:
-                continue
-            inliers = inliers.ravel().astype(bool)
-            if inliers.sum() < config.min_inliers:
-                continue
+        points_new, points_other = self._matcher.match(photo.features, other.features)
+        if len(points_new) < config.min_inliers:
+            return None
+        affine, inliers = cv2.estimateAffinePartial2D(
+            points_new,
+            points_other,
+            method=cv2.RANSAC,
+            ransacReprojThreshold=config.ransac_threshold_px,
+        )
+        if affine is None:
+            return None
+        inliers = inliers.ravel().astype(bool)
+        if inliers.sum() < config.min_inliers:
+            return None
 
-            # A photo from higher up shows more ground per pixel, so its
-            # pixels map to proportionally more pixels of the other photo.
-            expected_scale = photo.message.alt / other.message.alt
-            scale_error = abs(math.log(scale_of(to_3x3(affine)) / expected_scale))
-            if scale_error > math.log(1 + config.max_scale_error):
-                continue
-
-            if best is None or inliers.sum() > len(best[0]):
-                best = (points_new[inliers], points_other[inliers])
-        return best
+        # A photo from higher up shows more ground per pixel, so its
+        # pixels map to proportionally more pixels of the other photo.
+        expected_scale = photo.message.alt / other.message.alt
+        scale_error = abs(math.log(scale_of(to_3x3(affine)) / expected_scale))
+        if scale_error > math.log(1 + config.max_scale_error):
+            return None
+        return points_new[inliers], points_other[inliers]
 
     def _neighbours(self, photo: _Photo) -> list[_Photo]:
         """
@@ -545,13 +539,21 @@ class ImageStitcher:
         several times the GPS error; before that, a few bad GPS readings could
         misplace the cluster itself and wrongly reject good matches.
         """
-        if _gps_spread(self._members(cluster)) < self._min_trusted_spread_m():
+        members = self._members(cluster)
+        if _gps_spread(members) < self._min_trusted_spread_m():
             return True
         frame_to_local, anchored = self._georeference(cluster)
-        if not anchored:
-            return True
-        east, north = apply(frame_to_local @ pose, self._camera.principal_point)[0]
-        error = math.hypot(east - photo.east, north - photo.north)
+        placed = apply(frame_to_local @ pose, self._camera.principal_point)[0]
+        gps = np.array([photo.east, photo.north])
+        if anchored:
+            error = float(np.linalg.norm(placed - gps))
+        else:
+            # This cluster's rotation is only a guess from yaw, which could
+            # have a constant offset, so compare distances from its centre.
+            centre = np.mean([[p.east, p.north] for p in members], axis=0)
+            error = abs(
+                float(np.linalg.norm(placed - centre) - np.linalg.norm(gps - centre))
+            )
         return error <= self._config.max_gps_disagreement_m
 
     def _image_to_local(self, photo: _Photo) -> np.ndarray:
@@ -565,7 +567,7 @@ class ImageStitcher:
 
         Unanchored clusters (one photo, or all taken from about the same
         spot) get their position from GPS, their scale from the camera
-        calibration, and assume the image top faces north.
+        calibration, and their rotation from the photos' yaw.
         """
         anchored_fit = self._anchored_fit(cluster)
         if anchored_fit is not None:
@@ -580,7 +582,9 @@ class ImageStitcher:
         to_gps = np.eye(3)
         to_gps[:2, 2] = gps.mean(axis=0)
         scale = np.diag([metres_per_frame_px, metres_per_frame_px, 1.0])
-        return to_gps @ scale @ FLIP_Y @ to_origin, False
+        rotation = np.eye(3)
+        rotation[:2, :2] = self._frame_rotation(members)
+        return to_gps @ rotation @ scale @ FLIP_Y @ to_origin, False
 
     def _anchored_fit(self, cluster: int) -> np.ndarray | None:
         """
@@ -610,6 +614,20 @@ class ImageStitcher:
             fit = fit_similarity(apply(FLIP_Y, centres), gps) @ FLIP_Y
         self._fit_cache[cluster] = fit
         return fit
+
+    def _frame_rotation(self, photos: list[_Photo]) -> np.ndarray:
+        """
+        2 x 2 rotation from a cluster's y-flipped frame to (east, north),
+        averaged over what each photo's yaw and pose say it should be.
+        """
+        flip = FLIP_Y[:2, :2]
+        rotations = []
+        for photo in photos:
+            frame_to_image = np.linalg.inv(photo.pose[:2, :2]) * scale_of(photo.pose)
+            rotations.append(
+                image_axes_to_local(photo.message.yaw_deg) @ frame_to_image @ flip
+            )
+        return average_rotation(rotations)
 
     def _members(self, cluster: int) -> list[_Photo]:
         return [photo for photo in self._photos if photo.cluster == cluster]

@@ -63,14 +63,7 @@ def nadir_image_to_local(
     the pixel straight below the camera (its principal point), which lands at
     (centre_east_m, centre_north_m); it defaults to the image centre.
     """
-    cos_h = math.cos(math.radians(heading_deg))
-    sin_h = math.sin(math.radians(heading_deg))
-    # Offsets from the centre pixel along the image axes, in metres:
-    #   right = (x - cx) * gsd,  up = -(y - cy) * gsd
-    # Rotating (right, up) clockwise by the heading gives (east, north):
-    #   east  =  right * cos + up * sin
-    #   north = -right * sin + up * cos
-    linear = gsd_m * np.array([[cos_h, -sin_h], [-sin_h, -cos_h]])
+    linear = gsd_m * image_axes_to_local(heading_deg)
     if centre_px is None:
         centre_px = image_centre(image_width_px, image_height_px)
     translation = np.array([centre_east_m, centre_north_m]) - linear @ centre_px
@@ -78,6 +71,32 @@ def nadir_image_to_local(
     transform[:2, :2] = linear
     transform[:2, 2] = translation
     return transform
+
+
+def image_axes_to_local(heading_deg: float) -> np.ndarray:
+    """
+    2 x 2 matrix turning an offset in image pixels into (east, north), for a
+    nadir photo whose top faces heading_deg clockwise from north.
+    """
+    cos_h = math.cos(math.radians(heading_deg))
+    sin_h = math.sin(math.radians(heading_deg))
+    # Offsets along the image axes: right = dx, up = -dy.
+    # Rotating (right, up) clockwise by the heading gives (east, north):
+    #   east  =  right * cos + up * sin
+    #   north = -right * sin + up * cos
+    return np.array([[cos_h, -sin_h], [-sin_h, -cos_h]])
+
+
+def average_rotation(rotations: list[np.ndarray]) -> np.ndarray:
+    """
+    The 2 x 2 rotation closest to all of these 2 x 2 rotations. Averages the
+    matrices rather than the angles so 350 and 10 degrees give 0, not 180.
+    """
+    total = np.sum(rotations, axis=0)
+    angle = math.atan2(total[1, 0] - total[0, 1], total[0, 0] + total[1, 1])
+    return np.array(
+        [[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]]
+    )
 
 
 def image_centre(width_px: int, height_px: int) -> np.ndarray:

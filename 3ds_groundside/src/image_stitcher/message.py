@@ -31,6 +31,8 @@ class ImageMessage:
     img: H x W x 3 RGB array
     roll_deg, pitch_deg: drone attitude when the photo was taken, 0 = level.
         NaN if unknown, which gets the photo rejected.
+    yaw_deg: degrees clockwise from north that the top of the image faces.
+        NaN if unknown, which gets the photo rejected.
     """
 
     lat: float
@@ -39,6 +41,7 @@ class ImageMessage:
     img: np.ndarray
     roll_deg: float
     pitch_deg: float
+    yaw_deg: float
     drone_id: str = ""
     image_id: str = ""
 

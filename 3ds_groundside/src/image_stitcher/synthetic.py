@@ -158,6 +158,7 @@ def lawn_mower_mission(
     gps_noise_m: float = 0.0,
     altitude_noise_m: float = 0.0,
     heading_noise_deg: float = 0.0,
+    yaw_noise_deg: float = 0.0,
     drone_count: int = 1,
     seed: int = 0,
 ) -> list[SyntheticPhoto]:
@@ -166,10 +167,12 @@ def lawn_mower_mission(
 
     Like a real lawn mower mission, the drone faces along its sweep, so the
     heading flips 180 degrees every row. Rows are split between drones.
-    GPS and altitude errors only affect what is reported in the message;
+    GPS, altitude and yaw errors only affect what is reported in the message;
     photos are always taken from the true position.
     """
     rng = np.random.default_rng(seed)
+    # Separate from rng so yaw noise doesn't change the photos or GPS errors.
+    yaw_rng = np.random.default_rng([seed, 1])
     gsd_m = camera.metres_per_px(altitude_m)
     # The drone flies east/west with the image top facing its direction of
     # travel, so the image's height spans east-west along each row.
@@ -204,6 +207,7 @@ def lawn_mower_mission(
                 img=rgb,
                 roll_deg=0.0,
                 pitch_deg=0.0,
+                yaw_deg=true_heading + yaw_rng.normal(0, yaw_noise_deg),
                 drone_id=f"drone-{drone + 1:02d}",
                 image_id=f"photo_{len(photos) + 1:04d}",
             )
