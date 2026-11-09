@@ -1,25 +1,24 @@
-# #232-based moving traffic flight-test preparation
+# Moving traffic obstacle avoidance
 
-This is a personal-branch qualification path. It does not change #181's
-previously validated imaginary static-obstacle path or #203. Here, the
-`comms/traffic_listener` publishes complete `/aeac/traffic` snapshots, the
-`navigation/position_controller` publishes the only MAVROS position setpoint,
-and `gnc/obstacle_avoidance` expands the server keep-away for 1 Hz live traffic.
+This directory qualifies the #232-based live AEAC path. It does not replace
+the #181 synthetic static-obstacle test. The data flow is:
 
-The [2027 AEAC CONOPS](https://www.aerialevolution.ca/wp-content/uploads/2026/09/2027-AEAC-CONOPS-v1.0-2026-09-08.pdf)
-requires 1 Hz telemetry while armed, describes 1 Hz simulated traffic, and
-forbids entering each simulated aircraft's keep-away cylinder. The code's
-1.5 s traffic timeout, 5 m minimum extra buffer, 3 s prediction and 1 m
-planner clearance are additional conservative test settings, **not** a
-guarantee of collision avoidance. Holding position can itself be unsafe when
-traffic approaches; the controller asks for pilot takeover in that case.
-For cross-traffic, a separate 20 s closest-approach gate yields before entering
-the crossing path when the hold point is predicted safe; it does not replace
-the 3 s swept-corridor planner prediction.
+`AEAC -> comms/traffic_listener -> /aeac/traffic -> position_controller -> GNC`
 
-## Build and local tests
+The controller is the only MAVROS position-setpoint publisher. Live traffic
+keeps the server radius and adds 3 m for stationary traffic or 5.75 m for
+moving traffic. Moving positions are age-compensated and swept for 3 s. A
+snapshot older than 1.5 s causes a hold. No path causes hold, replan on each
+new snapshot, and a pilot alert. Holding is not called safe when traffic is
+predicted to enter the hold point.
 
-From the repository root, build the Airside image from **this** worktree:
+The planner uses 2 m/s for conservative relative-motion calculations. SITL
+sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first
+physical flight remains limited to 1 m/s.
+
+## Build and test
+
+Run from the repository root:
 
 ```bash
 cd airside
@@ -31,106 +30,66 @@ docker run --rm warg/airside:latest bash -lc \
    cd /ros_ws && colcon test && colcon test-result --verbose'
 ```
 
-## Read-only real-server capture
+Run each mock scenario in a fresh SITL instance:
 
-The capture tool opens one authenticated WebSocket and **never sends a frame**.
-It saves only traffic indices, WGS84/AGL, motion, keep-away, receipt times and
-parse problems; it omits names and the token. Review the current server docs at
-`aeac.mylonics.com` and the endpoint before connecting. Put the real token in
-`airside/.env`, which is ignored by Git; never paste it into a command line,
-commit, rosbag, or PR. `AEAC_OWN_AIRCRAFT_INDEX` must be confirmed before
-autonomous live avoidance, even though read-only capture can run without it.
+```bash
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh clear
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving  # run 3 times
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh multi
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh turn
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh blocked
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh pilot
+```
+
+Ignored `artifacts/<scenario>-*/` directories contain the summary, logs and
+rosbag. A pass requires one setpoint publisher, no raw keep-away entry, at
+least 3 m additional measured margin, correct stale hold, and the expected
+goal completion or blocked-route alert.
+
+## Receive-only AEAC capture
+
+Put the token in ignored `airside/.env`; never put it in a command, log,
+rosbag, commit, or PR. Confirm the endpoint before connecting. This command
+receives traffic and sends no telemetry:
 
 ```bash
 docker run --rm --network host --env-file airside/.env \
   -v "$PWD":/repo -w /repo warg/airside:latest \
   python3 airside/experiments/obstacle_avoidance/capture_server_traffic.py \
-  --duration-s 240 \
+  --duration-s 720 \
   --output airside/experiments/obstacle_avoidance/captures/receive-only.jsonl
 ```
 
-Exit code 2 means no moving aircraft was observed; it is **not** a passed
-server test. Do not start `aeac_telemetry` or send SITL telemetry to the real
-server during this read-only test. The official server may provide no useful
-traffic until a team flight is active; if so, record the gap rather than
-claiming that mock traffic came from AEAC.
+Exit code 2 means that no moving traffic was observed. Captures contain
+traffic fields and timing but omit names and the token.
 
-## Match a captured track to the full route and replay it
+## Replay a capture
 
-The matcher uses the Airside lap waypoints, including the closing leg, to
-identify a moving aircraft index whose keep-away plus live buffer intersects
-the route. It reports the matching leg, capture interval range, and whether
-there is enough data to replay the complete closed route. Use a
-confirmed `AEAC_OWN_AIRCRAFT_INDEX`; the tool does not infer our index.
-If the server test uses a different course, pass that course's waypoint
-YAML to both commands.
+Use the confirmed own-aircraft index. Never infer it from a name. Preselect
+three start times and use a fresh SITL instance for each run:
 
 ```bash
 python3 airside/experiments/obstacle_avoidance/server_traffic_replay.py \
   --capture airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
   --route airside/src/engine/config/waypoints.yaml \
-  --own-aircraft-index <confirmed-index> \
-  --replay-start-s 0
+  --own-aircraft-index <confirmed-index> --replay-start-s 0
 
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh replay \
   airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
   <confirmed-index> --start-s 0
 ```
 
-Preselect three capture start times with enough data remaining for a complete
-lap, then run each one with a fresh SITL boot. Do not choose a start time after
-seeing whether it passes. The runner starts at the first Airside route point,
-flies each remaining point and closes the lap, while publishing captured
-traffic at its original relative times. For example, a long capture can be
-tested with `--start-s 0`, `--start-s 60`, and `--start-s 120`. Continuous
-simulator truth is interpolated between captured positions for distance
-measurement. This is a replay model, not ground truth of the original AEAC
-simulation between 1 Hz updates. The JSON summary records traffic cadence,
-the 1.5 m/s FCU readback, observed speed, raw keep-away margin, hold reasons,
-and pilot alerts. Failed runs retain the same metrics, the completed waypoint
-count, setpoint publisher list, and rosbag. A persistently blocked route fails
-goal completion; inspect
-its hold and takeover evidence rather than treating hover as a successful
-avoidance run.
+The runner starts at the mission start, commands the complete closed route,
+preserves all captured aircraft and source timing, and does not loop or invent
+data. A blocked run remains a failure to complete the route even when hold and
+pilot alert work correctly.
 
-## Mock moving traffic in ArduCopter SITL
+## Flight gate
 
-The pinned `warg/sitl:latest` image uses legacy `WPNAV_SPEED` in cm/s.
-`sitl_speed_1p5.parm` sets 150 cm/s, and the harness reads the FCU value back.
-The position-only setpoint does not itself impose a speed cap. If using a
-different ArduPilot version, select and read back its supported `WP_SPD` or
-`WPNAV_SPEED` parameter before any test; never assume the units.
+Live props-on testing remains disabled until all three final-image real-track
+replays pass and an authorized props-off check confirms both WebSockets, the
+own-aircraft index, WGS84/AGL, approximately 1 Hz send/receive, and end-to-end
+delay. Do not send SITL telemetry to the real server.
 
-```bash
-bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh clear
-bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving
-bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving
-bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving
-```
-
-Also run `multi`, `turn`, `dropout`, `blocked`, and `pilot`. Every run uses new
-SITL and Airside containers and writes ignored `artifacts/<scenario>-*/`
-with a rosbag, logs and a JSON summary. Passing criteria: raw keep-away never
-entered, at least 3 m additional measured margin, speed readback 1.5 m/s,
-observed peak at most 1.7 m/s, only one setpoint publisher, reachable goal
-completed, blocked route held with pilot alert, stale traffic held, and pilot
-takeover stopped setpoints. `clear` validates the harness before traffic tests.
-
-Captured real-server traffic is **not** yet a SITL pass merely because the
-capture tool received it. Replay must preserve genuine time/trajectory data,
-put it into the SITL geographic frame, and pass the same measured-distance
-checks before making that claim.
-
-The dated qualification evidence and remaining hard gates are recorded in
-[`RESULTS.md`](RESULTS.md). Generated bags and per-run summaries remain local
-under the ignored `artifacts/` directory.
-
-## Flight-test gate
-
-No props-on live test until the real-server moving-traffic capture/replay,
-mock moving scenarios, static #181 regression, and props-off two-WebSocket
-check all pass. The props-off check also verifies own aircraft index, WGS84
-latitude/longitude, AGL convention, approximately 1 Hz receive/send, and
-end-to-end delay. Sending to the real server requires separate confirmation
-of its official test procedure. The first physical speed gate remains 1 m/s;
-1.5 m/s is a SITL trial only.
+See [RESULTS.md](RESULTS.md) for current evidence and open gates.

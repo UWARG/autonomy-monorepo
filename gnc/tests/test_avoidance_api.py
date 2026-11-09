@@ -3,8 +3,10 @@ import math
 import pytest
 
 from obstacle_avoidance import (
+    AvoidanceConfig,
     AvoidanceRequest,
     ObstacleAvoider,
+    PlannerConfig,
     PlanStatus,
     TrafficAircraft,
 )
@@ -69,8 +71,8 @@ def test_clear_path_flies_straight_at_capped_speed() -> None:
 
     assert north.status is PlanStatus.PATH_FOUND
     assert north.east_mps == pytest.approx(0.0, abs=1e-6)
-    assert north.north_mps == pytest.approx(1.5)
-    assert east.east_mps == pytest.approx(1.5)
+    assert north.north_mps == pytest.approx(2.0)
+    assert east.east_mps == pytest.approx(2.0)
     assert east.north_mps == pytest.approx(0.0, abs=1e-6)
     assert north.next_waypoint is not None and north.next_waypoint.lat > HERE.lat
 
@@ -158,7 +160,10 @@ def test_traffic_expires_after_one_and_a_half_seconds() -> None:
 
 def test_moving_crossing_yields_before_entering_its_future_path() -> None:
     crossing = intruder(offset(-15.0, 20.0), 5.0, speed_mps=1.2, heading_deg=90.0)
-    plan = ObstacleAvoider().plan(request(offset(0.0, 40.0), crossing))
+    avoider = ObstacleAvoider(
+        AvoidanceConfig(planner=PlannerConfig(first_lookahead_m=16.0))
+    )
+    plan = avoider.plan(request(offset(0.0, 40.0), crossing))
 
     assert plan.status is PlanStatus.NO_PATH
     assert plan.reason == "YIELD_CROSSING"

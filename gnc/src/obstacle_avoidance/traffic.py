@@ -12,14 +12,18 @@ from .models import CircleObstacle, Point2D, TrafficAircraft
 def live_traffic_buffer_m(
     speed_mps: float, age_s: float, own_speed_mps: float = 1.5
 ) -> float:
-    """Extra horizontal clearance for a 1 Hz live traffic feed."""
+    """Extra clearance beyond the server keep-away for live traffic."""
 
     if not all(
         math.isfinite(value) and value >= 0.0
         for value in (speed_mps, age_s, own_speed_mps)
     ):
         raise ValueError("INVALID_TRAFFIC_BUFFER_INPUT")
-    return max(5.0, (speed_mps + own_speed_mps) * (age_s + 1.5))
+    # Motion is already age-compensated and swept over the prediction horizon
+    # below. Adding speed * time here would count that displacement twice.
+    # Stationary traffic needs only the measured 3 m qualification margin;
+    # moving traffic retains the larger mock-validated uncertainty margin.
+    return 3.0 if speed_mps <= 0.1 else 5.75
 
 
 def _valid_aircraft(aircraft: TrafficAircraft) -> bool:

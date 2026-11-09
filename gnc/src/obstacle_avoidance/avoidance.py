@@ -25,7 +25,9 @@ from .traffic import live_traffic_buffer_m, traffic_to_obstacles
 
 @dataclass(frozen=True, slots=True)
 class AvoidanceConfig:
-    horizontal_speed_mps: float = 1.5
+    # Planning output only. The position-only MAVROS setpoint is flown at the
+    # FCU's configured WP_SPD/WPNAV_SPEED.
+    horizontal_speed_mps: float = 2.0
     vertical_speed_mps: float = 1.0
     goal_tolerance_m: float = 1.0
     prediction_horizon_s: float = 3.0
@@ -112,29 +114,13 @@ class ObstacleAvoider:
                 prediction_horizon_s=settings.prediction_horizon_s,
                 maximum_step_m=settings.maximum_prediction_step_m,
                 maximum_obstacles=settings.maximum_predicted_obstacles,
-                live_buffer=True,
                 all_altitudes=True,
+                live_buffer=True,
                 own_speed_mps=settings.horizontal_speed_mps,
             )
         except ValueError as error:
             self.reset()
             return AvoidancePlan.hold(str(error), goal_distance_m=goal_distance_m)
-
-        crossing_reason = self._crossing_risk(
-            request.traffic,
-            goal_east_m,
-            goal_north_m,
-            age_s,
-            position.lat,
-            position.lon,
-        )
-        if crossing_reason is not None:
-            self.reset()
-            return AvoidancePlan.hold(
-                crossing_reason,
-                goal_distance_m=goal_distance_m,
-                obstacle_count=len(obstacles),
-            )
 
         result = self._planner.plan(
             PlanRequest(
@@ -157,6 +143,22 @@ class ObstacleAvoider:
             )
             return AvoidancePlan.hold(
                 reason,
+                goal_distance_m=goal_distance_m,
+                obstacle_count=len(obstacles),
+            )
+
+        crossing_reason = self._crossing_risk(
+            request.traffic,
+            result.waypoint.x,
+            result.waypoint.y,
+            age_s,
+            position.lat,
+            position.lon,
+        )
+        if crossing_reason is not None:
+            self.reset()
+            return AvoidancePlan.hold(
+                crossing_reason,
                 goal_distance_m=goal_distance_m,
                 obstacle_count=len(obstacles),
             )
@@ -197,7 +199,7 @@ class ObstacleAvoider:
         own_lat: float,
         own_lon: float,
     ) -> str | None:
-        """Yield before entering a moving crossing path; never use hold if unsafe."""
+        """Yield before entering a moving crossing path; alert if holding is unsafe."""
 
         distance_m = math.hypot(goal_east_m, goal_north_m)
         if distance_m <= self.config.goal_tolerance_m:
@@ -213,8 +215,6 @@ class ObstacleAvoider:
             heading_rad = math.radians(aircraft.heading_deg)
             other_east_mps = aircraft.speed_mps * math.sin(heading_rad)
             other_north_mps = aircraft.speed_mps * math.cos(heading_rad)
-            # Only traffic moving substantially across, rather than along,
-            # the direct route uses this time-to-closest-approach gate.
             along_mps = (
                 other_east_mps * goal_east_m + other_north_mps * goal_north_m
             ) / distance_m

@@ -13,6 +13,7 @@ import yaml
 
 EARTH_RADIUS_M = 6_371_000.0
 NOMINAL_ROUTE_SPEED_MPS = 1.5
+LIVE_TRAFFIC_MARGIN_M = 5.75
 REPLAY_COMPLETION_MARGIN_S = 20.0
 
 
@@ -254,8 +255,8 @@ def match_route(
                 distance, along, length = _segment_distance(
                     (aircraft.lat, aircraft.lon), start, end
                 )
-                # Use the same nominal live buffer and planner clearance as #237.
-                buffer_m = max(5.0, (aircraft.speed_mps + 1.5) * 1.5)
+                # Match the live moving-traffic margin and 1 m clearance.
+                buffer_m = LIVE_TRAFFIC_MARGIN_M
                 if distance <= aircraft.keepaway_m + buffer_m + 1.0:
                     candidates.append(
                         (
@@ -273,9 +274,11 @@ def match_route(
     usable = [
         candidate
         for candidate in candidates
-        if candidate[3] >= candidate[4] / 1.5 - 2.0
+        if candidate[3] >= candidate[4] / NOMINAL_ROUTE_SPEED_MPS - 2.0
         and frames[-1].time_s
-        >= max(0.0, candidate[3] - candidate[4] / 1.5) + candidate[5] / 1.5 + 5.0
+        >= max(0.0, candidate[3] - candidate[4] / NOMINAL_ROUTE_SPEED_MPS)
+        + candidate[5] / NOMINAL_ROUTE_SPEED_MPS
+        + 5.0
     ]
     distance, index, segment, event_time, along, length = min(usable or candidates)
     intervals = [

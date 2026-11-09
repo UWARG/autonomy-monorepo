@@ -81,7 +81,7 @@ class PositionController(rclpy.node.Node):
             AvoidanceConfig(
                 planner=PlannerConfig(
                     first_lookahead_m=self.PATH_LOOKAHEAD_M,
-                    map_freshness_s=2.5,
+                    map_freshness_s=1.5,
                 )
             )
         )

@@ -53,18 +53,18 @@ def test_altitude_band_filters_irrelevant_aircraft() -> None:
     )
 
 
-def test_live_mode_keeps_all_altitudes_and_adds_age_speed_buffer() -> None:
+def test_live_mode_keeps_all_altitudes_and_adds_fixed_buffer() -> None:
     far_above = aircraft(altitude_agl_m=80.0, speed_mps=4.0, horizontal_keep_away_m=3.0)
     obstacles = convert(far_above, age_s=1.0, live_buffer=True, all_altitudes=True)
 
     assert obstacles
-    assert all(item.radius_m == pytest.approx(3.0 + 13.75) for item in obstacles)
+    assert all(item.radius_m == pytest.approx(3.0 + 5.75) for item in obstacles)
     assert convert(far_above, age_s=1.0, live_buffer=True) == ()
 
 
-def test_live_buffer_has_five_metre_floor_and_rejects_invalid_values() -> None:
-    assert live_traffic_buffer_m(0.0, 0.0) == 5.0
-    assert live_traffic_buffer_m(4.0, 1.0) == pytest.approx(13.75)
+def test_live_buffer_distinguishes_stationary_and_moving_traffic() -> None:
+    assert live_traffic_buffer_m(0.0, 0.0) == 3.0
+    assert live_traffic_buffer_m(4.0, 1.0) == 5.75
     with pytest.raises(ValueError, match="INVALID_TRAFFIC_BUFFER_INPUT"):
         live_traffic_buffer_m(math.nan, 0.0)
 
