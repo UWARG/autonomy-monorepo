@@ -1,9 +1,7 @@
-// Flight view grid (lg):
-//   Map + traffic (8, all rows)   Mission (4)
-//                                 Connection (4)
-//                                 Log (4, takes the remaining height)
-//
-// Survey view grid (lg): Capture (7)   Survey report (5)
+// Grid (lg):
+//   row 1:  Camera (5)   Target (4)    Attitude (3)
+//   row 2:  Connection (4)   Tracker (4)   Script (4)
+//   row 3:  Log (12)
 
 import { useState } from 'react';
 import useAeacTraffic from './hooks/useAeacTraffic';
@@ -16,6 +14,7 @@ import SurveyWidget from './widgets/SurveyWidget';
 import LogWidget from './widgets/LogWidget';
 import MapWidget from './widgets/MapWidget';
 import HeaderStatus from './widgets/Header';
+import TrackerWidget from './widgets/TrackerWidget';
 
 type View = 'flight' | 'survey';
 
@@ -92,13 +91,34 @@ export default function App() {
         </div>
       </header>
 
-      {/* Both stay mounted so switching views keeps capture history and form state. */}
-      <div className={view === 'flight' ? 'contents' : 'hidden'}>
-        <FlightView link={link} mission={mission} />
-      </div>
-      <div className={view === 'survey' ? 'contents' : 'hidden'}>
-        <SurveyView active={view === 'survey'} />
-      </div>
+
+      <main
+        className="mx-auto grid w-full max-w-[1400px] grid-cols-12 gap-4 px-5 py-4
+                   lg:min-h-0 lg:flex-1 lg:overflow-y-auto
+                   lg:[grid-template-rows:minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
+      >
+        <div className="col-span-12 h-[340px] min-h-0 lg:col-span-5 lg:h-auto">
+          <CameraWidget />
+        </div>
+        <div className="col-span-12 h-[340px] min-h-0 md:col-span-7 lg:col-span-4 lg:h-auto">
+          <TargetWidget />
+        </div>
+        <div className="col-span-12 h-[340px] min-h-0 md:col-span-5 lg:col-span-3 lg:h-auto">
+          <AttitudeWidget />
+        </div>
+        <div className="col-span-12 h-[240px] min-h-0 md:col-span-6 lg:col-span-4 lg:h-auto">
+          <ConnectionWidget />
+        </div>
+        <div className="col-span-12 h-[320px] min-h-0 md:col-span-6 lg:col-span-4 lg:h-auto">
+          <TrackerWidget />
+        </div>
+        <div className="col-span-12 h-[240px] min-h-0 md:col-span-12 lg:col-span-4 lg:h-auto">
+          <ScriptWidget />
+        </div>
+        <div className="col-span-12 h-[220px] min-h-0 lg:h-auto">
+          <LogWidget />
+        </div>
+      </main>
     </div>
   );
 }

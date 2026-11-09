@@ -111,6 +111,22 @@ def generate_launch_description() -> LaunchDescription:
             ),
             Node(
                 package="comms",
+                executable="behaviour_tree_reporter",
+                name="behaviour_tree_reporter",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
+                package="comms",
+                executable="behaviour_tree_reporter",
+                name="behaviour_tree_reporter",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
+                package="comms",
                 executable="traffic_listener",
                 name="traffic_listener",
                 output="both",
@@ -130,6 +146,24 @@ def generate_launch_description() -> LaunchDescription:
                         ),
                     }
                 ],
+            ),
+            Node(
+                package="tracker",
+                executable="tracker_bridge",
+                name="tracker_bridge",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"session_id": "+", "data_dir": "/ros_ws/data"}],
+            ),
+            Node(
+                package="tracker",
+                executable="tracker_bridge",
+                name="tracker_bridge",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"session_id": "+", "data_dir": "/ros_ws/data"}],
             ),
         ]
     )

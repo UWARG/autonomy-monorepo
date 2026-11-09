@@ -1,30 +1,25 @@
 from setuptools import find_packages, setup
 
-
-package_name = "comms"
-
+package_name = 'comms'
 
 setup(
     name=package_name,
-    version="0.1.0",
-    packages=find_packages(exclude=["test"]),
+    version='0.1.0',
+    packages=find_packages(exclude=['test']),
     data_files=[
-        (
-            "share/ament_index/resource_index/packages",
-            [f"resource/{package_name}"],
-        ),
-        (f"share/{package_name}", ["package.xml"]),
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
     ],
-    install_requires=["setuptools", "websocket-client"],
+    install_requires=['setuptools'],
     zip_safe=True,
-    tests_require=["pytest"],
-    maintainer="WARG Autonomy Subteam",
-    maintainer_email="uwarg@uwaterloo.ca",
-    description="Link to the AEAC competition server: receives AEAC traffic for obstacle avoidance.",
-    license="MIT",
+    maintainer='WARG Autonomy Subteam',
+    maintainer_email='uwarg@uwaterloo.ca',
+    description='Behaviour tree status to the ground over MAVLink STATUSTEXT',
+    license='MIT',
     entry_points={
-        "console_scripts": [
-            "traffic_listener = comms.traffic_listener_node:main",
+        'console_scripts': [
+            'behaviour_tree_reporter = comms.behaviour_tree_reporter:main',
         ],
     },
 )
