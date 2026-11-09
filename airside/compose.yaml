@@ -27,4 +27,5 @@ services:
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
     command: ros2 launch airside_bringup airside.launch.py
-    restart: on-failure
+    # Comes back up on every Pi boot once started with `docker compose up -d`.
+    restart: unless-stopped
