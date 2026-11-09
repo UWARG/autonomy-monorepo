@@ -111,7 +111,7 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
-                parameters=[{"session_id": "+", "csv_path": "/ros_ws/data/tracker.csv"}],
+                parameters=[{"session_id": "+", "data_dir": "/ros_ws/data"}],
             ),
         ]
     )

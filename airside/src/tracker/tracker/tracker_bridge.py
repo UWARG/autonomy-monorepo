@@ -1,6 +1,7 @@
 # Subscribes to the LTE tracker on MQTT, republishes each fix as
 # sensor_msgs/NavSatFix on /tracker/location, and keeps an always-valid
-# Task 2 CSV (timestamp,latitude,longitude; sorted, no duplicates).
+# New csv per session ID, tracker_<session>.csv
+# (timestamp,latitude,longitude; sorted, no duplicates).
 
 import csv
 import json
@@ -29,7 +30,7 @@ def to_iso(t: float) -> str:
     return datetime.fromtimestamp(t, tz=timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 def load_csv(path: str) -> dict[str, tuple[float, float, float]]:
-    """Read an existing tracker CSV back in so a restarted node continues it.
+    """Read one session's CSV back in so a restarted node continues it.
     Returns {iso_timestamp: (unix_time, lat, lon)}. Missing file -> empty."""
     fixes = {}
     if not os.path.exists(path):
@@ -52,37 +53,51 @@ class TrackerBridge(Node):
         self.declare_parameter("broker_host", "broker.emqx.io")
         self.declare_parameter("broker_port", 1883)
         self.declare_parameter("session_id", "+")  # "+" = any tracker
-        self.declare_parameter("csv_path", "/ros_ws/data/tracker.csv")
+        self.declare_parameter("data_dir", "/ros_ws/data")
 
         host = self.get_parameter("broker_host").value
         port = self.get_parameter("broker_port").value
         session = self.get_parameter("session_id").value
-        self.csv_path = self.get_parameter("csv_path").value
+        self.data_dir = self.get_parameter("data_dir").value
         self.topic = f"warg/efs-lte-tracker/{session}/location"
 
         self.pub = self.create_publisher(NavSatFix, "/tracker/location", 10)
-        # iso timestamp -> (t, lat, lon); reload so a restart/respawn never wipes earlier fixes
-        self.fixes = load_csv(self.csv_path)
-        if self.fixes:
-            self.get_logger().info(f"resumed {len(self.fixes)} fixes from {self.csv_path}")
+        # session id -> {iso timestamp: (t, lat, lon)}; each session loaded from its file on first sight
+        self.sessions: dict[str, dict[str, tuple[float, float, float]]] = {}
         self.inbox: queue.Queue = queue.Queue()
 
         # paho runs on its own thread; hand messages to ROS through a queue
-        self.mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2,
+            client_id="warg-airside-tracker-bridge",  # fixed and unique: lets the broker queue messages for us
+            clean_session=False,
+        )
         self.mqtt.on_connect = self._on_connect
         self.mqtt.on_message = lambda c, u, msg: self.inbox.put(msg)
         self.mqtt.connect_async(host, port, keepalive=30)
         self.mqtt.loop_start()  # also reconnects automatically
 
         self.create_timer(0.05, self._drain)
-        self.get_logger().info(f"listening on {host}:{port} {self.topic}, writing {self.csv_path}")
+        self.get_logger().info(f"listening on {host}:{port} {self.topic}, writing {self.data_dir}/tracker_<session>.csv")
 
     def _on_connect(self, client, userdata, flags, reason_code, properties):
         self.get_logger().info(f"MQTT connected ({reason_code})")
         client.subscribe(self.topic, qos=1)  # re-subscribe on every reconnect
 
+    def _path(self, session: str) -> str:
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session)
+        return os.path.join(self.data_dir, f"tracker_{safe}.csv")
+
+    def _session(self, session: str) -> dict[str, tuple[float, float, float]]:
+        # first message from a session: resume its file if one exists
+        if session not in self.sessions:
+            self.sessions[session] = load_csv(self._path(session))
+            if self.sessions[session]:
+                self.get_logger().info(f"resumed {len(self.sessions[session])} fixes for session {session}")
+        return self.sessions[session]
+
     def _drain(self):
-        changed = False
+        changed: set[str] = set()
         while not self.inbox.empty():
             msg = self.inbox.get()
             try:
@@ -94,9 +109,10 @@ class TrackerBridge(Node):
                 continue  # no GPS fix yet, or a test sample: skip quietly
 
             session, seq, t, lat, lon = parsed
+            fixes = self._session(session)
             key = to_iso(t)
-            if key in self.fixes:
-                continue  # duplicate (QoS 1 resend, or already in the reloaded CSV)
+            if key in fixes:
+                continue  # duplicate within this session (QoS 1 resend, or already in its reloaded CSV)
 
             out = NavSatFix()
             out.header.stamp.sec = int(t)
@@ -105,20 +121,23 @@ class TrackerBridge(Node):
             out.latitude, out.longitude = lat, lon
             self.pub.publish(out)
 
-            self.fixes[key] = (t, lat, lon)
-            changed = True
-        if changed:
-            self._write_csv()
+            fixes[key] = (t, lat, lon)
+            changed.add(session)
+        for session in changed:
+            self._write_csv(session)
 
-    def _write_csv(self):
-        # rewrite the whole file sorted (old + new fixes), via temp file + rename
-        os.makedirs(os.path.dirname(self.csv_path), exist_ok=True)
-        tmp = self.csv_path + ".tmp"
+    def _write_csv(self, session: str):
+        # rewrite this session's file sorted, via temp file + fsync + rename
+        os.makedirs(self.data_dir, exist_ok=True)
+        path = self._path(session)
+        tmp = path + ".tmp"
         with open(tmp, "w") as f:
             f.write("timestamp,latitude,longitude\n")
-            for t, lat, lon in sorted(self.fixes.values()):
+            for t, lat, lon in sorted(self.sessions[session].values()):
                 f.write(f"{to_iso(t)},{lat:.7f},{lon:.7f}\n")
-        os.replace(tmp, self.csv_path)
+            f.flush()
+            os.fsync(f.fileno())  # survive a power cut
+        os.replace(tmp, path)
 
     def destroy_node(self):
         self.mqtt.loop_stop()
