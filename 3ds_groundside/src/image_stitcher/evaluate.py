@@ -2,7 +2,7 @@
 Measures the stitcher on synthetic missions with known ground truth. Produces
 the "Accuracy" figures in the README (simulated).
 
-Usage (from 3DS_Groundside/, about 7 minutes for the default 5 seeds):
+Usage (from 3ds_groundside/, about 7 minutes for the default 5 seeds):
     uv run python -m src.image_stitcher.evaluate [--seeds N]
 """
 

@@ -1,5 +1,5 @@
 [project]
-name = "3DS_Groundside"
+name = "3ds_groundside"
 version = "0.1.0"
 description = "Groundside operator tooling for 3DS autonomy."
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/3DS_Groundside"
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/3ds_groundside"
 Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]

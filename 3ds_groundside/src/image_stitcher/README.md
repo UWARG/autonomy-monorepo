@@ -59,7 +59,7 @@ Demo on a synthetic 3-drone mission (writes the numbered maps to
 comparison):
 
 ```bash
-cd 3DS_Groundside
+cd 3ds_groundside
 uv run python -m src.image_stitcher.demo stitcher_demo --gps-noise 2
 ```
 
