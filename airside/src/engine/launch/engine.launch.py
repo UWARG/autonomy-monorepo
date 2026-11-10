@@ -85,6 +85,14 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
             ),
             Node(
+                package="comms",
+                executable="behaviour_tree_reporter",
+                name="behaviour_tree_reporter",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
                 package="wrapper",
                 executable="building_target_localizer",
                 name="building_target_localizer",
