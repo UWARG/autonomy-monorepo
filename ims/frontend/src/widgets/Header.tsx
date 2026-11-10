@@ -1,8 +1,7 @@
 import type { ConnectionMessage, StatusMessage } from '../types';
 
 /**
- * Header telemetry strip. Only renders the fields the wire contract actually
- * supports today:
+ * Header telemetry strip.
  *   LINK    <- connection.status  (active/degraded/lost)
  *   MISSION <- parsed from status.text ("WP n / total")
  *
