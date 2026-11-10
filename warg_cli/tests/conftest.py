@@ -8,6 +8,17 @@ from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
 
 
 @pytest.fixture()
+def startup_repo(fixture_repo: Path) -> Path:
+    for project, section in [
+        ("camera", 'commands = ["test:unit"]'),
+        ("gesture_control", 'commands = ["sim:replay"]\nrestart = "always"'),
+    ]:
+        manifest = fixture_repo / project / PROJECT_MANIFEST_FILENAME
+        manifest.write_text(manifest.read_text() + f"\n[startup]\n{section}\n")
+    return fixture_repo
+
+
+@pytest.fixture()
 def fixture_repo(tmp_path: Path) -> Path:
     (tmp_path / ".git").mkdir()
     (tmp_path / "README.md").write_text("# Fixture\n")

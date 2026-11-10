@@ -8,9 +8,13 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from constants import PROJECT_MANIFEST_FILENAME, ROOT_REGISTRY_FILENAME
+from constants import (
+    PROJECT_MANIFEST_FILENAME,
+    ROOT_REGISTRY_FILENAME,
+    STARTUP_RESTART_POLICIES,
+)
 from errors import DependencyError, ManifestError
-from models import Project, ProjectEntry
+from models import Project, ProjectEntry, StartupConfig
 
 
 def find_repo_root(start: Path | None = None) -> Path:
@@ -105,7 +109,7 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: 'include_paths' must be "
                     "repo-relative."
                 )
-        return tuple(raw)
+        return _unique(raw)
 
     def _parse_extra_paths(
         self, name: str, metadata: dict[str, Any]
@@ -129,7 +133,7 @@ class Registry:
                     f"{ROOT_REGISTRY_FILENAME}: project '{name}' extra_paths must "
                     "be repo-relative."
                 )
-        return tuple(raw)
+        return _unique(raw)
 
     def _load_materialized_projects(self) -> dict[str, Project]:
         projects: dict[str, Project] = {}
@@ -254,13 +258,56 @@ def load_project_manifest(manifest: Path) -> Project:
         name=name,
         path=manifest.parent,
         description=description,
-        depends_on=tuple(depends_on),
+        depends_on=_unique(depends_on),
         commands=dict(sorted(commands.items())),
         ci={
-            pipeline: tuple(command_names)
+            pipeline: _unique(command_names)
             for pipeline, command_names in sorted(ci.items())
         },
+        startup=_parse_startup(data, manifest, commands),
     )
+
+
+def _parse_startup(
+    data: dict[str, Any], manifest: Path, commands: dict[str, str]
+) -> StartupConfig:
+    startup = data.get("startup", {})
+    if not isinstance(startup, dict):
+        raise ManifestError(f"{manifest}: '[startup]' must be a table.")
+
+    unknown = sorted(set(startup) - {"commands", "restart"})
+    if unknown:
+        raise ManifestError(
+            f"{manifest}: unknown [startup] key(s): {', '.join(unknown)}. "
+            "Expected 'commands' and optionally 'restart'."
+        )
+
+    command_names = startup.get("commands", [])
+    if not isinstance(command_names, list) or not all(
+        isinstance(item, str) for item in command_names
+    ):
+        raise ManifestError(
+            f"{manifest}: [startup].commands must be a list of command names."
+        )
+    for command_name in command_names:
+        if command_name not in commands:
+            raise ManifestError(
+                f"{manifest}: [startup].commands references missing command "
+                f"'{command_name}'."
+            )
+
+    restart = startup.get("restart", StartupConfig.restart)
+    if restart not in STARTUP_RESTART_POLICIES:
+        raise ManifestError(
+            f"{manifest}: [startup].restart must be one of: "
+            f"{', '.join(STARTUP_RESTART_POLICIES)}."
+        )
+
+    return StartupConfig(commands=_unique(command_names), restart=restart)
+
+
+def _unique(items: list[str]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(items))
 
 
 def _expect_string(data: dict[str, Any], key: str, manifest: Path) -> str:
