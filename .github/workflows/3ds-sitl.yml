@@ -1,0 +1,43 @@
+name: 3DS SITL Mission
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sitl-mission:
+    name: Fly waypoint and land
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run ArduPilot SITL mission
+        working-directory: 3ds
+        run: >
+          docker compose -f compose.sitl.yaml up --build
+          --abort-on-container-exit
+          --exit-code-from sitl-test
+
+      - name: Collect SITL logs
+        if: always()
+        working-directory: 3ds
+        run: docker compose -f compose.sitl.yaml logs --no-color > ../sitl-compose.log
+
+      - name: Upload SITL diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitl-diagnostics
+          path: |
+            sitl-compose.log
+            3ds/log/ros
+            3ds/data/photos
+          if-no-files-found: warn
+
+      - name: Clean up SITL containers
+        if: always()
+        working-directory: 3ds
+        run: docker compose -f compose.sitl.yaml down --remove-orphans
