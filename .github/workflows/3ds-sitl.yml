@@ -14,10 +14,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build cached ArduPilot SITL image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 3ds/docker/sitl/Dockerfile
+          tags: warg/arducopter-sitl:4.7.2
+          load: true
+          cache-from: type=gha,scope=ardupilot-sitl
+          cache-to: type=gha,mode=max,scope=ardupilot-sitl
+
+      - name: Build cached 3DS image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 3ds/docker/Dockerfile
+          tags: warg/3ds:latest
+          load: true
+          cache-from: type=gha,scope=3ds-image
+          cache-to: type=gha,mode=max,scope=3ds-image
+
       - name: Run ArduPilot SITL mission
         working-directory: 3ds
         run: >
-          docker compose -f compose.sitl.yaml up --build
+          docker compose -f compose.sitl.yaml up --no-build
           --abort-on-container-exit
           --exit-code-from sitl-test
 
