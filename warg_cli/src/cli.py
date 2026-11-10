@@ -22,10 +22,27 @@ from models import Project
 from registry import Registry, expand_dependents, find_repo_root, find_repo_root_or_none
 from constants import BOOTCAMP_UPSTREAM
 from runner import CommandRunner
+from startup import (
+    SyncResult,
+    SystemdUser,
+    find_warg_executable,
+    load_machine_config,
+    machine_config_path,
+    render_units,
+    startup_entries,
+    sync_units,
+    uninstall_units,
+)
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 ci_app = typer.Typer(no_args_is_help=True, add_completion=False)
 app.add_typer(ci_app, name="ci")
+startup_app = typer.Typer(no_args_is_help=True, add_completion=False)
+app.add_typer(
+    startup_app,
+    name="startup",
+    help="Run project commands as background services at boot on Linux.",
+)
 console = Console()
 
 
@@ -419,6 +436,111 @@ def ci_main(
 ) -> None:
     """Run main-branch CI for projects affected by this push."""
     _run_ci("main", base=base, merge_base=False)
+
+
+@startup_app.command("list")
+def startup_list() -> None:
+    """List the startup commands of checked-out projects and their services."""
+    try:
+        registry = _load_registry()
+        entries = startup_entries(registry, registry.projects)
+        enabled = load_machine_config(missing_ok=True).projects
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+    if not entries:
+        console.print("No checked-out projects define \\[startup] commands.")
+        return
+
+    systemd = SystemdUser()
+    available = systemd.is_available()
+    table = Table(title="WARG startup commands")
+    table.add_column("Project")
+    table.add_column("Command")
+    table.add_column("Restart")
+    table.add_column("Service")
+    table.add_column("State")
+    for entry in entries:
+        if entry.project not in enabled:
+            state = "not enabled"
+        elif available:
+            state = systemd.unit_state(entry.unit_name)
+        else:
+            state = "-"
+        table.add_row(
+            entry.project, entry.command, entry.restart, entry.unit_name, state
+        )
+    console.print(table)
+    console.print(
+        f"Projects are enabled for this machine in {machine_config_path()}.",
+        soft_wrap=True,
+    )
+
+
+@startup_app.command("sync")
+def startup_sync() -> None:
+    """Install, update, and start the services this machine's config enables."""
+    root = _load_repo_root()
+    systemd = SystemdUser()
+    try:
+        systemd.ensure_available()
+        units = render_units(
+            Registry(root), load_machine_config(), warg=find_warg_executable()
+        )
+        result = sync_units(systemd, units)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}", soft_wrap=True)
+        raise typer.Exit(1) from error
+
+    _print_sync_result(result)
+    if units and not systemd.linger_enabled() and not systemd.enable_linger():
+        console.print(
+            "[yellow]Warning:[/yellow] Could not enable lingering, so these "
+            "services only start after you log in. To start them at boot, run:\n"
+            "  sudo loginctl enable-linger $USER",
+            soft_wrap=True,
+        )
+
+
+@startup_app.command("uninstall")
+def startup_uninstall() -> None:
+    """Stop and remove every startup service warg installed."""
+    systemd = SystemdUser()
+    try:
+        systemd.ensure_available()
+        removed = uninstall_units(systemd)
+    except WargError as error:
+        console.print(f"[red]Error:[/red] {error}")
+        raise typer.Exit(1) from error
+
+    if not removed:
+        console.print("No warg startup services are installed.")
+        return
+    console.print("Removed startup services:")
+    for name in removed:
+        console.print(f"  - {name}")
+
+
+def _print_sync_result(result: SyncResult) -> None:
+    for label, names in (
+        ("Added", result.added),
+        ("Updated", result.updated),
+        ("Removed", result.removed),
+        ("Unchanged", result.unchanged),
+    ):
+        if names:
+            console.print(f"{label}:")
+            for name in names:
+                console.print(f"  - {name}")
+
+    if not (result.added or result.updated or result.unchanged):
+        console.print(
+            f"{machine_config_path()} enables no \\[startup] commands, so nothing "
+            "runs at startup.",
+            soft_wrap=True,
+        )
+        return
+    console.print("Follow a service's logs with: journalctl --user -u <service> -f")
 
 
 def _load_registry() -> Registry:
