@@ -19,6 +19,7 @@ from engine.constants import (
     UNICODE_TREE_DEBUG,
 )
 from engine.subtrees.land import create_land_subtree
+from engine.subtrees.abort import create_abort_subtree
 from engine.subtrees.lapping import create_lapping_subtree
 from engine.subtrees.target_reconnaissance import (
     create_target_reconnaissance_subtree,
@@ -35,15 +36,21 @@ def create_root() -> py_trees.behaviour.Behaviour:
     holds the tree in RUNNING after landing.
 
     ```
-    KillSwitch
-    └── Mission [Sequence]
-        ├── ConfigureStreamRates
-        ├── LoadWaypointList
-        ├── Takeoff
-        ├── Lapping
-        ├── TargetReconnaissance
-        ├── LandPhase
-        └── MissionComplete [Running]
+    SafetySupervisor [Selector]
+    ├── Abort
+    │   ├── CheckAbort
+    │   ├── RetryLand [Retry forever]
+    │   │   └── AbortLand
+    │   └── Aborted [Running]
+    └── KillSwitch
+        └── Mission [Sequence]
+            ├── ConfigureStreamRates
+            ├── LoadWaypointList
+            ├── Takeoff
+            ├── Lapping
+            ├── TargetReconnaissance
+            ├── LandPhase
+            └── MissionComplete [Running]
     ```
     """
 
@@ -62,8 +69,15 @@ def create_root() -> py_trees.behaviour.Behaviour:
     )
 
     if RC_SWITCHES_ENABLED:
-        return KillSwitch(child=mission)
-    return mission
+        mission_root = KillSwitch(child=mission)
+    else:
+        mission_root = mission
+
+    return py_trees.composites.Selector(
+        name="SafetySupervisor",
+        memory=False,
+        children=[create_abort_subtree(), mission_root],
+    )
 
 
 def main(args: list[str] | None = None) -> None:
