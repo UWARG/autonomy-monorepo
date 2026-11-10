@@ -38,7 +38,9 @@ def controller():
     node.destroy_node()
 
 
-def place(node: PositionController, position: Coordinate, received_s: float = NOW) -> None:
+def place(
+    node: PositionController, position: Coordinate, received_s: float = NOW
+) -> None:
     node._fix = NavSatFix(latitude=position.lat, longitude=position.lon)
     node._rel_alt_m = position.alt
     node._fix_received_s = node._rel_alt_received_s = received_s
@@ -106,14 +108,16 @@ def test_path_not_through_target_is_ignored(controller) -> None:
 def test_target_message_without_path_clears_it(controller) -> None:
     controller._path = [HERE, TARGET]
     controller._target_callback(
-        PositionTarget(target=CoordinateMsg(lat=TARGET.lat, lon=TARGET.lon, alt=TARGET.alt))
+        PositionTarget(
+            target=CoordinateMsg(lat=TARGET.lat, lon=TARGET.lon, alt=TARGET.alt)
+        )
     )
 
     assert controller._path == []
 
 
 def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:
-    blocker = enu_to_coordinate(HERE, 0.0, 6.0)
+    blocker = enu_to_coordinate(HERE, 0.0, 12.0)
     controller._traffic_aircraft = (
         TrafficAircraft(1, blocker.lat, blocker.lon, 10.0, 0.0, 0.0, 2.0, 5.0),
     )
@@ -121,12 +125,48 @@ def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:
     assert controller._next_setpoint(NOW).lon != pytest.approx(HERE.lon, abs=1e-6)
 
 
+def test_persistent_blockage_holds_and_alerts_pilot(controller) -> None:
+    assert controller._hold(HERE, "BLOCKED", NOW) == HERE
+    assert controller._last_alert_s == -math.inf
+    assert controller._hold(HERE, "BLOCKED", NOW + 5.0) == HERE
+    assert controller._last_alert_s == NOW + 5.0
+
+
+def test_predicted_hold_conflict_alerts_immediately(controller) -> None:
+    assert controller._hold(HERE, "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED", NOW) == HERE
+    assert controller._last_alert_s == NOW
+
+
+def test_crossing_yield_alerts_only_if_it_persists(controller) -> None:
+    assert controller._hold(HERE, "YIELD_CROSSING", NOW) == HERE
+    assert controller._last_alert_s == -math.inf
+    assert controller._hold(HERE, "YIELD_CROSSING", NOW + 19.9) == HERE
+    assert controller._last_alert_s == -math.inf
+    assert controller._hold(HERE, "YIELD_CROSSING", NOW + 20.0) == HERE
+    assert controller._last_alert_s == NOW + 20.0
+
+
+def test_unconfirmed_own_index_holds(controller) -> None:
+    controller._traffic.own_aircraft_index = -1
+    assert controller._next_setpoint(NOW) == HERE
+
+
+def test_own_aircraft_in_snapshot_holds(controller) -> None:
+    controller._traffic.own_aircraft_index = 2
+    controller._traffic_aircraft = (
+        TrafficAircraft(2, HERE.lat, HERE.lon, 10.0, 0.0, 0.0, 2.0, 5.0),
+    )
+    assert controller._next_setpoint(NOW) == HERE
+
+
 @pytest.mark.parametrize(
     "unusable",
     [
         lambda c: setattr(c, "_traffic", None),
         lambda c: setattr(c, "_traffic", TrafficSnapshot(connected=False)),
-        lambda c: setattr(c, "_traffic", TrafficSnapshot(connected=True, healthy=False)),
+        lambda c: setattr(
+            c, "_traffic", TrafficSnapshot(connected=True, healthy=False)
+        ),
         lambda c: setattr(c, "_traffic_received_s", NOW - 5.0),
         lambda c: setattr(c, "_fix_received_s", NOW - 2.0),
     ],
@@ -134,7 +174,9 @@ def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:
 def test_unusable_inputs_hold_where_the_hold_began(controller, unusable) -> None:
     unusable(controller)
     first = controller._next_setpoint(NOW)
-    place(controller, enu_to_coordinate(HERE, 3.0, 3.0, 10.0), controller._fix_received_s)
+    place(
+        controller, enu_to_coordinate(HERE, 3.0, 3.0, 10.0), controller._fix_received_s
+    )
     later = controller._next_setpoint(NOW)
 
     assert first == HERE
