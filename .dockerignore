@@ -6,7 +6,7 @@
 
 # Monorepo projects not needed for airside
 ims/
-SITL-Plus/
+sitl-plus/
 warg_cli/
 
 # Airside build artifacts and tooling
