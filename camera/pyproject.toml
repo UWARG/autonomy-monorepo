@@ -3,7 +3,7 @@ name = "camera"
 version = "0.1.0"
 description = "Hardware abstraction layer for RGB and depth cameras."
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["numpy>=1.24.0"]
 
 [project.urls]
@@ -24,3 +24,4 @@ packages = ["."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+python_files = ["test_*.py"]
