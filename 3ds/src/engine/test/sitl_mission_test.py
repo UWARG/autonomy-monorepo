@@ -150,6 +150,10 @@ class SitlMissionTest(Node):
         self._go_home_pub.publish(Empty())
 
         self._wait_for(
+            "3DS forwarding the launch point through MAVROS",
+            self._target_matches_home,
+        )
+        self._wait_for(
             f"landed altitude of at most {self._landed_max_alt_m:.1f}m",
             lambda: (
                 self._rel_alt_m is not None
@@ -160,7 +164,7 @@ class SitlMissionTest(Node):
             "disarmed state",
             lambda: self._state is not None and not self._state.armed,
         )
-        self._assert_known_home_location()
+        self._assert_known_home_location(tolerance_m=self._waypoint_radius_m)
 
     def _set_guided_mode(self) -> None:
         request = SetMode.Request()
@@ -226,15 +230,19 @@ class SitlMissionTest(Node):
             and math.isfinite(self._fix.longitude)
         )
 
-    def _assert_known_home_location(self) -> None:
+    def _assert_known_home_location(self, tolerance_m: float | None = None) -> None:
         assert self._fix is not None
+        max_distance_m = (
+            self._home_tolerance_m if tolerance_m is None else tolerance_m
+        )
         distance_m = _horizontal_distance_m(
             self._fix.latitude, self._fix.longitude, self._home_lat, self._home_lon
         )
-        if distance_m > self._home_tolerance_m:
+        if distance_m > max_distance_m:
             raise TestFailure(
                 "SITL vehicle is at an unexpected location: "
-                f"{distance_m:.1f}m from the configured home position"
+                f"{distance_m:.1f}m from the configured home position "
+                f"(tolerance {max_distance_m:.1f}m)"
             )
         self.get_logger().info(
             f"PASS: vehicle location is within {distance_m:.1f}m of configured home"
@@ -269,6 +277,21 @@ class SitlMissionTest(Node):
             and math.isclose(message.latitude, target.lat, abs_tol=1e-7)
             and math.isclose(message.longitude, target.lon, abs_tol=1e-7)
             and math.isclose(message.altitude, target.alt, abs_tol=0.01)
+        )
+
+    def _target_matches_home(self) -> bool:
+        message = self._forwarded_target
+        if message is None:
+            return False
+        return (
+            message.coordinate_frame == GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
+            and _horizontal_distance_m(
+                message.latitude,
+                message.longitude,
+                self._home_lat,
+                self._home_lon,
+            )
+            <= self._home_tolerance_m
         )
 
     def _state_callback(self, message: State) -> None:

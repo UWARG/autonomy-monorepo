@@ -4,6 +4,18 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "3ds/**"
+      - "camera/**"
+      - "utils/**"
+      - ".github/workflows/3ds-sitl.yml"
+  pull_request:
+    paths:
+      - "3ds/**"
+      - "camera/**"
+      - "utils/**"
+      - ".github/workflows/3ds-sitl.yml"
+  workflow_dispatch:
 
 jobs:
   sitl-mission:
