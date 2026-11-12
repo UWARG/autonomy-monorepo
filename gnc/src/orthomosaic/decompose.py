@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.polygon import orient
 
+from utils.src.coordinates import validate_polygon
+
 # Sweep-axis identifiers. A cell is swept along its axis:
 #   HORIZONTAL — slice lines run along x at constant y; passes run along x and
 #                are stacked in y. A cell with this axis is monotone in y.
@@ -53,24 +55,6 @@ class Cell:
 
     polygon: Polygon
     axis: int
-
-
-def validate_polygon(polygon: Polygon) -> None:
-    """Raises ``ValueError`` if ``polygon`` is outside the supported class.
-
-    Supported: a single, valid, non-degenerate simple polygon with no holes.
-    """
-
-    if not isinstance(polygon, Polygon):
-        raise ValueError("boundary must be a single polygon")
-    if polygon.is_empty:
-        raise ValueError("boundary polygon is empty")
-    if not polygon.is_valid:
-        raise ValueError("boundary polygon is self-intersecting or invalid")
-    if polygon.interiors:
-        raise ValueError("boundary polygon must not contain holes")
-    if polygon.area <= 0.0:
-        raise ValueError("boundary polygon has zero area")
 
 
 def is_monotone(polygon: Polygon, axis: int, samples: int = 8) -> bool:

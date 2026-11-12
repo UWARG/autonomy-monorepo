@@ -93,3 +93,62 @@ plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
   turn arc) and is configurable via `ScanRequest.turn_penalty_m`.
 - **Spherical Earth model.** Local east/north projection uses the IUGG mean
   Earth radius; accurate to sub-meter over scan-scale regions.
+
+## Lloyd's algorithm (even drone spacing)
+
+Spreads a swarm evenly over a region with Lloyd's algorithm (Voronoi
+relaxation). Each step gives every drone the part of the region closer to it
+than to any other drone (its Voronoi cell, clipped to the region) and moves the
+drone to that cell's centroid. Repeating this converges to a centroidal Voronoi
+tessellation: every drone ends up in the middle of a similar share of the area.
+
+### Usage
+
+```python
+from lloyd import coverage_cost, lloyd_relax, lloyd_step
+
+positions = {1: Coordinate(lat, lon, alt), 2: Coordinate(lat, lon, alt), ...}
+boundary = [Coordinate(lat, lon, 0.0), ...]  # ordered GPS vertices, >= 3
+
+next_positions = lloyd_step(positions, boundary)  # {drone_id: Coordinate}
+
+result = lloyd_relax(positions, boundary, max_iterations=100, tolerance_m=0.1)
+result.positions    # final {drone_id: Coordinate}
+result.iterations   # steps taken
+result.converged    # True once no drone moved more than tolerance_m
+result.history      # input positions, then the positions after every step
+
+coverage_cost(positions, boundary)  # mean squared distance (m^2) to the nearest drone
+```
+
+`lloyd_step` is one step, for re-planning while drones fly; `lloyd_relax`
+repeats it until the drones stop moving. Drone ids are kept and every drone
+keeps its own altitude.
+
+### Assumptions and limitations
+
+- **Uniform importance.** Every part of the region counts the same; there is
+  no density weighting yet.
+- **Even spacing, not equal areas.** Lloyd's algorithm minimises the mean
+  squared distance to the nearest drone. Drones end up evenly spaced, but cell
+  areas can still differ (e.g. 6 drones in a square can settle with the
+  largest cell up to about 1.8x the smallest, depending on where they start).
+  Splitting work into equal shares is a different problem.
+- **Convergence is gradual.** Big moves happen in the first few steps, then
+  steps shrink; use `tolerance_m` and `max_iterations` to trade precision for
+  time.
+- **Planar.** Positions are projected to local east/north metres around the
+  boundary centroid (same helpers as orthomosaic planning); altitude is ignored
+  when splitting the region.
+- **Concave regions.** A cell cut by the boundary can have its centroid outside
+  it; the drone then goes to the nearest point of its own cell, so it always
+  stays inside the region. Spacing in concave regions is even locally, but the
+  result depends on the start (Lloyd's algorithm finds a local optimum).
+- **Drones outside the region** are pulled back to its nearest point, kept
+  at least 2 m from the other drones (closer only if the region is too small
+  for that).
+- **Supported boundaries** are the same as orthomosaic planning: simple
+  polygons without holes. Two drones closer than 1 mm are rejected with
+  `ValueError`, since there is no boundary between them.
+- **No collision avoidance.** The output is a target per drone; flying there
+  safely is up to the path planner.

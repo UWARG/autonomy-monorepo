@@ -50,7 +50,7 @@ dev = [
 requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "shapely", specifier = ">=1.7.0" },
+    { name = "shapely", specifier = ">=1.8" },
     { name = "utils", directory = "../utils" },
 ]
 provides-extras = ["dev"]
