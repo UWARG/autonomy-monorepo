@@ -10,9 +10,14 @@ where it took off when told to.
 ```text
 3ds/
 ├── compose.yaml
+├── compose.sitl.yaml
+├── compose.sitl-test.yaml
 ├── docker/
 │   ├── Dockerfile
-│   └── entrypoint.sh
+│   ├── entrypoint.sh
+│   └── sitl/
+│       ├── Dockerfile
+│       └── entrypoint.sh
 ├── src/
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages and services
@@ -117,13 +122,15 @@ warg run 3ds build          # Build the 3DS Docker image
 warg run 3ds compose-up     # Start the real-hardware engine service (detached)
 warg run 3ds compose-down   # Stop the real-hardware engine service
 warg run 3ds logs           # Follow real-hardware service logs
+warg run 3ds sitl           # Connect 3DS to an external SITL (e.g. Mission Planner)
 warg run 3ds test-sitl      # Run the self-contained ArduCopter SITL mission test
 warg run 3ds shell          # Open an interactive shell in the container
 ```
 
 ### SITL integration test
 
-`warg run 3ds test-sitl` starts three Docker services on the Compose network:
+`warg run 3ds test-sitl` (or `warg run 3ds test`) starts three Docker services on
+the Compose network via `compose.sitl-test.yaml`:
 
 1. `sitl` runs a headless ArduCopter simulator at the fixed default home
    location `-35.363261, 149.165230` and exposes MAVLink TCP port `5762`.
@@ -141,9 +148,9 @@ and can take several minutes. To preserve the stopped containers for log
 inspection, run the equivalent Compose command directly:
 
 ```bash
-docker compose -f compose.sitl.yaml up --build --abort-on-container-exit \
+docker compose -f compose.sitl-test.yaml up --build --abort-on-container-exit \
   --exit-code-from sitl-test
-docker compose -f compose.sitl.yaml logs
+docker compose -f compose.sitl-test.yaml logs
 ```
 
 Set `SITL_TEST_TIMEOUT_S` to adjust the per-phase timeout (default `180`
@@ -177,18 +184,19 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `PHOTO_DATA_DIR` | `/ros_ws/data/photos` | Directory where the camera node saves captured photos |
-| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. The SITL test overrides it with `tcp://sitl:5762`. |
+| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. See `compose.sitl.yaml` (external SITL) and `compose.sitl-test.yaml` (automated SITL test). |
 
 ### Networking
 
-The real-hardware container in `compose.yaml` runs with `network_mode: host` to
-ensure direct access to the host's network interfaces. On Docker Desktop
-(macOS/Windows), enable host networking under Settings > Resources > Network,
-or switch to the 1:1 `ports:` fallback commented in `compose.yaml` if needed.
+The real-hardware container in `compose.yaml` and the external-SITL container in
+`compose.sitl.yaml` run with `network_mode: host` to ensure direct access to the
+host's network interfaces. On Docker Desktop (macOS/Windows), enable host
+networking under Settings > Resources > Network, or switch to the 1:1 `ports:`
+fallback commented in `compose.yaml` if needed.
 
-`compose.sitl.yaml` uses Docker's internal Compose network instead. The SITL,
-3DS and test services discover each other by service name, so the automated
-SITL test does not require host networking.
+`compose.sitl-test.yaml` uses Docker's internal Compose network instead. The
+SITL, 3DS and test services discover each other by service name, so the
+automated SITL test does not require host networking.
 
 ### Logs
 

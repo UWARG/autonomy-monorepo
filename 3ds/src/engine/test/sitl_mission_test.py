@@ -17,6 +17,13 @@ from collections.abc import Callable
 
 import rclpy
 from airside_interfaces.msg import Coordinate
+from engine.constants import (
+    GUIDED_MODE,
+    RETURN_ALTITUDE_M,
+    TAKEOFF_ALTITUDE_M,
+    TAKEOFF_ALTITUDE_TOLERANCE_M,
+    WAYPOINT_ACCEPTANCE_RADIUS_M,
+)
 from mavros_msgs.msg import GlobalPositionTarget, State
 from mavros_msgs.srv import CommandBool, SetMode
 from rclpy.node import Node
@@ -43,22 +50,29 @@ class SitlMissionTest(Node):
     SET_MODE_SERVICE = "mavros/set_mode"
     ARMING_SERVICE = "mavros/cmd/arming"
 
+    DEFAULT_HOME_LAT = -35.363261
+    DEFAULT_HOME_LON = 149.165230
+    DEFAULT_TIMEOUT_S = 180.0
+
+    HOME_TOLERANCE_M = 5.0
+    WAYPOINT_OFFSET_EAST_M = 10.0
+    WAYPOINT_ALT_M = TAKEOFF_ALTITUDE_M
+    TAKEOFF_MIN_ALT_M = TAKEOFF_ALTITUDE_M - TAKEOFF_ALTITUDE_TOLERANCE_M
+    WAYPOINT_RADIUS_M = WAYPOINT_ACCEPTANCE_RADIUS_M
+    LANDED_MAX_ALT_M = 1.0
+    POST_WAYPOINT_WAIT_S = 1.5
+
     def __init__(self) -> None:
         super().__init__("sitl_mission_test")
 
-        self._timeout_s = _environment_float("SITL_TEST_TIMEOUT_S", 180.0)
-        self._home_lat = _environment_float("SITL_HOME_LAT", -35.363261)
-        self._home_lon = _environment_float("SITL_HOME_LON", 149.165230)
-        self._home_tolerance_m = _environment_float("SITL_TEST_HOME_TOLERANCE_M", 5.0)
-        self._waypoint_offset_east_m = _environment_float(
-            "SITL_TEST_WAYPOINT_OFFSET_EAST_M", 10.0
+        self._timeout_s = _environment_float(
+            "SITL_TEST_TIMEOUT_S", self.DEFAULT_TIMEOUT_S
         )
-        self._waypoint_alt_m = _environment_float("SITL_TEST_WAYPOINT_ALT_M", 15.0)
-        self._takeoff_min_alt_m = _environment_float(
-            "SITL_TEST_TAKEOFF_MIN_ALT_M", 14.0
+        self._home = Coordinate(
+            lat=_environment_float("SITL_HOME_LAT", self.DEFAULT_HOME_LAT),
+            lon=_environment_float("SITL_HOME_LON", self.DEFAULT_HOME_LON),
+            alt=RETURN_ALTITUDE_M,
         )
-        self._waypoint_radius_m = _environment_float("SITL_TEST_WAYPOINT_RADIUS_M", 1.0)
-        self._landed_max_alt_m = _environment_float("SITL_TEST_LANDED_MAX_ALT_M", 1.0)
 
         self._state: State | None = None
         self._fix: NavSatFix | None = None
@@ -107,23 +121,23 @@ class SitlMissionTest(Node):
 
         self._set_guided_mode()
         self._wait_for(
-            "GUIDED mode state",
-            lambda: self._state is not None and self._state.mode == "GUIDED",
+            f"{GUIDED_MODE} mode state",
+            lambda: self._state is not None and self._state.mode == GUIDED_MODE,
         )
         self._arm_vehicle()
         self._wait_for(
-            "armed GUIDED state",
+            f"armed {GUIDED_MODE} state",
             lambda: (
                 self._state is not None
                 and self._state.armed
-                and self._state.mode == "GUIDED"
+                and self._state.mode == GUIDED_MODE
             ),
         )
         self._wait_for(
-            f"airborne altitude of at least {self._takeoff_min_alt_m:.1f}m",
+            f"airborne altitude of at least {self.TAKEOFF_MIN_ALT_M:.1f}m",
             lambda: (
                 self._rel_alt_m is not None
-                and self._rel_alt_m >= self._takeoff_min_alt_m
+                and self._rel_alt_m >= self.TAKEOFF_MIN_ALT_M
             ),
         )
 
@@ -138,9 +152,13 @@ class SitlMissionTest(Node):
             lambda: self._target_matches(waypoint),
         )
         self._wait_for(
-            f"vehicle within {self._waypoint_radius_m:.1f}m of the waypoint",
-            lambda: self._distance_to(waypoint) <= self._waypoint_radius_m,
+            f"vehicle within {self.WAYPOINT_RADIUS_M:.1f}m of the waypoint",
+            lambda: self._distance_to(waypoint) <= self.WAYPOINT_RADIUS_M,
         )
+
+        # Let the 500ms behavior tree tick and complete FlyToSetpoint arrival
+        # before the go-home message preempts the setpoint-serving subtree.
+        self._spin_for(self.POST_WAYPOINT_WAIT_S)
 
         self._wait_for(
             "3DS go-home subscription",
@@ -154,25 +172,29 @@ class SitlMissionTest(Node):
             self._target_matches_home,
         )
         self._wait_for(
-            f"landed altitude of at most {self._landed_max_alt_m:.1f}m",
+            f"landed altitude of at most {self.LANDED_MAX_ALT_M:.1f}m",
             lambda: (
                 self._rel_alt_m is not None
-                and self._rel_alt_m <= self._landed_max_alt_m
+                and self._rel_alt_m <= self.LANDED_MAX_ALT_M
             ),
         )
         self._wait_for(
             "disarmed state",
             lambda: self._state is not None and not self._state.armed,
         )
-        self._assert_known_home_location(tolerance_m=self._waypoint_radius_m)
+        self._assert_known_home_location(tolerance_m=self.WAYPOINT_RADIUS_M)
 
     def _set_guided_mode(self) -> None:
         request = SetMode.Request()
         request.base_mode = 0
-        request.custom_mode = "GUIDED"
-        response = self._call_service(self._set_mode_client, request, "set GUIDED mode")
+        request.custom_mode = GUIDED_MODE
+        response = self._call_service(
+            self._set_mode_client, request, f"set {GUIDED_MODE} mode"
+        )
         if response is None or not response.mode_sent:
-            raise TestFailure(f"MAVROS rejected GUIDED mode request: {response}")
+            raise TestFailure(
+                f"MAVROS rejected {GUIDED_MODE} mode request: {response}"
+            )
 
     def _arm_vehicle(self) -> None:
         deadline = time.monotonic() + self._timeout_s
@@ -230,14 +252,19 @@ class SitlMissionTest(Node):
             and math.isfinite(self._fix.longitude)
         )
 
-    def _assert_known_home_location(self, tolerance_m: float | None = None) -> None:
+    def _current_position(self) -> Coordinate:
         assert self._fix is not None
+        return Coordinate(
+            lat=self._fix.latitude,
+            lon=self._fix.longitude,
+            alt=self._rel_alt_m if self._rel_alt_m is not None else math.nan,
+        )
+
+    def _assert_known_home_location(self, tolerance_m: float | None = None) -> None:
         max_distance_m = (
-            self._home_tolerance_m if tolerance_m is None else tolerance_m
+            self.HOME_TOLERANCE_M if tolerance_m is None else tolerance_m
         )
-        distance_m = _horizontal_distance_m(
-            self._fix.latitude, self._fix.longitude, self._home_lat, self._home_lon
-        )
+        distance_m = _horizontal_distance_m(self._current_position(), self._home)
         if distance_m > max_distance_m:
             raise TestFailure(
                 "SITL vehicle is at an unexpected location: "
@@ -250,23 +277,21 @@ class SitlMissionTest(Node):
 
     def _test_waypoint(self) -> Coordinate:
         longitude_delta_deg = math.degrees(
-            self._waypoint_offset_east_m
-            / (EARTH_RADIUS_M * math.cos(math.radians(self._home_lat)))
+            self.WAYPOINT_OFFSET_EAST_M
+            / (EARTH_RADIUS_M * math.cos(math.radians(self._home.lat)))
         )
         return Coordinate(
-            lat=self._home_lat,
-            lon=self._home_lon + longitude_delta_deg,
-            alt=self._waypoint_alt_m,
+            lat=self._home.lat,
+            lon=self._home.lon + longitude_delta_deg,
+            alt=self.WAYPOINT_ALT_M,
         )
 
     def _distance_to(self, target: Coordinate) -> float:
         if not self._has_valid_fix() or self._rel_alt_m is None:
             return math.inf
-        assert self._fix is not None
-        horizontal_m = _horizontal_distance_m(
-            self._fix.latitude, self._fix.longitude, target.lat, target.lon
-        )
-        return math.sqrt(horizontal_m**2 + (target.alt - self._rel_alt_m) ** 2)
+        current = self._current_position()
+        horizontal_m = _horizontal_distance_m(current, target)
+        return math.hypot(horizontal_m, target.alt - current.alt)
 
     def _target_matches(self, target: Coordinate) -> bool:
         message = self._forwarded_target
@@ -283,15 +308,16 @@ class SitlMissionTest(Node):
         message = self._forwarded_target
         if message is None:
             return False
+        forwarded_point = Coordinate(
+            lat=message.latitude,
+            lon=message.longitude,
+            alt=message.altitude,
+        )
         return (
             message.coordinate_frame == GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
-            and _horizontal_distance_m(
-                message.latitude,
-                message.longitude,
-                self._home_lat,
-                self._home_lon,
-            )
-            <= self._home_tolerance_m
+            and math.isclose(message.altitude, self._home.alt, abs_tol=0.01)
+            and _horizontal_distance_m(forwarded_point, self._home)
+            <= self.HOME_TOLERANCE_M
         )
 
     def _state_callback(self, message: State) -> None:
@@ -318,12 +344,10 @@ def _environment_float(name: str, default: float) -> float:
     return value
 
 
-def _horizontal_distance_m(
-    latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float
-) -> float:
+def _horizontal_distance_m(point_a: Coordinate, point_b: Coordinate) -> float:
     """Return a local Earth-surface distance accurate for this short test flight."""
     east_m, north_m = east_north_coordinate_offset_m(
-        latitude_a, longitude_a, latitude_b, longitude_b
+        point_a.lat, point_a.lon, point_b.lat, point_b.lon
     )
     return math.hypot(east_m, north_m)
 

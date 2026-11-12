@@ -52,14 +52,14 @@ jobs:
       - name: Run ArduPilot SITL mission
         working-directory: 3ds
         run: >
-          docker compose -f compose.sitl.yaml up --no-build
+          docker compose -f compose.sitl-test.yaml up --no-build
           --abort-on-container-exit
           --exit-code-from sitl-test
 
       - name: Collect SITL logs
         if: always()
         working-directory: 3ds
-        run: docker compose -f compose.sitl.yaml logs --no-color > ../sitl-compose.log
+        run: docker compose -f compose.sitl-test.yaml logs --no-color > ../sitl-compose.log
 
       - name: Upload SITL diagnostics
         if: always()
@@ -74,4 +74,4 @@ jobs:
       - name: Clean up SITL containers
         if: always()
         working-directory: 3ds
-        run: docker compose -f compose.sitl.yaml down --remove-orphans
+        run: docker compose -f compose.sitl-test.yaml down --remove-orphans
