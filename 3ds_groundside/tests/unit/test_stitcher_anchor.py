@@ -70,12 +70,13 @@ def test_photos_really_spread_out_are_fitted_to_gps(camera):
     assert placed_scale(stitcher) == pytest.approx(1.05 * metres_per_px)
 
 
-@pytest.mark.parametrize("yaw_deg", [0.0, 90.0, 200.0, 359.0])
+@pytest.mark.parametrize("yaw_deg", [0.0, 90.0, 200.0, 359.0, -90.0, -180.0])
 def test_lone_photo_is_oriented_by_its_yaw(camera, yaw_deg):
     stitcher = ImageStitcher(matcher=object(), camera=camera)
     add_photo(stitcher, np.eye(3), 0.0, yaw_deg)
     [(_, placed)] = stitcher.placements()
-    expected = camera.metres_per_px(ALTITUDE_M) * image_axes_to_local(yaw_deg)
+    # % 360 so a negative yaw is checked against its 0 to 360 equivalent.
+    expected = camera.metres_per_px(ALTITUDE_M) * image_axes_to_local(yaw_deg % 360)
     np.testing.assert_allclose(placed[:2, :2], expected, atol=1e-9)
 
 
@@ -155,4 +156,14 @@ def test_yaws_either_side_of_north_average_to_north(camera):
     add_photo(stitcher, np.eye(3), 0.0, 10.0)
     placed = stitcher.placements()[0][1]
     expected = camera.metres_per_px(ALTITUDE_M) * image_axes_to_local(0.0)
+    np.testing.assert_allclose(placed[:2, :2], expected, atol=1e-9)
+
+
+def test_yaws_either_side_of_south_average_to_south(camera):
+    # With yaw from -180 to 180, these are 20 degrees apart, not 340.
+    stitcher = ImageStitcher(matcher=object(), camera=camera)
+    add_photo(stitcher, np.eye(3), 0.0, 170.0)
+    add_photo(stitcher, np.eye(3), 0.0, -170.0)
+    placed = stitcher.placements()[0][1]
+    expected = camera.metres_per_px(ALTITUDE_M) * image_axes_to_local(180.0)
     np.testing.assert_allclose(placed[:2, :2], expected, atol=1e-9)

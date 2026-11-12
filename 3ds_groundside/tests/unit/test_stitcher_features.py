@@ -107,6 +107,18 @@ def matcher_finding(points_in_turned_image):
     return matcher
 
 
+@pytest.mark.parametrize("yaw_deg", [-12.0, -45.0, -90.0, -179.0, -180.0])
+def test_negative_yaw_is_the_same_as_its_0_to_360_equivalent(yaw_deg):
+    # The flight controller reports yaw from -180 to 180.
+    image = np.zeros((480, 640, 3), dtype=np.uint8)
+    points = [[200.0, 150.0], [320.0, 240.0], [400.0, 300.0]]
+    signed = matcher_finding(points).extract(image, yaw_deg)
+    unsigned = matcher_finding(points).extract(image, yaw_deg + 360.0)
+    assert len(signed.keypoints) > 0
+    np.testing.assert_allclose(signed.keypoints, unsigned.keypoints, atol=1e-3)
+    assert signed.descriptors.tolist() == unsigned.descriptors.tolist()
+
+
 def test_keypoints_in_the_empty_corners_are_dropped():
     image = np.zeros((480, 640, 3), dtype=np.uint8)
     turned, to_original = rotate_north_up(image, 45.0)

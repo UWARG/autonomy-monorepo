@@ -5,9 +5,9 @@ It takes photos from a fleet of drones, arriving in any order, and builds one
 top-down map of the whole area.
 
 Each photo needs its GPS position (lat, lon, alt) and the drone's roll, pitch
-and yaw (degrees clockwise from north that the top of the image faces). Photos
-are undistorted with the camera calibration in `camera_info.yaml`, which also
-gives the ground resolution at each altitude.
+and yaw (degrees clockwise from north that the top of the image faces, either
+-180 to 180 or 0 to 360). Photos are undistorted with the camera calibration
+in `camera_info.yaml`, which also gives the ground resolution at each altitude.
 
 ## Usage
 
