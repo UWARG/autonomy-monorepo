@@ -13,18 +13,29 @@ export function useConnection(transport: Transport) {
   return connection;
 }
 export function useTopics(transport: Transport, state: Connection) {
-  const [result, setResult] = useState<{ topics: TopicInfo[]; error?: string }>(
-    { topics: [] },
-  );
+  const [result, setResult] = useState<{
+    transport: Transport;
+    topics: TopicInfo[];
+    error?: string;
+  }>({ transport, topics: [] });
   useEffect(() => {
+    setResult((old) => ({
+      transport,
+      topics: old.transport === transport ? old.topics : [],
+      error: "Topic list stale: waiting for rosbridge discovery",
+    }));
     if (state !== "connected") return;
     let active = true;
     const refresh = async () => {
       try {
         const topics = await transport.discover();
-        if (active) setResult({ topics });
+        if (active) setResult({ transport, topics });
       } catch (error) {
-        if (active) setResult({ topics: [], error: String(error) });
+        if (active)
+          setResult((old) => ({
+            ...old,
+            error: `Topic list stale: ${String(error)}`,
+          }));
       }
     };
     void refresh();
@@ -34,9 +45,16 @@ export function useTopics(transport: Transport, state: Connection) {
       clearInterval(timer);
     };
   }, [transport, state]);
-  return state === "connected"
-    ? result
-    : { topics: [], error: "Waiting for rosbridge" };
+  const topics = result.transport === transport ? result.topics : [];
+  return {
+    topics,
+    error:
+      state !== "connected"
+        ? "Topic list stale: waiting for rosbridge"
+        : result.transport !== transport
+          ? "Waiting for rosbridge discovery"
+          : result.error,
+  };
 }
 export interface Sample<T> {
   value?: T;

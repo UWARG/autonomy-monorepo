@@ -73,9 +73,6 @@ Alternatively, `docker compose -f 3ds/compose.dashboard.yaml up --build` starts
 this same bridge-only launch. It requires Docker host networking and does not
 start Node/Vite. Run the frontend separately.
 
-For Gazebo/SITL telemetry and actual rendered images, follow
-[the simulation setup](../sim/README.md).
-
 ## Run on the companion computer
 
 To host the dashboard airside, run the Node commands above **on the companion
@@ -111,7 +108,9 @@ expose either service to the public internet. Keep Vite's host checks enabled.
 
 URL-encode query values when constructing links. No endpoint settings are saved
 to localStorage. Automatic retry backs off from 1 to 30 seconds; discovery refreshes
-every 10 seconds. Missing, invalid, disconnected or >5-second-old samples are
+every 10 seconds. Failed discovery or a bridge disconnect keeps the last topic
+list with a stale warning until discovery succeeds. Changing the endpoint clears
+that list. Missing, invalid, disconnected or >5-second-old samples are
 identified explicitly. Receipt age uses the browser clock; source time is ROS time.
 
 ## Data sources
@@ -173,7 +172,6 @@ From the repository root:
 
 ```bash
 bash 3ds/dashboard/check.sh
-python3 -m unittest discover -s 3ds/sim/test -v
 ```
 
 The check script installs locked npm dependencies on a fresh checkout, then runs

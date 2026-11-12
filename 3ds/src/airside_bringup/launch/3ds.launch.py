@@ -58,7 +58,10 @@ def generate_launch_description() -> LaunchDescription:
             Node(
                 package="dashboard_monitor",
                 executable="temperatures",
+                name="dashboard_temperatures",
                 output="both",
+                respawn=True,
+                respawn_delay=2.0,
             ),
             Node(
                 package="camera",

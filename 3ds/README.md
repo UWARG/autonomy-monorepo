@@ -263,5 +263,5 @@ npm run dev
 For airside hosting, run the Node server on the companion computer and access it
 through the network or an SSH tunnel. Running it only on a laptop is a ground-side
 test setup. See [dashboard/README.md](dashboard/README.md) for connection settings,
-onboard setup and checks, and [sim/README.md](sim/README.md) for optional simulation.
+onboard setup and checks.
 `warg run 3ds test` runs `dashboard/check.sh`.

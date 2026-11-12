@@ -8,8 +8,8 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useSubscription } from "../src/hooks";
-import type { Transport } from "../src/ros";
+import { useSubscription, useTopics } from "../src/hooks";
+import type { Connection, Transport } from "../src/ros";
 import { mockMessage, mockTopics, mockTransport } from "../src/mock";
 import { MavrosPanel, PreflightPanel } from "../src/components/Telemetry";
 import { TopicsPanel } from "../src/components/Topics";
@@ -19,6 +19,72 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("React monitoring lifecycle", () => {
+  it("retains stale topics after failed discovery and disconnect, then refreshes on recovery", async () => {
+    vi.useFakeTimers();
+    const discover = vi
+      .fn()
+      .mockResolvedValueOnce(mockTopics)
+      .mockRejectedValueOnce(Error("discovery timed out"))
+      .mockResolvedValueOnce([]);
+    const transport = { ...mockTransport, discover };
+    const hook = renderHook(
+      ({ state }: { state: Connection }) => useTopics(transport, state),
+      { initialProps: { state: "connected" as Connection } },
+    );
+    await act(async () => {});
+    expect(hook.result.current.topics).toEqual(mockTopics);
+    expect(hook.result.current.error).toBeUndefined();
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
+    expect(hook.result.current.topics).toEqual(mockTopics);
+    expect(hook.result.current.error).toContain("Topic list stale");
+    expect(hook.result.current.error).toContain("discovery timed out");
+    hook.rerender({ state: "disconnected" });
+    expect(hook.result.current.topics).toEqual(mockTopics);
+    expect(hook.result.current.error).toContain("Topic list stale");
+    await act(async () => vi.advanceTimersByTimeAsync(20000));
+    expect(discover).toHaveBeenCalledTimes(2);
+    hook.rerender({ state: "connected" });
+    await act(async () => {});
+    // A successful empty response is authoritative, unlike a failed request.
+    expect(hook.result.current.topics).toEqual([]);
+    expect(hook.result.current.error).toBeUndefined();
+    hook.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("does not carry topics between endpoints or accept late discovery from an old endpoint", async () => {
+    vi.useFakeTimers();
+    let resolveOld!: (topics: typeof mockTopics) => void;
+    const oldTransport = {
+      ...mockTransport,
+      discover: vi
+        .fn()
+        .mockResolvedValueOnce(mockTopics)
+        .mockImplementationOnce(
+          () =>
+            new Promise<typeof mockTopics>((resolve) => {
+              resolveOld = resolve;
+            }),
+        ),
+    };
+    const newTransport = {
+      ...mockTransport,
+      discover: vi.fn().mockRejectedValue(Error("offline")),
+    };
+    const hook = renderHook(
+      ({ transport }: { transport: Transport }) =>
+        useTopics(transport, "connected"),
+      { initialProps: { transport: oldTransport as Transport } },
+    );
+    await act(async () => {});
+    expect(hook.result.current.topics).toEqual(mockTopics);
+    await act(async () => vi.advanceTimersByTimeAsync(10000));
+    hook.rerender({ transport: newTransport });
+    await act(async () => {
+      resolveOld(mockTopics);
+    });
+    expect(hook.result.current.topics).toEqual([]);
+    expect(hook.result.current.error).toContain("offline");
+  });
   it("cleans up on topic changes, disconnects and unmount", () => {
     const stops = [vi.fn(), vi.fn()];
     let calls = 0;

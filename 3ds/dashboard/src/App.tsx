@@ -122,9 +122,14 @@ export default function App() {
           )}
         </div>
       </details>
-      {(urlError || connection.error || discovered.error) && (
+      {(urlError || connection.error) && (
         <p role="alert" className="notice">
-          {urlError || connection.error || discovered.error}
+          {urlError || connection.error}
+        </p>
+      )}
+      {discovered.error && (
+        <p role="alert" className="notice">
+          {discovered.error}
         </p>
       )}
       <main>

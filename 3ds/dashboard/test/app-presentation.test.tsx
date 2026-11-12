@@ -6,6 +6,7 @@ import {
   render,
   screen,
   within,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mockMessage, mockTopics } from "../src/mock";
@@ -120,7 +121,7 @@ it("preserves custom simulation ports, validates the URL, and only changes trans
   expect(view.container.querySelector(".endpoint code")?.textContent).toBe(
     "ws://localhost:9191",
   );
-  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 });
 
 it("distinguishes reconnecting from disconnected, shows errors and masks the overview after disconnect", async () => {
@@ -141,7 +142,9 @@ it("distinguishes reconnecting from disconnected, shows errors and masks the ove
       "WebSocket error; check URL, network and rosbridge.",
     ),
   );
-  expect(screen.getByRole("alert").textContent).toContain("WebSocket error");
+  expect(screen.getByText(/WebSocket error;/)).toBeTruthy();
+  expect(screen.getByText(/Topic list stale:/)).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "ROS 2 topics · 5" })).toBeTruthy();
   const overview = screen.getByRole("region", { name: "System overview" });
   expect(within(overview).queryByText("Disarmed")).toBeNull();
   expect(

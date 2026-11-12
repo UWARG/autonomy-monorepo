@@ -36,6 +36,7 @@ def generate_launch_description():
         ),
         Node(
             package="dashboard_monitor", executable="temperatures", output="both",
+            name="dashboard_temperatures", respawn=True, respawn_delay=2.0,
             condition=IfCondition(LaunchConfiguration("temperature_enabled")),
         ),
     ])
