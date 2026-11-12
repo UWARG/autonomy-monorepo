@@ -120,9 +120,21 @@ def test_two_drones_outside_the_same_corner_land_apart():
 
     moved = step_local(points, region)
 
-    assert math.dist(moved[2], moved[3]) > 1e-3
+    # Far enough apart that they can't collide, not just distinct points.
+    assert math.dist(moved[2], moved[3]) >= 2.0 - 1e-6
     for point in moved.values():
         assert region.buffer(1e-6).covers(Point(point))
+
+
+def test_stranded_drone_in_a_crowded_region_still_lands_inside():
+    # Every point of a 1 m square is within the 2 m clearance of drone 1.
+    region = Polygon([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])
+    points = {1: (0.5, 0.5), 2: (50.0, 50.0)}
+
+    moved = step_local(points, region)
+
+    assert region.buffer(1e-6).covers(Point(moved[2]))
+    assert math.dist(moved[1], moved[2]) > 1e-3
 
 
 def test_relax_recovers_drones_that_start_outside():

@@ -145,7 +145,8 @@ keeps its own altitude.
   stays inside the region. Spacing in concave regions is even locally, but the
   result depends on the start (Lloyd's algorithm finds a local optimum).
 - **Drones outside the region** are pulled back to its nearest point, kept
-  apart from each other so they never land on the same spot.
+  at least 2 m from the other drones (closer only if the region is too small
+  for that).
 - **Supported boundaries** are the same as orthomosaic planning: simple
   polygons without holes. Two drones closer than 1 mm are rejected with
   `ValueError`, since there is no boundary between them.

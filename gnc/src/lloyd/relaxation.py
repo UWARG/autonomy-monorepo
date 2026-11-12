@@ -12,7 +12,7 @@ so distances and areas are real metres even though the API takes GPS.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from shapely.geometry import MultiPoint, Point, Polygon
@@ -26,6 +26,9 @@ LocalPoint = tuple[float, float]
 
 # Two drones closer than this have no well-defined boundary between them.
 MIN_SEPARATION_M = 1e-3
+
+# How far a drone brought back into the region stays from the others.
+STRANDED_CLEARANCE_M = 2.0
 
 
 @dataclass(frozen=True)
@@ -123,10 +126,13 @@ def step_local(
 
     # Only a drone outside the region can lose its whole cell. Bring it back
     # to the nearest free point of the region, one at a time, so two stranded
-    # drones near the same corner don't land on the same spot.
+    # drones near the same corner don't crash into each other.
     for drone_id in stranded:
-        taken = [Point(p).buffer(2 * MIN_SEPARATION_M) for p in moved.values()]
-        free = region.difference(unary_union(taken)) if taken else region
+        free = _free_area(region, moved.values(), STRANDED_CLEARANCE_M)
+        if free.is_empty:
+            # A region too crowded for the full clearance: settle for any
+            # spot not shared with another drone.
+            free = _free_area(region, moved.values(), 2 * MIN_SEPARATION_M)
         target = _nearest_point(free, Point(points[drone_id]))
         moved[drone_id] = (target.x, target.y)
     # Keep the caller's id order.
@@ -192,6 +198,15 @@ def _ring_integral(coords: list[LocalPoint], point: LocalPoint) -> float:
     return abs(total) / 12.0
 
 
+def _free_area(
+    region: Polygon, taken: Iterable[LocalPoint], clearance_m: float
+) -> BaseGeometry:
+    """The part of ``region`` at least ``clearance_m`` from every taken point."""
+
+    discs = [Point(p).buffer(clearance_m) for p in taken]
+    return region.difference(unary_union(discs)) if discs else region
+
+
 def _nearest_point(geometry: BaseGeometry, point: Point) -> Point:
     return nearest_points(geometry, point)[0]
 
@@ -207,4 +222,3 @@ def _validate_points(points: Mapping[int, LocalPoint]) -> None:
         for second in values[i + 1 :]:
             if math.dist(first, second) < MIN_SEPARATION_M:
                 raise ValueError("two drones share the same position")
-
