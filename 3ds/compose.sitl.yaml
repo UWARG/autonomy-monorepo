@@ -20,7 +20,11 @@ services:
       SITL_HOME_HEADING: ${SITL_HOME_HEADING:-353}
       SITL_SPEEDUP: ${SITL_SPEEDUP:-1}
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f '/ardupilot/arducopter' >/dev/null"]
+      test:
+        [
+          "CMD-SHELL",
+          "pgrep -f '/ardupilot/arducopter' >/dev/null && grep -q ':1682 00000000:0000 0A' /proc/net/tcp",
+        ]
       interval: 2s
       timeout: 2s
       retries: 15
@@ -42,7 +46,6 @@ services:
     volumes:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
-      - ./data:/ros_ws/data
       - ..:/monorepo
     command: ros2 launch airside_bringup 3ds.launch.py
 

@@ -57,7 +57,6 @@ jobs:
           path: |
             sitl-compose.log
             3ds/log/ros
-            3ds/data/photos
           if-no-files-found: warn
 
       - name: Clean up SITL containers

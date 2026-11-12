@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""End-to-end 3DS mission test against the Docker ArduCopter SITL service.
+"""
+End-to-end 3DS mission test against the Docker ArduCopter SITL service.
 
 The node acts as an automated pilot and referee. It does not forward commands
 between 3DS and the flight controller: MAVROS keeps that production command
@@ -16,14 +17,14 @@ from collections.abc import Callable
 
 import rclpy
 from airside_interfaces.msg import Coordinate
-from mavros_msgs.msg import GlobalPositionTarget, HomePosition, State
+from mavros_msgs.msg import GlobalPositionTarget, State
 from mavros_msgs.srv import CommandBool, SetMode
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Empty, Float64
-
-EARTH_RADIUS_M = 6_371_000.0
+from utils.src.constants import EARTH_RADIUS_M
+from utils.src.waypoint_utils import east_north_coordinate_offset_m
 
 
 class TestFailure(RuntimeError):
@@ -36,7 +37,6 @@ class SitlMissionTest(Node):
     STATE_TOPIC = "mavros/state"
     GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
     REL_ALT_TOPIC = "mavros/global_position/rel_alt"
-    HOME_TOPIC = "mavros/home_position/home"
     MAVROS_TARGET_TOPIC = "mavros/setpoint_raw/global"
     MISSION_SETPOINT_TOPIC = "mission/setpoint"
     MISSION_GO_HOME_TOPIC = "mission/go_home"
@@ -59,14 +59,10 @@ class SitlMissionTest(Node):
         )
         self._waypoint_radius_m = _environment_float("SITL_TEST_WAYPOINT_RADIUS_M", 1.0)
         self._landed_max_alt_m = _environment_float("SITL_TEST_LANDED_MAX_ALT_M", 1.0)
-        self._post_waypoint_wait_s = _environment_float(
-            "SITL_TEST_POST_WAYPOINT_WAIT_S", 2.0
-        )
 
         self._state: State | None = None
         self._fix: NavSatFix | None = None
         self._rel_alt_m: float | None = None
-        self._home: HomePosition | None = None
         self._forwarded_target: GlobalPositionTarget | None = None
 
         self.create_subscription(State, self.STATE_TOPIC, self._state_callback, 10)
@@ -82,7 +78,6 @@ class SitlMissionTest(Node):
             self._rel_alt_callback,
             qos_profile_sensor_data,
         )
-        self.create_subscription(HomePosition, self.HOME_TOPIC, self._home_callback, 10)
         self.create_subscription(
             GlobalPositionTarget,
             self.MAVROS_TARGET_TOPIC,
@@ -99,7 +94,6 @@ class SitlMissionTest(Node):
 
     def run(self) -> None:
         """Run the mission and raise TestFailure if a phase does not complete."""
-
         self._wait_for(
             "MAVROS connection",
             lambda: self._state is not None and self._state.connected,
@@ -134,10 +128,6 @@ class SitlMissionTest(Node):
         )
 
         waypoint = self._test_waypoint()
-        self._wait_for(
-            "3DS setpoint subscription",
-            lambda: self._setpoint_pub.get_subscription_count() > 0,
-        )
         self.get_logger().info(
             "Publishing test waypoint "
             f"lat={waypoint.lat:.7f}, lon={waypoint.lon:.7f}, alt={waypoint.alt:.1f}m"
@@ -152,9 +142,6 @@ class SitlMissionTest(Node):
             lambda: self._distance_to(waypoint) <= self._waypoint_radius_m,
         )
 
-        # Give the mission tree time to complete its existing photo-capture step
-        # before the go-home message preempts its setpoint-serving subtree.
-        self._spin_for(self._post_waypoint_wait_s)
         self._wait_for(
             "3DS go-home subscription",
             lambda: self._go_home_pub.get_subscription_count() > 0,
@@ -173,6 +160,7 @@ class SitlMissionTest(Node):
             "disarmed state",
             lambda: self._state is not None and not self._state.armed,
         )
+        self._assert_known_home_location()
 
     def _set_guided_mode(self) -> None:
         request = SetMode.Request()
@@ -245,11 +233,11 @@ class SitlMissionTest(Node):
         )
         if distance_m > self._home_tolerance_m:
             raise TestFailure(
-                "SITL started at an unexpected location: "
+                "SITL vehicle is at an unexpected location: "
                 f"{distance_m:.1f}m from the configured home position"
             )
         self.get_logger().info(
-            f"PASS: SITL location is within {distance_m:.1f}m of configured home"
+            f"PASS: vehicle location is within {distance_m:.1f}m of configured home"
         )
 
     def _test_waypoint(self) -> Coordinate:
@@ -292,9 +280,6 @@ class SitlMissionTest(Node):
     def _rel_alt_callback(self, message: Float64) -> None:
         self._rel_alt_m = message.data
 
-    def _home_callback(self, message: HomePosition) -> None:
-        self._home = message
-
     def _target_callback(self, message: GlobalPositionTarget) -> None:
         self._forwarded_target = message
 
@@ -314,15 +299,10 @@ def _horizontal_distance_m(
     latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float
 ) -> float:
     """Return a local Earth-surface distance accurate for this short test flight."""
-
-    mean_latitude_rad = math.radians((latitude_a + latitude_b) / 2.0)
-    north_m = math.radians(latitude_b - latitude_a) * EARTH_RADIUS_M
-    east_m = (
-        math.radians(longitude_b - longitude_a)
-        * EARTH_RADIUS_M
-        * math.cos(mean_latitude_rad)
+    east_m, north_m = east_north_coordinate_offset_m(
+        latitude_a, longitude_a, latitude_b, longitude_b
     )
-    return math.hypot(north_m, east_m)
+    return math.hypot(east_m, north_m)
 
 
 def main() -> int:
