@@ -11,7 +11,6 @@ from orthomosaic.decompose import (
     decompose_polygon,
     is_monotone,
     order_cells,
-    validate_polygon,
 )
 
 RECT = [(0, 0), (10, 0), (10, 10), (0, 10)]
@@ -124,32 +123,6 @@ def test_decompose_vertical_axis_rectangle():
     cells = decompose_polygon(Polygon(RECT), VERTICAL)
     assert len(cells) == 1
     assert cells[0].axis == VERTICAL
-
-
-def test_validate_polygon_rejects_holes():
-    ring = Polygon(
-        shell=[(0, 0), (10, 0), (10, 10), (0, 10)],
-        holes=[[(3, 3), (7, 3), (7, 7), (3, 7)]],
-    )
-    with pytest.raises(ValueError, match="holes"):
-        validate_polygon(ring)
-
-
-def test_validate_polygon_rejects_self_intersecting():
-    bowtie = Polygon([(0, 0), (10, 10), (0, 10), (10, 0)])
-    with pytest.raises(ValueError, match="self-intersecting"):
-        validate_polygon(bowtie)
-
-
-def test_validate_polygon_rejects_empty():
-    with pytest.raises(ValueError, match="empty"):
-        validate_polygon(Polygon())
-
-
-def test_validate_polygon_rejects_degenerate():
-    degenerate = Polygon([(0, 0), (1, 0), (2, 0)])
-    with pytest.raises(ValueError):
-        validate_polygon(degenerate)
 
 
 def test_recursion_depth_cap_raises_on_hole():

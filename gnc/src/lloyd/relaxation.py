@@ -19,13 +19,7 @@ from shapely.geometry import MultiPoint, Point, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import nearest_points, unary_union, voronoi_diagram
 
-from orthomosaic.decompose import validate_polygon
-from utils.src.coordinates import (
-    anchor_for_boundary,
-    boundary_to_enu,
-    coordinate_to_enu,
-    enu_to_coordinate,
-)
+from utils.src.coordinates import enu_to_positions, local_region, positions_to_enu
 from utils.src.types import Coordinate
 
 LocalPoint = tuple[float, float]
@@ -54,10 +48,10 @@ def lloyd_step(
     own altitude.
     """
 
-    anchor, region = _local_region(boundary)
-    local = _to_local(anchor, positions)
+    anchor, region = local_region(boundary)
+    local = positions_to_enu(anchor, positions)
     moved = step_local(local, region)
-    return _to_gps(anchor, moved, positions)
+    return enu_to_positions(anchor, moved, positions)
 
 
 def lloyd_relax(
@@ -77,8 +71,8 @@ def lloyd_relax(
     if not math.isfinite(tolerance_m) or tolerance_m <= 0.0:
         raise ValueError("tolerance_m must be a positive number")
 
-    anchor, region = _local_region(boundary)
-    local = _to_local(anchor, positions)
+    anchor, region = local_region(boundary)
+    local = positions_to_enu(anchor, positions)
     history = [dict(positions)]
     converged = False
     iterations = 0
@@ -87,7 +81,7 @@ def lloyd_relax(
         iterations += 1
         largest_move = max(math.dist(local[i], moved[i]) for i in local)
         local = moved
-        history.append(_to_gps(anchor, local, positions))
+        history.append(enu_to_positions(anchor, local, positions))
         if largest_move < tolerance_m:
             converged = True
             break
@@ -102,8 +96,8 @@ def coverage_cost(
     Lower is better; Lloyd's algorithm never increases it.
     """
 
-    anchor, region = _local_region(boundary)
-    return coverage_cost_local(_to_local(anchor, positions), region)
+    anchor, region = local_region(boundary)
+    return coverage_cost_local(positions_to_enu(anchor, positions), region)
 
 
 def step_local(
@@ -214,34 +208,3 @@ def _validate_points(points: Mapping[int, LocalPoint]) -> None:
             if math.dist(first, second) < MIN_SEPARATION_M:
                 raise ValueError("two drones share the same position")
 
-
-def _local_region(boundary: list[Coordinate]) -> tuple[Coordinate, Polygon]:
-    if len(boundary) < 3:
-        raise ValueError("boundary needs at least 3 vertices")
-    anchor = anchor_for_boundary(boundary)
-    region = Polygon(boundary_to_enu(anchor, boundary))
-    validate_polygon(region)
-    return anchor, region
-
-
-def _to_local(
-    anchor: Coordinate, positions: Mapping[int, Coordinate]
-) -> dict[int, LocalPoint]:
-    for position in positions.values():
-        if not (math.isfinite(position.lat) and math.isfinite(position.lon)):
-            raise ValueError("drone positions must be finite")
-    return {
-        drone_id: coordinate_to_enu(anchor, position)
-        for drone_id, position in positions.items()
-    }
-
-
-def _to_gps(
-    anchor: Coordinate,
-    points: Mapping[int, LocalPoint],
-    originals: Mapping[int, Coordinate],
-) -> dict[int, Coordinate]:
-    return {
-        drone_id: enu_to_coordinate(anchor, east, north, originals[drone_id].alt)
-        for drone_id, (east, north) in points.items()
-    }
