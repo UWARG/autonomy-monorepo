@@ -10,9 +10,14 @@ where it took off when told to.
 ```text
 3ds/
 ├── compose.yaml
+├── compose.sitl.yaml
+├── compose.sitl-test.yaml
 ├── docker/
 │   ├── Dockerfile
-│   └── entrypoint.sh
+│   ├── entrypoint.sh
+│   └── sitl/
+│       ├── Dockerfile
+│       └── entrypoint.sh
 ├── src/
 │   ├── airside_bringup/      # Launch file that starts the whole system
 │   ├── airside_interfaces/   # Custom ROS 2 messages and services
@@ -113,13 +118,45 @@ running `docker compose` directly inside `3ds/`.
 ### Via warg CLI
 
 ```bash
-warg run 3ds build          # Build the Docker image
-warg run 3ds compose-up     # Start the engine service (detached)
-warg run 3ds compose-down   # Stop the engine service
-warg run 3ds logs           # Follow service logs
-warg run 3ds test           # Run the test suite
+warg run 3ds build          # Build the 3DS Docker image
+warg run 3ds compose-up     # Start the real-hardware engine service (detached)
+warg run 3ds compose-down   # Stop the real-hardware engine service
+warg run 3ds logs           # Follow real-hardware service logs
+warg run 3ds sitl           # Connect 3DS to an external SITL (e.g. Mission Planner)
+warg run 3ds test-sitl      # Run the self-contained ArduCopter SITL mission test
 warg run 3ds shell          # Open an interactive shell in the container
 ```
+
+### SITL integration test
+
+`warg run 3ds test-sitl` (or `warg run 3ds test`) starts three Docker services on
+the Compose network via `compose.sitl-test.yaml`:
+
+1. `sitl` runs a headless ArduCopter simulator at the fixed default home
+   location `-35.363261, 149.165230` and exposes MAVLink TCP port `5762`.
+2. `3ds` runs the existing ROS 2 stack and connects MAVROS to `sitl:5762`.
+3. `sitl-test` acts as an automated pilot and referee. It selects GUIDED mode,
+   arms the vehicle, sends a nearby mission setpoint and go-home command, then
+   verifies connection, takeoff, waypoint arrival, landing and disarm.
+
+The command exits with the test service's status: `0` means PASS; a non-zero
+status means a failed assertion, service rejection or timeout. It does not
+need Mission Planner, a real flight controller, or host networking.
+
+The first run builds ArduCopter from the pinned `Copter-4.7.2` source release
+and can take several minutes. To preserve the stopped containers for log
+inspection, run the equivalent Compose command directly:
+
+```bash
+docker compose -f compose.sitl-test.yaml up --build --abort-on-container-exit \
+  --exit-code-from sitl-test
+docker compose -f compose.sitl-test.yaml logs
+```
+
+Set `SITL_TEST_TIMEOUT_S` to adjust the per-phase timeout (default `180`
+seconds), or set `SITL_HOME_LAT` and `SITL_HOME_LON` to change the simulator's
+known starting coordinate. Set both location values together so the simulator
+and test agree.
 
 ### Via docker compose
 
@@ -147,14 +184,19 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `PHOTO_DATA_DIR` | `/ros_ws/data/photos` | Directory where the camera node saves captured photos |
-| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
+| `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. See `compose.sitl.yaml` (external SITL) and `compose.sitl-test.yaml` (automated SITL test). |
 
 ### Networking
 
-The container runs with `network_mode: host` to ensure direct access
-to the host's network interfaces. On Docker Desktop (macOS/Windows), enable
-host networking under Settings > Resources > Network, or switch to the 1:1
-`ports:` fallback commented in `compose.yaml` if needed.
+The real-hardware container in `compose.yaml` and the external-SITL container in
+`compose.sitl.yaml` run with `network_mode: host` to ensure direct access to the
+host's network interfaces. On Docker Desktop (macOS/Windows), enable host
+networking under Settings > Resources > Network, or switch to the 1:1 `ports:`
+fallback commented in `compose.yaml` if needed.
+
+`compose.sitl-test.yaml` uses Docker's internal Compose network instead. The
+SITL, 3DS and test services discover each other by service name, so the
+automated SITL test does not require host networking.
 
 ### Logs
 

@@ -14,3 +14,9 @@ airside/.tooling-venv/
 airside/build/
 airside/install/
 airside/log/
+
+# 3DS build and runtime artifacts
+3ds/build/
+3ds/install/
+3ds/log/
+3ds/data/
