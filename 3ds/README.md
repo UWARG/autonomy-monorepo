@@ -81,6 +81,24 @@ ros2 topic pub --once /mission/go_home std_msgs/msg/Empty
 
 Both topics are also reachable over rosbridge on port 9090.
 
+### Setpoint tester
+
+For flight tests, `tests/integration/setpoint_tester.py` sends these commands
+from a laptop over rosbridge (no ROS install needed). From the repo root:
+
+```bash
+uv run 3ds/tests/integration/setpoint_tester.py --host <drone-ip>
+> goto 43.4339 -80.5776 10    # fly to the point and photograph it (alt: m above launch)
+> home                        # return to launch and land (ends the mission)
+```
+
+`sent ...` means the command was published; rosbridge does not confirm
+delivery. The engine's status text (e.g. `ENG: go-home received`,
+`ENG: setpoint rejected`) is printed as `[drone] ...` lines, and the tester
+warns if nothing subscribes to the topic (engine not running). Setpoints the
+engine would reject (lat/lon out of range, altitude below
+`SETPOINT_MIN_ALTITUDE_M`) are refused before sending.
+
 ### Position controller
 
 Behaviors never command MAVROS setpoints directly. They publish where they
