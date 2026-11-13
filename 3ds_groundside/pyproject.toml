@@ -1,15 +1,15 @@
 [project]
-name = "3DS_Groundside"
+name = "3ds_groundside"
 version = "0.1.0"
 description = "Groundside operator tooling for 3DS autonomy."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["websockets>=13.0", "utils"]
 
 [project.urls]
-Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/3DS_Groundside"
+Homepage = "https://github.com/UWARG/autonomy-monorepo/tree/main/3ds_groundside"
 Issues = "https://github.com/UWARG/autonomy-monorepo/issues"
 
 [project.optional-dependencies]
@@ -21,6 +21,11 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", ".."]
+
+[tool.uv.sources]
+utils = { path = "../utils" }
 
 [tool.hatch.build.targets.wheel]
-packages = ["src"]
+only-include = ["src"]
+sources = ["src"]
