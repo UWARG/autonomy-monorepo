@@ -20,7 +20,7 @@ services:
       <<: *sitl-home
       SITL_HOME_ALT: ${SITL_HOME_ALT:-584}
       SITL_HOME_HEADING: ${SITL_HOME_HEADING:-353}
-      SITL_SPEEDUP: ${SITL_SPEEDUP:-1}
+      SITL_SPEEDUP: ${SITL_SPEEDUP:-10}
     healthcheck:
       # Verify arducopter is running and listening on MAVLink TCP port 5762
       # (0x1682 in /proc/net/tcp with state 0x0A = TCP_LISTEN).

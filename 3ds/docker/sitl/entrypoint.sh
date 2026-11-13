@@ -5,7 +5,7 @@ set -euo pipefail
 : "${SITL_HOME_LON:=149.165230}"
 : "${SITL_HOME_ALT:=584}"
 : "${SITL_HOME_HEADING:=353}"
-: "${SITL_SPEEDUP:=1}"
+: "${SITL_SPEEDUP:=10}"
 
 home="${SITL_HOME_LAT},${SITL_HOME_LON},${SITL_HOME_ALT},${SITL_HOME_HEADING}"
 
