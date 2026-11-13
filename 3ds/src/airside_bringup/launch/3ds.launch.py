@@ -39,14 +39,6 @@ def generate_launch_description() -> LaunchDescription:
                 respawn_delay=2.0,
             ),
             Node(
-                package="engine",
-                executable="setpoint_link",
-                name="setpoint_link",
-                output="both",
-                respawn=True,
-                respawn_delay=2.0,
-            ),
-            Node(
                 package="rosbridge_server",
                 executable="rosbridge_websocket",
                 name="rosbridge_websocket",
