@@ -11,6 +11,8 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     environment:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: tcp://${SITL_HOST:-127.0.0.1}:5762
@@ -19,4 +21,5 @@ services:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
+      - ./data:/ros_ws/data
     command: ros2 launch engine engine.launch.py
