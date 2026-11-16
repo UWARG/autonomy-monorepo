@@ -48,8 +48,10 @@ def test_take_photo_checks_rectified_feed_and_propagates_result(tmp_path, monkey
         publisher.publish(image)
         imu_publisher.publish(imu)
         deadline = time.monotonic() + 1
-        while camera._latest_rectified is None or behavior._latest_imu is None:
-            assert time.monotonic() < deadline, "test messages did not reach both nodes"
+        # The camera node now ingests the IMU feed itself; wait until both
+        # the frame and a sample have landed there.
+        while camera._latest_rectified is None or not camera._imu_samples:
+            assert time.monotonic() < deadline, "test messages did not reach the camera node"
             executor.spin_once(timeout_sec=0.01)
         behavior.initialise()
         status = py_trees.common.Status.RUNNING
@@ -68,6 +70,52 @@ def test_take_photo_checks_rectified_feed_and_propagates_result(tmp_path, monkey
             assert not list(camera._photo_log.run_dir.glob("*.png"))
             assert not camera._photo_log.index_file.exists()
         assert camera.count_publishers("/camera/image_raw") == 0
+    finally:
+        writer.unregister_all_keys()
+        behavior.blackboard.unregister_all_keys()
+        executor.shutdown()
+        engine.destroy_node()
+        camera.destroy_node()
+        rclpy.shutdown()
+
+
+def test_take_photo_succeeds_and_records_no_attitude_without_imu(tmp_path, monkeypatch):
+    monkeypatch.setenv("PHOTO_DATA_DIR", str(tmp_path))
+    rclpy.init(args=["--ros-args", "-p", "rectified_image_topic:=/test/image_rect"])
+    camera = CameraNode()
+    engine = rclpy.create_node("capture_test_no_imu")
+    executor = SingleThreadedExecutor()
+    executor.add_node(camera)
+    executor.add_node(engine)
+    behavior = TakePhoto()
+    behavior.setup(node=engine)
+    writer = py_trees.blackboard.Client(name="capture_test_writer_no_imu")
+    writer.register_key(blackboard_keys.CURRENT_WAYPOINT, py_trees.common.Access.WRITE)
+    writer.set(blackboard_keys.CURRENT_WAYPOINT, Coordinate(lat=1.0, lon=2.0, alt=10.0))
+    publisher = engine.create_publisher(Image, "/test/image_rect", qos_profile_sensor_data)
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not publisher.get_subscription_count():
+            executor.spin_once(timeout_sec=0.02)
+        rgb = np.zeros((32, 32, 3), dtype=np.uint8)
+        rgb[:, 16:] = 255
+        image = Image(height=32, width=32, encoding="rgb8", step=96, data=rgb.tobytes())
+        image.header.stamp = engine.get_clock().now().to_msg()
+        publisher.publish(image)
+        deadline = time.monotonic() + 1
+        while camera._latest_rectified is None:
+            assert time.monotonic() < deadline, "test image did not reach the camera node"
+            executor.spin_once(timeout_sec=0.01)
+        behavior.initialise()
+        status = py_trees.common.Status.RUNNING
+        while status == py_trees.common.Status.RUNNING and time.monotonic() < deadline:
+            status = behavior.update()
+            executor.spin_once(timeout_sec=0.01)
+        # A dead or absent IMU stream must not block captures; the photo is
+        # simply logged without attitude.
+        assert status == py_trees.common.Status.SUCCESS
+        record = json.loads(camera._photo_log.index_file.read_text())
+        assert record["attitude"] is None
     finally:
         writer.unregister_all_keys()
         behavior.blackboard.unregister_all_keys()

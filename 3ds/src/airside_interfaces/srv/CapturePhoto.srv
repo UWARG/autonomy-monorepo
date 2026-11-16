@@ -1,12 +1,13 @@
 # Check the camera frame and save it if acceptable.
+# Attitude data is no longer shipped with the request: the camera node
+# subscribes to the IMU topic itself and picks the sample closest to the
+# frame it captured, so the sample matches the photo's timestamp instead of
+# whenever TakePhoto happened to send the request.
 
 # Where the photo was meant to be taken.
 Coordinate setpoint
 # Measured drone position when the capture was requested (NaN if no GPS fix).
 Coordinate position
-# Most recent MAVROS attitude sample, when available.
-bool has_imu
-sensor_msgs/Imu imu
 ---
 bool success
 # Saved photo file, set on success.

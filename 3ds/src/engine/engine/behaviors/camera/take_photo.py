@@ -10,7 +10,7 @@ from engine import blackboard_keys
 from engine.constants import PHOTO_CAPTURE_TIMEOUT_S
 from engine.ground_log import send_to_ground
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Imu, NavSatFix
+from sensor_msgs.msg import NavSatFix
 from std_msgs.msg import Float64
 
 
@@ -20,15 +20,17 @@ class TakePhoto(py_trees.behaviour.Behaviour):
 
     Calls the ``camera/capture`` service with ``current_waypoint`` as the
     setpoint and the latest MAVROS fix as the measured position (NaN if no
-    fix has arrived). Returns RUNNING until the camera responds, SUCCESS once
-    the photo is saved, and FAILURE if the capture is rejected or not
-    completed within ``PHOTO_CAPTURE_TIMEOUT_S``.
+    fix has arrived). Attitude is picked by the camera node near the frame's
+    timestamp, so no sensor data rides on the request. Returns RUNNING until
+    the camera responds, SUCCESS once the photo is saved, and FAILURE if the
+    capture is rejected or times out after ``PHOTO_CAPTURE_TIMEOUT_S``; the
+    setpoints subtree wraps this behaviour in a bounded retry at the same
+    waypoint.
     """
 
     CAPTURE_SERVICE = "camera/capture"
     GLOBAL_POSITION_TOPIC = "mavros/global_position/global"
     REL_ALT_TOPIC = "mavros/global_position/rel_alt"
-    IMU_TOPIC = "mavros/imu/data"
 
     def __init__(self, name: str = "TakePhoto") -> None:
         super().__init__(name=name)
@@ -42,7 +44,6 @@ class TakePhoto(py_trees.behaviour.Behaviour):
         self._node = kwargs["node"]
         self._latest_fix: NavSatFix | None = None
         self._latest_rel_alt_m: float | None = None
-        self._latest_imu: Imu | None = None
         self._capture_future = None
         self._start_time_s = 0.0
 
@@ -58,12 +59,6 @@ class TakePhoto(py_trees.behaviour.Behaviour):
             callback=self._rel_alt_callback,
             qos_profile=qos_profile_sensor_data,
         )
-        self._imu_sub = self._node.create_subscription(
-            msg_type=Imu,
-            topic=self.IMU_TOPIC,
-            callback=self._imu_callback,
-            qos_profile=qos_profile_sensor_data,
-        )
         self._capture_client = self._node.create_client(
             srv_type=CapturePhoto, srv_name=self.CAPTURE_SERVICE
         )
@@ -73,9 +68,6 @@ class TakePhoto(py_trees.behaviour.Behaviour):
 
     def _rel_alt_callback(self, msg: Float64) -> None:
         self._latest_rel_alt_m = msg.data
-
-    def _imu_callback(self, msg: Imu) -> None:
-        self._latest_imu = msg
 
     def _now_s(self) -> float:
         return self._node.get_clock().now().nanoseconds / 1e9
@@ -131,9 +123,6 @@ class TakePhoto(py_trees.behaviour.Behaviour):
             lat=setpoint.lat, lon=setpoint.lon, alt=setpoint.alt
         )
         request.position = self._measured_position()
-        if self._latest_imu is not None:
-            request.has_imu = True
-            request.imu = self._latest_imu
         self._capture_future = self._capture_client.call_async(request)
         self._node.get_logger().info(f"{self.name}: capturing at {setpoint}")
         return py_trees.common.Status.RUNNING

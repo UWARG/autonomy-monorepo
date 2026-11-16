@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import json
 import math
 import os
@@ -19,7 +20,27 @@ from camera.src.abstract_camera import AbstractCamera
 from camera.src.sim import SimCamera
 
 
-def _coordinate_record(msg: CoordinateMsg) -> dict[str, float]:
+class CaptureRejected(Exception):
+    """
+    An expected reason why a photo cannot be saved.
+
+    Missing, stale or blurry frames raise this. Any other exception is a bug
+    and deliberately propagates instead of reporting a quiet rejection.
+    """
+
+
+# Clamps so a misconfigured parameter degrades captures instead of crashing
+# the node at startup.
+SHARPNESS_CEILING = 10_000.0
+FRAME_AGE_CEILING_S = 5.0
+IMU_OFFSET_CEILING_S = 5.0
+
+# Recent IMU samples kept for matching against a frame (seconds of coverage
+# at MAVROS's typical 50-100 Hz).
+IMU_HISTORY_LIMIT = 200
+
+
+def _coordinate_record(msg) -> dict[str, float]:
     return {"lat": msg.lat, "lon": msg.lon, "alt": msg.alt}
 
 
@@ -36,6 +57,22 @@ def _attitude_record(imu: Imu, frame_stamp_ns: int) -> dict:
         "orientation": {axis: getattr(imu.orientation, axis) for axis in "xyzw"},
         "angular_velocity": {axis: getattr(imu.angular_velocity, axis) for axis in "xyz"},
     }
+
+
+def _closest_imu_sample(
+    samples: collections.deque, frame_stamp_ns: int, max_offset_ns: int
+) -> tuple[int, Imu] | None:
+    """
+    Return the (stamp_ns, Imu) pair closest to the frame time.
+
+    Only samples within ``max_offset_ns`` of the frame count; a stale or
+    drifted IMU stream contributes nothing. Not hardware sync: this only
+    bounds how far apart the two timestamps may be.
+    """
+    candidates = [
+        pair for pair in samples if abs(pair[0] - frame_stamp_ns) <= max_offset_ns
+    ]
+    return min(candidates, key=lambda pair: abs(pair[0] - frame_stamp_ns), default=None)
 
 
 def _rectified_rgb(msg: Image) -> np.ndarray:
@@ -114,6 +151,7 @@ class PhotoLog:
 class CameraNode(Node):
     CAPTURE_SERVICE = "camera/capture"
     DEFAULT_DATA_DIR = "/ros_ws/data/photos"
+    DEFAULT_IMU_TOPIC = "mavros/imu/data"
 
     def __init__(self) -> None:
         super().__init__("camera_node")
@@ -121,12 +159,18 @@ class CameraNode(Node):
         topic = self.declare_parameter(
             "rectified_image_topic", os.environ.get("RECTIFIED_IMAGE_TOPIC", "")
         ).value
-        self._min_sharpness = self.declare_parameter("min_sharpness", 100.0).value
-        self._max_frame_age_s = self.declare_parameter("max_frame_age_s", 0.5).value
-        if not math.isfinite(self._min_sharpness) or self._min_sharpness <= 0:
-            raise ValueError("min_sharpness must be positive and finite")
-        if not math.isfinite(self._max_frame_age_s) or self._max_frame_age_s <= 0:
-            raise ValueError("max_frame_age_s must be positive and finite")
+        self._min_sharpness = self._bounded_parameter(
+            "min_sharpness",
+            self.declare_parameter("min_sharpness", 100.0).value,
+            SHARPNESS_CEILING,
+            100.0,
+        )
+        self._max_frame_age_s = self._bounded_parameter(
+            "max_frame_age_s",
+            self.declare_parameter("max_frame_age_s", 0.5).value,
+            FRAME_AGE_CEILING_S,
+            0.5,
+        )
         self._camera: AbstractCamera | None = None
         self._latest_rectified: tuple[Image, int] | None = None
         if topic:
@@ -137,6 +181,27 @@ class CameraNode(Node):
             self._camera = SimCamera()
             if not self._camera.initialize_camera():
                 raise RuntimeError("could not initialize the camera")
+
+        # Subscribe here so the logged attitude is close to the frame's own
+        # timestamp, not to whenever the behaviour tree sent the request.
+        # Empty imu_topic disables the association.
+        imu_topic = self.declare_parameter(
+            "imu_topic", os.environ.get("IMU_TOPIC", self.DEFAULT_IMU_TOPIC)
+        ).value
+        self._max_imu_offset_s = self._bounded_parameter(
+            "max_imu_offset_s",
+            self.declare_parameter("max_imu_offset_s", 0.25).value,
+            IMU_OFFSET_CEILING_S,
+            0.25,
+        )
+        self._max_imu_offset_ns = int(self._max_imu_offset_s * 1e9)
+        self._imu_samples: collections.deque = collections.deque(
+            maxlen=IMU_HISTORY_LIMIT
+        )
+        if imu_topic:
+            self._imu_sub = self.create_subscription(
+                Imu, imu_topic, self._on_imu, qos_profile_sensor_data
+            )
 
         data_dir = Path(os.environ.get("PHOTO_DATA_DIR", self.DEFAULT_DATA_DIR))
         self._photo_log = PhotoLog(data_dir, datetime.now())
@@ -150,34 +215,96 @@ class CameraNode(Node):
             f"'{self._photo_log.run_dir}'."
         )
 
+    def _bounded_parameter(
+        self, name: str, value: object, ceiling: float, default: float
+    ) -> float:
+        """
+        Clamp a numeric parameter into the (0, ceiling] range with a warning.
+
+        Non-numeric, non-finite, zero or negative values fall back to
+        ``default``; values above the ceiling are clamped. Never raises.
+        """
+        if (
+            not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            self.get_logger().warning(
+                f"parameter '{name}' = {value!r} is not a positive finite number; "
+                f"using the default {default} instead"
+            )
+            return default
+        if value > ceiling:
+            self.get_logger().warning(
+                f"parameter '{name}' = {value!r} is above the {ceiling} ceiling; "
+                f"clamped to {ceiling}"
+            )
+            return ceiling
+        return float(value)
+
     def _on_rectified_image(self, msg: Image) -> None:
         stamp_ns = _stamp_ns(msg.header.stamp) or self.get_clock().now().nanoseconds
         self._latest_rectified = (msg, stamp_ns)
+
+    def _on_imu(self, msg: Imu) -> None:
+        stamp_ns = _stamp_ns(msg.header.stamp)
+        if not stamp_ns:
+            # An unstamped sample cannot be matched to any frame.
+            return
+        self._imu_samples.append((stamp_ns, msg))
 
     def _frame_for_capture(self) -> tuple[np.ndarray, int]:
         if self._camera is not None:
             frame = self._camera.capture_frame()
             if frame is None:
-                raise ValueError("no camera frame available")
+                raise CaptureRejected("no camera frame available")
             return frame.rgb, self.get_clock().now().nanoseconds
         if self._latest_rectified is None:
-            raise ValueError("no rectified camera frame available yet")
+            raise CaptureRejected("no rectified camera frame available yet")
         msg, stamp_ns = self._latest_rectified
         age_s = (self.get_clock().now().nanoseconds - stamp_ns) / 1e9
         if not 0 <= age_s <= self._max_frame_age_s:
-            raise ValueError("stale or future-dated rectified camera frame")
+            raise CaptureRejected("stale or future-dated rectified camera frame")
         return _rectified_rgb(msg), stamp_ns
+
+    def _attitude_for_frame(self, frame_stamp_ns: int) -> dict | None:
+        """
+        Return the IMU sample closest to the frame, or None when none is close.
+
+        A sample further than ``max_imu_offset_s`` from the frame is treated
+        as stale (MAVROS stopped publishing, clock drift); the photo is then
+        logged without attitude.
+        """
+        closest = _closest_imu_sample(
+            self._imu_samples, frame_stamp_ns, self._max_imu_offset_ns
+        )
+        if closest is None:
+            self.get_logger().warning(
+                f"no IMU sample within {self._max_imu_offset_s:.2f}s of the frame; "
+                "logging the photo without attitude"
+            )
+            return None
+        stamp_ns, imu = closest
+        return _attitude_record(imu, frame_stamp_ns)
 
     def _on_capture(
         self, request: CapturePhoto.Request, response: CapturePhoto.Response
     ) -> CapturePhoto.Response:
+        """
+        Save a photo when the frame and its metadata are usable.
+
+        Only rejections (``CaptureRejected``) and storage errors
+        (``OSError``) are caught; malformed image data or bugs propagate so
+        they show up as tracebacks, not quiet "rejected" responses.
+        """
         try:
             rgb, frame_stamp_ns = self._frame_for_capture()
             sharpness = _sharpness(rgb)
             if sharpness < self._min_sharpness:
-                raise ValueError(
+                raise CaptureRejected(
                     f"sharpness {sharpness:.1f} below threshold {self._min_sharpness:.1f}"
                 )
+            attitude = self._attitude_for_frame(frame_stamp_ns)
             photo_file = self._photo_log.save(
                 rgb,
                 setpoint=request.setpoint,
@@ -186,13 +313,10 @@ class CameraNode(Node):
                 metadata={
                     "frame_stamp_ns": frame_stamp_ns,
                     "sharpness": sharpness,
-                    "attitude": (
-                        _attitude_record(request.imu, frame_stamp_ns)
-                        if request.has_imu else None
-                    ),
+                    "attitude": attitude,
                 },
             )
-        except ValueError as error:
+        except CaptureRejected as error:
             response.success = False
             response.message = str(error)
             self.get_logger().warning(f"Capture rejected: {error}")
