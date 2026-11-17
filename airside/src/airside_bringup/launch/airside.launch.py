@@ -32,6 +32,11 @@ def generate_launch_description() -> LaunchDescription:
                 default_value=EnvironmentVariable("USE_CAMERA", default_value="true"),
                 description="Start the camera node (false for SITL, which has none)",
             ),
+            DeclareLaunchArgument(
+                "use_engine",
+                default_value="true",
+                description="Start the mission manager (false for isolated SITL tests)",
+            ),
             Node(
                 package="mavros",
                 executable="mavros_node",
@@ -122,6 +127,7 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
+                condition=IfCondition(LaunchConfiguration("use_engine")),
                 parameters=[
                     {
                         "lap_count": ParameterValue(

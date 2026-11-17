@@ -5,9 +5,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|multi|turn|dropout|blocked|pilot|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|multi|turn|dropout|blocked|pilot|replay}"
 case "$scenario" in
-    clear|moving|multi|turn|dropout|blocked|pilot|replay) ;;
+    clear|moving|listener-moving|listener-dropout|multi|turn|dropout|blocked|pilot|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
@@ -94,30 +94,42 @@ trap cleanup EXIT INT TERM
 sleep 3
 
 "$docker_bin" run --rm --name "$airside_name" --network host --ipc host \
-    -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-232}" \
+    -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-220}" \
     -e ROS_LOCALHOST_ONLY=1 \
     -e SCENARIO="$scenario" \
     -e CAPTURE_FILE="$capture_in_container" \
     -e ROUTE_FILE="$route_in_container" \
     -e OWN_AIRCRAFT_INDEX="$own_index" \
     -e REPLAY_START_S="$replay_start_s" \
+    -e AEAC_CONNECTION_TOKEN=local-test-token \
+    -e AEAC_OWN_AIRCRAFT_INDEX=1 \
+    -e AEAC_WEBSOCKET_URL=ws://127.0.0.1:18765 \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
     warg/airside:latest bash -lc '
         source /opt/ros/humble/setup.bash
         source /ros_ws/install/setup.bash
-        ros2 run mavros mavros_node --ros-args \
-            -p fcu_url:=tcp://127.0.0.1:5760 \
-            -p fcu_protocol:=v2.0 \
-            -p tgt_system:=1 -p tgt_component:=1 \
-            > /artifacts/mavros.log 2>&1 &
-        mavros_pid=$!
-        ros2 run navigation position_controller \
-            > /artifacts/controller.log 2>&1 &
-        controller_pid=$!
+        if [[ "$SCENARIO" == listener-* ]]; then
+            ros2 launch airside_bringup airside.launch.py \
+                use_camera:=false use_engine:=false \
+                fcu_url:=tcp://127.0.0.1:5760 \
+                > /artifacts/launch.log 2>&1 &
+            stack_pid=$!
+        else
+            ros2 run mavros mavros_node --ros-args \
+                -p fcu_url:=tcp://127.0.0.1:5760 \
+                -p fcu_protocol:=v2.0 \
+                -p tgt_system:=1 -p tgt_component:=1 \
+                > /artifacts/mavros.log 2>&1 &
+            mavros_pid=$!
+            ros2 run navigation position_controller \
+                > /artifacts/controller.log 2>&1 &
+            controller_pid=$!
+        fi
         setsid ros2 bag record -o /artifacts/rosbag \
             /position_controller/target /position_controller/avoidance_status \
-            /aeac/traffic /mavros/state /mavros/local_position/pose \
+            /aeac/traffic /position_controller/obstacle \
+            /mavros/state /mavros/local_position/pose \
             /mavros/global_position/global /mavros/global_position/rel_alt \
             /mavros/setpoint_raw/global /mavros/statustext/send \
             > /artifacts/rosbag.log 2>&1 &
@@ -127,6 +139,10 @@ sleep 3
                 --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
                 --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
                 --replay-start-s "$REPLAY_START_S" \
+                --summary /artifacts/summary.json
+        elif [[ "$SCENARIO" == listener-* ]]; then
+            timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
+                --scenario "${SCENARIO#listener-}" --traffic-source listener \
                 --summary /artifacts/summary.json
         else
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
@@ -144,7 +160,11 @@ sleep 3
             echo "rosbag metadata missing" >&2
             result=1
         fi
-        kill -TERM "$controller_pid" "$mavros_pid" >/dev/null 2>&1 || true
+        if [[ "$SCENARIO" == listener-* ]]; then
+            kill -TERM "$stack_pid" >/dev/null 2>&1 || true
+        else
+            kill -TERM "$controller_pid" "$mavros_pid" >/dev/null 2>&1 || true
+        fi
         exit "$result"
     ' > "$artifact_dir/runner.log" 2>&1 || {
         cat "$artifact_dir/runner.log"

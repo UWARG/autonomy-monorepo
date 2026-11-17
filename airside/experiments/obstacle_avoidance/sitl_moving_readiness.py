@@ -27,6 +27,8 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64, String
 
+from mock_aeac_websocket import MockAeacWebSocket
+
 EARTH_RADIUS_M = 6_371_000.0
 ALTITUDE_M = 15.0
 GOAL_NORTH_M = 40.0
@@ -43,9 +45,10 @@ def offset(
 
 
 class Scenario(Node):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, traffic_source: str = "direct") -> None:
         super().__init__("moving_traffic_sitl_readiness")
         self.scenario = name
+        self.traffic_source = traffic_source
         self.state: State | None = None
         self.fix: NavSatFix | None = None
         self.altitude_m: float | None = None
@@ -65,6 +68,12 @@ class Scenario(Node):
         self.min_raw_clearance_event: dict[str, object] | None = None
         self.max_observed_speed_mps = 0.0
         self.track: deque[tuple[float, float, float]] = deque()
+        self.listener_snapshots = 0
+        self.listener_indices: set[int] = set()
+        self.listener_healthy = False
+        self.mock_server: MockAeacWebSocket | None = None
+        self.configured_speed_mps: float | None = None
+        self.setpoint_publishers: list[tuple[str, str]] = []
 
         self.create_subscription(State, "/mavros/state", self._state, 10)
         self.create_subscription(
@@ -95,9 +104,18 @@ class Scenario(Node):
         self.target_pub = self.create_publisher(
             PositionTarget, "/position_controller/target", 10
         )
-        self.traffic_pub = self.create_publisher(TrafficSnapshot, "/aeac/traffic", 10)
+        self.traffic_pub = (
+            self.create_publisher(TrafficSnapshot, "/aeac/traffic", 10)
+            if traffic_source == "direct"
+            else None
+        )
+        if traffic_source == "listener":
+            self.create_subscription(
+                TrafficSnapshot, "/aeac/traffic", self._listener_snapshot, 10
+            )
         self.create_timer(0.2, self.publish_target)
-        self.create_timer(1.0, self.publish_traffic)
+        if traffic_source == "direct":
+            self.create_timer(1.0, self.publish_traffic)
         self.mode_client = self.create_client(SetMode, "/mavros/set_mode")
         self.arm_client = self.create_client(CommandBool, "/mavros/cmd/arming")
         self.takeoff_client = self.create_client(CommandTOL, "/mavros/cmd/takeoff")
@@ -175,6 +193,43 @@ class Scenario(Node):
     def _alert(self, msg: StatusText) -> None:
         self.alerts.append(msg.text)
 
+    def _listener_snapshot(self, msg: TrafficSnapshot) -> None:
+        self.listener_snapshots += 1
+        self.listener_healthy = msg.connected and msg.healthy
+        self.listener_indices.update(item.aircraft_index for item in msg.aircraft)
+        if msg.own_aircraft_index != 1:
+            raise RuntimeError(
+                f"listener own aircraft index was {msg.own_aircraft_index}, expected 1"
+            )
+        if any(item.aircraft_index == 1 for item in msg.aircraft):
+            raise RuntimeError("listener did not filter own aircraft")
+
+    def mock_event(self) -> dict[str, object] | None:
+        if self.home_wgs84 is None:
+            return None
+        entries = []
+        for index, east_m, north_m, speed_mps, heading_deg, keepaway_m in [
+            (1, 0.0, 0.0, 0.0, 0.0, 5.0),
+            *self.aircraft(time.monotonic()),
+        ]:
+            lat, lon = offset(*self.home_wgs84, east_m, north_m)
+            entries.append(
+                {
+                    "aircraftIndex": index,
+                    "name": f"SITL-{index}",
+                    "horizontalKeepAway": keepaway_m,
+                    "verticalKeepAway": 5.0,
+                    "position": {
+                        "lat": lat,
+                        "lon": lon,
+                        "altitude": 30.0,
+                        "speed": speed_mps,
+                        "direction": heading_deg,
+                    },
+                }
+            )
+        return {"event": "traffic", "payload": {"traffic": entries}}
+
     def position(self) -> tuple[float, float]:
         if self.pose is None or self.home_pose is None:
             return 0.0, 0.0
@@ -226,7 +281,7 @@ class Scenario(Node):
         )
 
     def publish_traffic(self) -> None:
-        if not self.traffic_enabled or self.home_wgs84 is None:
+        if not self.traffic_enabled or self.home_wgs84 is None or self.traffic_pub is None:
             return
         now_s = time.monotonic()
         self.sequence += 1
@@ -348,9 +403,11 @@ class Scenario(Node):
             (item.node_name, item.node_namespace)
             for item in self.get_publishers_info_by_topic("/mavros/setpoint_raw/global")
         ]
+        self.setpoint_publishers = owners
         if owners != [("position_controller", "/")]:
             raise RuntimeError(f"unexpected MAVROS setpoint publishers: {owners}")
         configured_speed_mps = self.check_speed_parameter()
+        self.configured_speed_mps = configured_speed_mps
         assert self.fix is not None
         self.home_wgs84 = (self.fix.latitude, self.fix.longitude)
         self.set_mode("GUIDED")
@@ -367,7 +424,23 @@ class Scenario(Node):
         )
         self.traffic_started_s = time.monotonic()
         self.traffic_enabled = True
-        self.publish_traffic()
+        if self.traffic_source == "listener":
+            self.mock_server = MockAeacWebSocket(self.mock_event)
+            self.mock_server.start()
+            self.wait_for(
+                "healthy listener snapshot",
+                lambda: self.listener_healthy
+                and (self.scenario != "moving" or 2 in self.listener_indices),
+                15.0,
+            )
+            owners = [
+                item.node_name
+                for item in self.get_publishers_info_by_topic("/aeac/traffic")
+            ]
+            if owners != ["traffic_listener"]:
+                raise RuntimeError(f"unexpected traffic publishers: {owners}")
+        else:
+            self.publish_traffic()
         self.target_enabled = True
         self.publish_target()
 
@@ -382,17 +455,28 @@ class Scenario(Node):
         elif self.scenario == "dropout":
             self.wait_for("initial movement", lambda: self.position()[1] >= 5.0, 35.0)
             dropout_at = self.position()
-            self.traffic_enabled = False
+            if self.traffic_source == "listener":
+                assert self.mock_server is not None
+                self.mock_server.close()
+                self.mock_server = None
+            else:
+                self.traffic_enabled = False
             self.wait_for(
                 "stale traffic hold",
-                lambda: "STALE_TRAFFIC" in self.status_reasons,
+                lambda: "STALE_TRAFFIC" in self.status_reasons
+                or "AEAC_DISCONNECTED" in self.status_reasons,
                 7.0,
             )
             self.pump(2.0)
             if math.dist(dropout_at, self.position()) > 5.0:
                 raise RuntimeError("vehicle progressed too far after traffic loss")
-            self.traffic_enabled = True
-            self.publish_traffic()
+            if self.traffic_source == "listener":
+                self.mock_server = MockAeacWebSocket(self.mock_event)
+                self.mock_server.start()
+                self.wait_for("reconnected listener", lambda: self.listener_healthy, 15.0)
+            else:
+                self.traffic_enabled = True
+                self.publish_traffic()
             self.wait_for("resumed goal", lambda: self.position()[1] >= 38.0, 90.0)
         elif self.scenario == "pilot":
             self.wait_for("initial movement", lambda: self.position()[1] >= 5.0, 35.0)
@@ -423,8 +507,12 @@ class Scenario(Node):
             )
         return {
             "scenario": self.scenario,
+            "traffic_source": self.traffic_source,
             "result": "PASS",
+            "listener_snapshots": self.listener_snapshots,
+            "listener_indices": sorted(self.listener_indices),
             "configured_speed_mps": configured_speed_mps,
+            "setpoint_publishers": self.setpoint_publishers,
             "max_observed_speed_mps": round(self.max_observed_speed_mps, 3),
             "min_raw_clearance_m": None
             if math.isinf(self.min_raw_clearance_m)
@@ -442,15 +530,17 @@ class Scenario(Node):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=SCENARIOS, required=True)
+    parser.add_argument("--traffic-source", choices=("direct", "listener"), default="direct")
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
     rclpy.init()
-    node = Scenario(args.scenario)
+    node = Scenario(args.scenario, args.traffic_source)
     try:
         result = node.run()
     except Exception as error:
         result = {
             "scenario": args.scenario,
+            "traffic_source": args.traffic_source,
             "result": "FAIL",
             "error": f"{type(error).__name__}: {error}",
             "status_reasons": sorted(node.status_reasons),
@@ -458,9 +548,17 @@ def main() -> None:
             "max_expanded_radii": node.max_expanded_radii,
             "min_raw_clearance_m": node.min_raw_clearance_m,
             "min_raw_clearance_event": node.min_raw_clearance_event,
+            "listener_snapshots": node.listener_snapshots,
+            "listener_indices": sorted(node.listener_indices),
+            "max_observed_speed_mps": node.max_observed_speed_mps,
+            "setpoint_count": node.setpoint_count,
+            "configured_speed_mps": node.configured_speed_mps,
+            "setpoint_publishers": node.setpoint_publishers,
             "final_position_m": tuple(round(value, 2) for value in node.position()),
         }
     finally:
+        if node.mock_server is not None:
+            node.mock_server.close()
         node.destroy_node()
         rclpy.shutdown()
     args.summary.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

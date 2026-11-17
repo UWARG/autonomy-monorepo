@@ -35,6 +35,8 @@ Run each mock scenario in a fresh SITL instance:
 ```bash
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh clear
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving  # run 3 times
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-moving  # run 3 times
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-dropout
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh multi
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh turn
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
@@ -46,6 +48,20 @@ Ignored `artifacts/<scenario>-*/` directories contain the summary, logs and
 rosbag. A pass requires one setpoint publisher, no raw keep-away entry, at
 least 3 m additional measured margin, correct stale hold, and the expected
 goal completion or blocked-route alert.
+
+`listener-moving` and `listener-dropout` start the Airside launch with the
+mission manager and camera disabled. A local mock WebSocket supplies 1 Hz AEAC
+traffic to the real `traffic_listener`; no real token or server is used. These
+tests check the listener-to-controller link, including own-aircraft filtering
+and disconnect/reconnect behavior. The direct `moving` test bypasses the
+listener.
+
+If a merged copy fails, save its commit SHA, launch command, controller log,
+and rosbag. Check that exactly one node publishes
+`/mavros/setpoint_raw/global` and that the launched listener publishes the
+topic the controller subscribes to. This branch uses `/aeac/traffic`; another
+implementation may use `/position_controller/obstacle`. A passing test on
+this branch does not identify the cause of a different copy's failure.
 
 ## Receive-only AEAC capture
 
@@ -87,9 +103,10 @@ pilot alert work correctly.
 
 ## Flight gate
 
-Live props-on testing remains disabled until all three final-image real-track
-replays pass and an authorized props-off check confirms both WebSockets, the
-own-aircraft index, WGS84/AGL, approximately 1 Hz send/receive, and end-to-end
+Live props-on testing remains disabled until the intended route is confirmed,
+all three final-image real-track replays pass on that route, and an authorized
+props-off check confirms both WebSockets, the own-aircraft index, WGS84/AGL,
+approximately 1 Hz send/receive, and end-to-end
 delay. Do not send SITL telemetry to the real server.
 
 See [RESULTS.md](RESULTS.md) for current evidence and open gates.
