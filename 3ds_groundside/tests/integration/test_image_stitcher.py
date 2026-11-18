@@ -259,8 +259,12 @@ def test_failure_after_placing_keeps_the_photo(mission, matcher, camera):
     assert stitcher.rejections == []
 
 
-def test_glitch_as_first_photo_does_not_block_the_flight(mission, matcher, camera):
-    glitch = dataclasses.replace(mission[0].message, lat=0.0, lon=0.0)
+# No fix, then positions off the earth: none may become the map's origin.
+@pytest.mark.parametrize("lat, lon", [(0.0, 0.0), (500.0, -80.0), (43.0, 200.0)])
+def test_glitch_as_first_photo_does_not_block_the_flight(
+    mission, matcher, camera, lat, lon
+):
+    glitch = dataclasses.replace(mission[0].message, lat=lat, lon=lon)
     good = [photo.message for photo in mission[1:3]]
     stitcher = ImageStitcher(matcher=matcher, camera=camera)
     stitcher.process_queue(deque([glitch, *good]))

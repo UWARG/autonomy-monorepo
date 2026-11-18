@@ -48,13 +48,15 @@ class ImageMessage:
     def has_valid_position(self) -> bool:
         """
         False when the drone had no GPS fix (the camera node writes NaN, a
-        glitching receiver reports 0, 0) or reports a non-positive altitude.
+        glitching receiver reports 0, 0), the position is not a real lat/lon,
+        or the altitude is not positive.
         """
         values = (self.lat, self.lon, self.alt)
         if not all(is_finite(value) for value in values):
             return False
         no_fix = abs(self.lat) < 1e-6 and abs(self.lon) < 1e-6
-        return not no_fix and self.alt > 0
+        on_earth = abs(self.lat) <= 90 and abs(self.lon) <= 180
+        return not no_fix and on_earth and self.alt > 0
 
     def has_valid_image(self) -> bool:
         """

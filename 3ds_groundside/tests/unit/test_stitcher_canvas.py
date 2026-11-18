@@ -90,6 +90,12 @@ def test_message_validity():
     assert not ImageMessage(43.0, -80.0, 0.0, image, 0.0, 0.0, 0.0).has_valid_position()
     # A receiver with no fix may report exactly (0, 0).
     assert not ImageMessage(0.0, 0.0, 20.0, image, 0.0, 0.0, 0.0).has_valid_position()
+    for lat, lon in [(90.5, -80.0), (-90.5, -80.0), (43.0, 180.5), (43.0, -180.5)]:
+        assert not ImageMessage(
+            lat, lon, 20.0, image, 0.0, 0.0, 0.0
+        ).has_valid_position()
+    for lat, lon in [(90.0, 180.0), (-90.0, -180.0)]:
+        assert ImageMessage(lat, lon, 20.0, image, 0.0, 0.0, 0.0).has_valid_position()
     # A missing value (JSON null) is rejected rather than raising.
     assert not ImageMessage(
         None, -80.0, 20.0, image, 0.0, 0.0, 0.0
