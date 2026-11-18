@@ -38,10 +38,11 @@ def placement_errors(
     removes the single best rotation/scale/shift of the whole map, leaving
     only how well photos line up with each other.
     """
+    # placements() first: it places any photos still held at the start.
+    placed = {message.image_id: pose for message, pose in stitcher.placements()}
     # Stitcher metres are relative to its reference; truth is relative to
     # the ground's north west corner.
     offset = np.array(gps_to_local(*stitcher.reference, *ground.origin))
-    placed = {message.image_id: pose for message, pose in stitcher.placements()}
     stitched, truth = [], []
     for photo in photos:
         if photo.message.image_id not in placed:

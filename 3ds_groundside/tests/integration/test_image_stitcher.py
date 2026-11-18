@@ -165,28 +165,29 @@ def test_run_loop_consumes_deque_and_saves(mission, matcher, camera, tmp_path):
 
     bad = dataclasses.replace(mission[0].message, lat=math.nan, lon=math.nan)
     queue.append(bad)
-    for photo in mission[:5]:
+    for photo in mission[:6]:
         queue.append(photo.message)
     stop.set()
     worker.join(timeout=120)
 
     assert not worker.is_alive()
     assert not queue
-    assert stitcher.image_count == 5
-    # Saved after photos 2 and 4, and once more with all 5 when stopping.
+    assert stitcher.image_count == 6
+    # The first 3 photos are placed together, so saved at 3 and 5 photos,
+    # and once more with all 6 when stopping.
     maps = sorted(path.name for path in tmp_path.glob("map_*.png"))
     assert maps == ["map_001.png", "map_002.png", "map_003.png"]
     counts = [
         json.loads((tmp_path / name).with_suffix(".json").read_text())["image_count"]
         for name in maps
     ]
-    assert counts == [2, 4, 5]
+    assert counts == [3, 5, 6]
 
 
 def test_run_loop_skips_duplicate_final_save(mission, matcher, camera, tmp_path):
-    # The last periodic save already holds all 4 photos, so stopping must not
+    # The last periodic save already holds all 5 photos, so stopping must not
     # write an identical map_003.
-    queue = deque(photo.message for photo in mission[:4])
+    queue = deque(photo.message for photo in mission[:5])
     stop = threading.Event()
     stop.set()
     stitcher = ImageStitcher(matcher=matcher, camera=camera)
@@ -239,6 +240,7 @@ def test_photo_that_fails_never_becomes_the_reference(mission, matcher, camera):
     first, second = (photo.message for photo in mission[:2])
     stitcher = ImageStitcher(matcher=FailsOnce(), camera=camera)
     assert stitcher.process_queue(deque([first, second])) == 2
+    stitcher.placements()  # places the held first photos
 
     assert stitcher.image_count == 1
     assert stitcher.reference == (second.lat, second.lon)
@@ -253,6 +255,7 @@ def test_failure_after_placing_keeps_the_photo(mission, matcher, camera):
 
     stitcher.refine = broken_refine
     assert stitcher.process_queue(deque([mission[0].message])) == 1
+    stitcher.placements()  # places the held first photo
     # Refining failed after the photo was placed: it stays on the map and is
     # not also listed as rejected.
     assert stitcher.image_count == 1
@@ -265,11 +268,73 @@ def test_glitch_as_first_photo_does_not_block_the_flight(
     mission, matcher, camera, lat, lon
 ):
     glitch = dataclasses.replace(mission[0].message, lat=lat, lon=lon)
-    good = [photo.message for photo in mission[1:3]]
+    good = [photo.message for photo in mission[1:4]]
     stitcher = ImageStitcher(matcher=matcher, camera=camera)
     stitcher.process_queue(deque([glitch, *good]))
-    assert stitcher.image_count == 2
+    assert stitcher.image_count == 3
     assert stitcher.reference == (good[0].lat, good[0].lon)
+
+
+def test_wrong_but_real_first_fix_does_not_block_the_flight(mission, matcher, camera):
+    # The first fix is a real place but 11 km off, e.g. before the GPS
+    # settled. The next photos outvote it instead of all being rejected
+    # (a mean of the three would still be kilometres from the good ones).
+    first = mission[0].message
+    wrong = dataclasses.replace(first, lat=first.lat + 0.1, image_id="wrong")
+    good = [photo.message for photo in mission[1:4]]
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.process_queue(deque([wrong, *good]))
+    assert stitcher.image_count == 3
+    assert stitcher.reference == (good[0].lat, good[0].lon)
+    [(_, image_id, reason)] = stitcher.rejections
+    assert image_id == "wrong"
+    assert reason.startswith("GPS position")
+
+
+def test_later_photos_are_checked_against_the_first_photos_median(
+    mission, matcher, camera
+):
+    # A first fix 370 m north is close enough to be kept, but later photos
+    # are measured from the median of the first three, not from it. A photo
+    # 70 m south of the start would be 440 m from the bad fix.
+    messages = [photo.message for photo in mission[:4]]
+    wrong = dataclasses.replace(messages[0], lat=messages[0].lat + 0.0033)
+    south = dataclasses.replace(
+        messages[3], lat=messages[0].lat - 0.00063, image_id="south"
+    )
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.process_queue(deque([wrong, *messages[1:3], south]))
+    assert stitcher.rejections == []
+    assert stitcher.image_count == 4
+
+
+def test_flight_recovers_when_every_held_photo_is_rejected(mission, matcher, camera):
+    # Drawing the map early with two bad fixes 1 and 2 km north rejects both
+    # (each is 500 m from their median). That median, 1.5 km away, must not
+    # then reject the good photos that follow.
+    messages = [photo.message for photo in mission[:5]]
+    near = dataclasses.replace(messages[0], lat=messages[0].lat + 0.009)
+    far = dataclasses.replace(messages[1], lat=messages[0].lat + 0.018)
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.process_queue(deque([near, far]))
+    with pytest.raises(ValueError):
+        stitcher.render()
+    assert len(stitcher.rejections) == 2
+
+    stitcher.process_queue(deque(messages[2:5]))
+    assert stitcher.image_count == 3
+    assert len(stitcher.rejections) == 2
+
+
+def test_short_run_still_saves_its_photos(mission, matcher, camera, tmp_path):
+    # Fewer photos than are held at the start: stopping still saves them.
+    queue = deque(photo.message for photo in mission[:2])
+    stop = threading.Event()
+    stop.set()
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    stitcher.run(queue, stop, output_dir=tmp_path)
+    saved = json.loads((tmp_path / "map_001.json").read_text())
+    assert saved["image_count"] == 2
 
 
 def test_failed_save_does_not_stop_the_run(mission, matcher, camera, tmp_path):
@@ -284,17 +349,37 @@ def test_failed_save_does_not_stop_the_run(mission, matcher, camera, tmp_path):
         real_save(path)
 
     stitcher.save = flaky_save
-    queue = deque(photo.message for photo in mission[:4])
+    queue = deque(photo.message for photo in mission[:5])
     stop = threading.Event()
     stop.set()
     stitcher.run(queue, stop, output_dir=tmp_path, save_every=2)
 
-    # The save after photo 4 failed, so stopping saves the full map again.
-    assert stitcher.image_count == 4
+    # The save at photo 5 failed, so stopping saves the full map again.
+    assert stitcher.image_count == 5
     assert len(calls) == 3
     maps = sorted(tmp_path.glob("map_*.json"))
     counts = [json.loads(path.read_text())["image_count"] for path in maps]
-    assert counts == [2, 4]
+    assert counts == [3, 5]
+
+
+def test_failing_saves_are_retried_every_save_every_photos(
+    mission, matcher, camera, tmp_path
+):
+    # A map that can't be saved must not be redrawn after every photo.
+    stitcher = ImageStitcher(matcher=matcher, camera=camera)
+    calls = []
+
+    def failing_save(path):
+        calls.append(stitcher.image_count)
+        raise OSError("disk full")
+
+    stitcher.save = failing_save
+    queue = deque(photo.message for photo in mission[:10])
+    stop = threading.Event()
+    stop.set()
+    stitcher.run(queue, stop, output_dir=tmp_path, save_every=3)
+    # Tried at 3, 6 and 9 photos, then once more when stopping.
+    assert calls == [3, 6, 9, 10]
 
 
 def test_process_queue_drains_everything(mission, matcher, camera):

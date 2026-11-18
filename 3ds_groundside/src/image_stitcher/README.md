@@ -67,7 +67,10 @@ For each new photo:
 1. **Check.** Photos with no GPS or attitude, tilted, badly exposed, blurry
    (`quality.py`) or the wrong size for the calibration are rejected. The
    rest are undistorted with `camera_info.yaml` (`camera.py`), which also
-   gives the ground resolution at each altitude.
+   gives the ground resolution at each altitude. The first 3 photos are held
+   until all 3 arrive (or the map is drawn), and any far from their median
+   GPS is rejected, so one bad first fix can't push the good photos out of
+   range. Two bad fixes among the first 3 still can.
 2. **Match.** GPS picks nearby placed photos and
    [XFeat](https://github.com/verlab/accelerated_features) finds the same
    ground points in them. XFeat is not rotation invariant, so photos are
@@ -131,7 +134,7 @@ Most likely to need changing for real flights:
 
 - `gps_error_m`: the real GPS accuracy.
 - `min_inliers`: raise it if wrong matches appear over repetitive ground.
-- `max_distance_m`: photos further than this from the first accepted photo
+- `max_distance_m`: photos further than this from the median of the first 3
   are GPS glitches (400 m), so the survey must stay within it.
 - `quality`: `max_tilt_deg` (5), `min_sharpness` (0.32),
   `max_clipped_fraction` (0.2). Picked on synthetic photos; check on real ones.
