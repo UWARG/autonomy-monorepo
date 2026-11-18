@@ -24,16 +24,12 @@ XFEAT_WEIGHTS_URL = (
     f"{XFEAT_COMMIT}/weights/xfeat.pt"
 )
 
-# XFeat is not rotation invariant: it stops recognising points once an image
-# is turned more than roughly 45 degrees. Drones on a lawn mower path turn
-# 180 degrees every row, so every photo is turned north-up with the drone's
-# yaw before extracting features.
-#
-# Resampling a photo softens it, so a photo whose yaw is this close (degrees)
-# to a quarter turn is just given that quarter turn, which loses nothing. Two
-# such photos can end up twice this far apart, plus any compass error. In
-# simulation 40 degrees apart dropped some pairs below the inlier limit, and
-# 20 did not.
+# XFeat stops recognising points once an image turns more than about 45
+# degrees, and lawn mower paths turn 180 every row, so photos are turned
+# north-up with their yaw before extraction. Resampling softens a photo, so
+# one within this many degrees of a quarter turn just gets that lossless
+# quarter turn. Two such photos can end up twice this far apart (plus compass
+# error): in simulation 40 degrees apart lost some pairs, 20 did not.
 MAX_QUARTER_TURN_ERROR_DEG = 10.0
 
 # Any other turn leaves empty corners, and the edge of the photo then looks

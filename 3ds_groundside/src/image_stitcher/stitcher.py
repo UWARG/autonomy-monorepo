@@ -1,28 +1,10 @@
 """
-Groundside orthomosaic stitcher.
+Groundside orthomosaic stitcher (steps in README.md).
 
-Photos arrive in any order from any drone. Unusable ones (blurry, badly
-exposed, tilted; see quality.py) are rejected and never placed. The rest are
-undistorted with the camera calibration (camera.py), which also gives their
-ground resolution from their altitude. Then:
-
-1. GPS picks the already-placed photos it probably overlaps.
-2. XFeat finds the same ground points in the new photo and those neighbours,
-   and RANSAC fits the exact shift, rotation and scale between them.
-3. The photo joins the "cluster" of photos it lines up with (merging
-   clusters when it bridges two). Photos that line up with nothing start a
-   new cluster.
-
-Inside a cluster, photos are positioned relative to each other purely from
-image matches, which is pixel accurate. Every few photos, and before
-drawing the map, all of a cluster's poses are re-solved together (see
-refine.py) so small errors don't pile up along chains of photos.
-
-Each cluster is placed on the map with a single best-fit rotation, scale and
-shift against all of its photos' GPS positions, so individual GPS errors
-average out instead of blurring the map. Yaw only turns photos north-up for
-matching and orients clusters too small to fit, so compass error can't bend
-the map.
+Inside a cluster, photos are placed relative to each other purely from image
+matches, which is pixel accurate. Once spread out enough, each cluster is
+fitted to all of its photos' GPS at once, so GPS errors average out instead
+of blurring the map.
 """
 
 from __future__ import annotations
@@ -222,9 +204,8 @@ class ImageStitcher:
             self._rejections.append((message.drone_id, message.image_id, reason))
             return False
 
-        # The first photo becomes the map's reference, but only once its
-        # features are extracted, so a photo that fails there never anchors
-        # the map.
+        # The first photo only becomes the reference once its features are
+        # extracted, so a photo that fails there never anchors the map.
         reference = self._reference or (message.lat, message.lon)
         east, north = gps_to_local(message.lat, message.lon, *reference)
         # Keep only the undistorted image so memory doesn't double.
@@ -382,12 +363,10 @@ class ImageStitcher:
 
     def placements(self) -> list[tuple[ImageMessage, np.ndarray]]:
         """
-        Each photo's final placement, in the order added: (message, 3x3
-        transform from its pixels to local metres east/north of `reference`).
-
-        The messages are copies holding the undistorted images, which is what
-        the transforms apply to. Returned per message rather than by image_id
-        because different drones can name their photos the same way.
+        Each photo's placement, in the order added: (message, 3x3 transform
+        from its pixels to local metres east/north of `reference`). The
+        messages hold the undistorted images the transforms apply to. Not
+        keyed by image_id, since two drones can use the same names.
         """
         return [(photo.message, self._image_to_local(photo)) for photo in self._photos]
 
@@ -553,13 +532,10 @@ class ImageStitcher:
 
     def _agrees_with_gps(self, photo: _Photo, cluster: int, pose: np.ndarray) -> bool:
         """
-        Guards against wrong matches (e.g. repetitive grass or roofs): once a
-        cluster's place on the map is well known, a photo joining it must land
-        near its GPS.
-
-        A cluster's map position is only trusted once its photos spread over
-        several times the GPS error; before that, a few bad GPS readings could
-        misplace the cluster itself and wrongly reject good matches.
+        Guards against wrong matches (e.g. repetitive grass or roofs): a photo
+        joining a cluster must land near its GPS. Only checked once the
+        cluster spreads over several times the GPS error, so a few bad GPS
+        readings can't misplace the cluster and reject good matches.
         """
         members = self._members(cluster)
         if _gps_spread(members) < self._min_trusted_spread_m():
@@ -663,10 +639,7 @@ class ImageStitcher:
         return np.array([apply(photo.pose, point)[0] for photo in photos])
 
     def _min_trusted_spread_m(self) -> float:
-        """
-        How far a cluster's photos must spread (metres) before its position
-        on the map stands out from the GPS error.
-        """
+        # How far (metres) a cluster must spread to stand out from GPS error.
         return 4 * self._config.gps_error_m
 
     def _metres_per_px(self, photo: _Photo) -> float:
@@ -684,9 +657,7 @@ class ImageStitcher:
 
 
 def _gps_spread(photos: list[_Photo]) -> float:
-    """
-    Furthest any photo's GPS position is from the group's average, in metres.
-    """
+    # Furthest any photo's GPS position is from the group's average, metres.
     gps = np.array([[photo.east, photo.north] for photo in photos])
     return _furthest_from_mean(gps)
 

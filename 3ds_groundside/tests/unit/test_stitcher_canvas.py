@@ -49,7 +49,7 @@ def _ground_pixel(canvas, column, row, ground):
     """
     Ground texture pixel shown at a canvas pixel, via local metres.
     """
-    res = canvas.resolution_m
+    res = ground.resolution_m  # the canvas was built at this resolution
     east = (canvas._left_px + column + 0.5) * res
     north = (canvas._top_px - row - 0.5) * res
     return east / ground.resolution_m - 0.5, -north / ground.resolution_m - 0.5

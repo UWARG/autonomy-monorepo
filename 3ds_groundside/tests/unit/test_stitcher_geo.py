@@ -10,9 +10,9 @@ from src.image_stitcher.geo import (
     footprint_corners,
     gps_to_local,
     local_to_gps,
-    nadir_image_to_local,
     scale_of,
 )
+from tests.image_stitcher.synthetic import nadir_image_to_local
 
 
 def test_gps_local_round_trip():

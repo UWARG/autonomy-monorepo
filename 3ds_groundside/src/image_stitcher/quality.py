@@ -1,10 +1,7 @@
 """
-Checks that decide whether a photo is good enough to put on the map.
-
-A photo can match its neighbours well and still spoil the map: a blurry or
-washed out photo blends mush over good ones, and a tilted photo is not the
-straight-down view the stitcher assumes. Such photos are rejected before
-they are placed.
+Rejects photos that would spoil the map even if they match: blurry or
+washed out ones blend mush over good ones, and tilted ones aren't the
+straight-down view the stitcher assumes.
 """
 
 from __future__ import annotations
@@ -38,9 +35,8 @@ class QualityLimits:
     """
 
     # Largest angle (degrees) between the camera and straight down, from roll
-    # and pitch together. A tilted photo sees the ground at an angle, so its
-    # scale changes across the image and it can't line up with its neighbours
-    # by rotation, scale and shift alone.
+    # and pitch together. A tilted photo's scale changes across the image, so
+    # rotation, scale and shift can't line it up.
     max_tilt_deg: float = 5.0
     # Lowest sharpness (see sharpness()). Sits between sharp synthetic photos
     # and slightly blurred ones (Gaussian sigma 0.7 px, 5 px motion), leaning
@@ -52,17 +48,13 @@ class QualityLimits:
 
 def sharpness(img: np.ndarray) -> float:
     """
-    How much pixel-scale detail survives, relative to detail twice as coarse:
-    in a sharp photo both are similar, blur wipes out the fine one first.
-    Comparing the photo with itself keeps the score independent of what the
-    ground looks like and of exposure, so a field of large plain shapes or a
-    dim photo isn't mistaken for a blurry one.
+    Pixel-scale detail relative to detail twice as coarse: similar in a sharp
+    photo, while blur wipes out the fine detail first. Comparing the photo
+    with itself makes the score independent of the ground and exposure.
 
-    Measured along x, y and both diagonals, keeping the worst, because motion
-    blur only smears detail along the direction of motion. A 3 x 3 median
-    first removes most sensor noise, which would otherwise look like fine
-    detail, while keeping edges (and so blur) as they are.
-    Returns 0 for a featureless image.
+    The worst of x, y and both diagonals counts, since motion blur only
+    smears one way. A 3 x 3 median first removes most sensor noise, which
+    would look like fine detail. Returns 0 for a featureless image.
     """
     grey = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     grey = cv2.medianBlur(grey, 3).astype(np.float64)

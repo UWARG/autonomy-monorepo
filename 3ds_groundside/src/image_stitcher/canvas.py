@@ -61,10 +61,6 @@ class Canvas:
         self._weight = np.zeros((0, 0), dtype=np.float32)
 
     @property
-    def resolution_m(self) -> float:
-        return self._resolution_m
-
-    @property
     def width(self) -> int:
         return self._weight.shape[1]
 
@@ -141,13 +137,6 @@ class Canvas:
             south_east=local_to_gps(east, south, ref_lat, ref_lon),
             south_west=local_to_gps(west, south, ref_lat, ref_lon),
         )
-
-    def local_to_pixel(self, east: float, north: float) -> tuple[float, float]:
-        """
-        Canvas pixel (column, row) showing a local (east, north) point.
-        """
-        x, y, _ = self._local_to_canvas(0, 0) @ np.array([east, north, 1.0])
-        return x, y
 
     def _local_to_canvas(self, x_offset: int, y_offset: int) -> np.ndarray:
         """

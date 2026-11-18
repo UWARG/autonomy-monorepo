@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 
 from src.image_stitcher.camera import Camera
-from src.image_stitcher.geo import apply, local_to_gps, nadir_image_to_local
+from src.image_stitcher.geo import apply, image_axes_to_local, local_to_gps
 from src.image_stitcher.message import ImageMessage
 
 
@@ -94,6 +94,33 @@ def make_ground(
             cv2.line(texture, centre, end, colour, int(rng.integers(1, 5)))
 
     return SyntheticGround(np.ascontiguousarray(texture), resolution_m, origin)
+
+
+def nadir_image_to_local(
+    image_width_px: int,
+    image_height_px: int,
+    gsd_m: float,
+    heading_deg: float,
+    centre_east_m: float,
+    centre_north_m: float,
+    centre_px: np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    Transform from image pixels to local metres for a nadir photo.
+
+    heading_deg is degrees clockwise from north that the image top faces, so
+    with heading 0 image right is east and image up is north. centre_px is
+    the pixel straight below the camera (its principal point), which lands at
+    (centre_east_m, centre_north_m); it defaults to the image centre.
+    """
+    linear = gsd_m * image_axes_to_local(heading_deg)
+    if centre_px is None:
+        centre_px = np.array([(image_width_px - 1) / 2, (image_height_px - 1) / 2])
+    translation = np.array([centre_east_m, centre_north_m]) - linear @ centre_px
+    transform = np.eye(3)
+    transform[:2, :2] = linear
+    transform[:2, 2] = translation
+    return transform
 
 
 def take_photo(

@@ -68,9 +68,9 @@ def next_map_path(output_dir: Path) -> Path:
 def load_photo_run(run_dir: Path, drone_id: str = "") -> Iterator[ImageMessage]:
     """
     Reads a photo run saved by the 3ds airside camera node: photo_NNNN.png
-    files indexed by photos.jsonl, using each record's measured `position`
-    and `attitude` ({"roll": deg, "pitch": deg}). Records without an attitude
-    get NaN roll/pitch, so the stitcher rejects them.
+    files indexed by photos.jsonl, using each record's `position` and
+    `attitude` ({"roll", "pitch", "yaw"} in degrees). Missing values become
+    NaN, so the stitcher rejects those photos.
     """
     with (run_dir / "photos.jsonl").open() as index:
         for line in index:
