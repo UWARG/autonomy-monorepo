@@ -1,6 +1,6 @@
 """
-Tests for placing a cluster on the map from GPS and yaw, with hand-made poses
-so no feature matching is involved.
+Tests for placing photos and clusters from GPS, yaw and matches, with
+hand-made poses and matches so no feature matching is involved.
 """
 
 import math
@@ -9,9 +9,9 @@ import numpy as np
 import pytest
 
 from src.image_stitcher.camera import Camera
-from src.image_stitcher.geo import image_axes_to_local, scale_of
+from src.image_stitcher.geo import apply, image_axes_to_local, scale_of
 from src.image_stitcher.message import ImageMessage
-from src.image_stitcher.stitcher import ImageStitcher, _Photo
+from src.image_stitcher.stitcher import ImageStitcher, _Link, _Match, _Photo
 
 ALTITUDE_M = 25.0
 
@@ -167,3 +167,69 @@ def test_yaws_either_side_of_south_average_to_south(camera):
     placed = stitcher.placements()[0][1]
     expected = camera.metres_per_px(ALTITUDE_M) * image_axes_to_local(180.0)
     np.testing.assert_allclose(placed[:2, :2], expected, atol=1e-9)
+
+
+def shifted(x_px):
+    pose = np.eye(3)
+    pose[0, 2] = x_px
+    return pose
+
+
+def place_against_a_and_b(camera, error_vs_b_px):
+    """
+    Photos a and b are placed 300 px apart and the new photo truly sits at
+    150 px. Its match with a is right; its match with b is off by a constant
+    shift, so it still passed RANSAC on its own. Places the new photo and
+    refines.
+    """
+    stitcher = ImageStitcher(matcher=object(), camera=camera)
+    add_photo(stitcher, shifted(0.0), 0.0, 0.0)
+    add_photo(stitcher, shifted(300.0), 0.0, 0.0)
+    a, b = stitcher._photos
+    points = np.random.default_rng(0).uniform([0, 0], [640, 480], (100, 2))
+    stitcher._links.append(_Link(a, b, points + [300, 0], points))
+
+    def match(other, points_new, points_other):
+        return _Match(other, points_new, points_other, apply(other.pose, points_other))
+
+    right = match(a, points[:60], points[:60] + [150, 0])
+    off = match(b, points[60:], points[60:] + [-150, 0] + error_vs_b_px)
+    photo = _Photo(a.message, None, 0.0, 0.0)
+    stitcher._place(photo, {0: [right, off]})
+    stitcher._photos.append(photo)
+    stitcher._unrefined.add(0)
+    stitcher.refine()
+    return stitcher, photo
+
+
+def test_conflicting_match_is_left_out_of_refinement(camera):
+    # About one repeat of repeating ground (9 m) off.
+    stitcher, photo = place_against_a_and_b(camera, [200, 0])
+    a = stitcher._photos[0]
+    assert [link.b for link in stitcher._links if link.a is photo] == [a]
+    np.testing.assert_allclose(photo.pose, shifted(150.0), atol=1e-6)
+
+
+def test_match_off_by_drift_is_still_refined(camera):
+    # Before refinement, correct matches can disagree by tens of pixels.
+    stitcher, photo = place_against_a_and_b(camera, [20, 15])
+    assert len([link for link in stitcher._links if link.a is photo]) == 2
+
+
+def test_fit_that_no_match_agrees_with_is_refused(camera):
+    # A safety net that real matches rarely reach, since each one already
+    # fits a single transform. Here each is mostly scattered points: the
+    # joint fit still finds the pose from both together, but neither match
+    # agrees with it, so the photo would join with nothing to refine it.
+    stitcher = ImageStitcher(matcher=object(), camera=camera)
+    add_photo(stitcher, shifted(0.0), 0.0, 0.0)
+    a = stitcher._photos[0]
+    rng = np.random.default_rng(1)
+    matches = []
+    for _ in range(2):
+        points = rng.uniform([0, 0], [640, 480], (100, 2))
+        others = points + [150, 0]
+        scatter = rng.uniform(100, 400, (60, 2)) * rng.choice([-1, 1], (60, 2))
+        others[40:] += scatter
+        matches.append(_Match(a, points, others, others))
+    assert stitcher._estimate_pose(matches) is None

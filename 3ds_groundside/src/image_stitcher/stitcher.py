@@ -77,6 +77,11 @@ class StitcherConfig:
     gps_error_m: float = 5.0
     # Reject an image match that puts a photo this far (metres) from its GPS.
     max_gps_disagreement_m: float = 15.0
+    # A match whose points sit this far (median, cluster frame pixels) from
+    # the photo's fitted pose conflicts with its other matches and is left
+    # out of refinement. Generous: before refinement removes drift, correct
+    # matches can sit up to about 30 px off.
+    max_link_residual_px: float = 50.0
     # Two photos' scales should differ only by their altitude ratio; allowed
     # relative error before a match is rejected as wrong.
     max_scale_error: float = 0.25
@@ -475,10 +480,12 @@ class ImageStitcher:
             key=lambda item: -sum(len(match.points_new) for match in item[1]),
         )
         poses: dict[int, np.ndarray] = {}
+        agreeing: dict[int, list[_Match]] = {}
         for cluster, cluster_matches in ranked:
-            pose = self._estimate_pose(cluster_matches)
-            if pose is None:
+            fit = self._estimate_pose(cluster_matches)
+            if fit is None:
                 continue
+            pose, agreeing[cluster] = fit
             if not self._agrees_with_gps(photo, cluster, pose):
                 logger.info(
                     "Rejected match of %r to cluster %d: too far from its GPS",
@@ -498,7 +505,7 @@ class ImageStitcher:
         photo.cluster = target
         photo.pose = poses[target]
         for cluster in poses:
-            for match in matches[cluster]:
+            for match in agreeing[cluster]:
                 self._links.append(
                     _Link(photo, match.other, match.points_new, match.points_other)
                 )
@@ -512,10 +519,16 @@ class ImageStitcher:
             self._unrefined.discard(other)
             logger.info("Merged cluster %d into %d", other, target)
 
-    def _estimate_pose(self, matches: list[_Match]) -> np.ndarray | None:
+    def _estimate_pose(
+        self, matches: list[_Match]
+    ) -> tuple[np.ndarray, list[_Match]] | None:
         """
         Fits the new photo's pixels -> cluster frame transform from all its
         matches into that cluster at once.
+
+        Also returns the matches that agree with that fit. Each match passed
+        RANSAC on its own, but one can still be wrong (e.g. repeating ground),
+        and refinement must not get it.
         """
         points_new = np.concatenate([match.points_new for match in matches])
         points_cluster = np.concatenate([match.points_cluster for match in matches])
@@ -527,7 +540,16 @@ class ImageStitcher:
         )
         if affine is None or inliers.sum() < self._config.min_inliers:
             return None
-        return to_3x3(affine)
+        pose = to_3x3(affine)
+
+        def residual_px(match: _Match) -> float:
+            errors = apply(pose, match.points_new) - match.points_cluster
+            return float(np.median(np.linalg.norm(errors, axis=1)))
+
+        limit = self._config.max_link_residual_px
+        agreeing = [match for match in matches if residual_px(match) <= limit]
+        # With no link, refinement couldn't hold the photo in place.
+        return (pose, agreeing) if agreeing else None
 
     def _agrees_with_gps(self, photo: _Photo, cluster: int, pose: np.ndarray) -> bool:
         """
