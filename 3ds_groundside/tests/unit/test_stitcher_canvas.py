@@ -11,7 +11,7 @@ from src.image_stitcher.files import load_photo_run, next_map_path, write_map
 from src.image_stitcher.geo import gps_to_local
 from src.image_stitcher.message import ImageMessage
 from src.image_stitcher.stitcher import StitchedMap
-from src.image_stitcher.synthetic import make_ground, take_photo
+from tests.image_stitcher.synthetic import make_ground, take_photo
 
 # A distortion-free camera that sees 0.05 m per pixel from 20 m, matching
 # the ground.

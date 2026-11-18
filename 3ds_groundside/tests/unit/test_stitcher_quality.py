@@ -13,7 +13,7 @@ from src.image_stitcher.quality import (
     sharpness,
     tilt_deg,
 )
-from src.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
+from tests.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
 
 LIMITS = QualityLimits()
 

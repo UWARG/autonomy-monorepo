@@ -3,7 +3,7 @@ Measures the stitcher on synthetic missions with known ground truth. Produces
 the "Accuracy" figures in the README (simulated).
 
 Usage (from 3ds_groundside/, about 3 minutes for the default 5 seeds):
-    uv run python -m src.image_stitcher.evaluate [--seeds N]
+    uv run python -m tests.image_stitcher.evaluate [--seeds N]
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from src.image_stitcher.camera import Camera
 from src.image_stitcher.features import XFeatMatcher
 from src.image_stitcher.geo import apply, fit_similarity, gps_to_local
 from src.image_stitcher.stitcher import ImageStitcher
-from src.image_stitcher.synthetic import (
+from tests.image_stitcher.synthetic import (
     SyntheticGround,
     SyntheticPhoto,
     lawn_mower_mission,

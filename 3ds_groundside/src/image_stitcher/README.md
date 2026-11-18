@@ -61,7 +61,7 @@ comparison):
 
 ```bash
 cd 3ds_groundside
-uv run python -m src.image_stitcher.demo stitcher_demo --gps-noise 2
+uv run python -m tests.image_stitcher.demo stitcher_demo --gps-noise 2
 ```
 
 ## How it works
@@ -112,8 +112,9 @@ edges, hiding seams.
 | `canvas.py` | The growing map image and blending |
 | `geo.py` | GPS / local metre / pixel geometry |
 | `files.py` | Writing maps, reading 3ds airside photo runs |
-| `synthetic.py` | Fake missions with known ground truth, for tests and the demo |
-| `evaluate.py` | Accuracy on synthetic missions (the figures below) |
+
+`tests/image_stitcher/` holds the synthetic missions (`synthetic.py`) used by
+the tests, the demo and `evaluate.py` (the figures below).
 
 ## Accuracy
 
@@ -123,7 +124,7 @@ camera calibration (91 photos, 3 drones, shuffled arrival, yaw error sigma
 about 4.5 cm of ground. Rerun with (about 3 minutes):
 
 ```bash
-uv run python -m src.image_stitcher.evaluate
+uv run python -m tests.image_stitcher.evaluate
 ```
 
 | GPS error | Photos line up with each other | Map position vs truth | Connected map |

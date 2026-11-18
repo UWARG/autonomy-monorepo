@@ -2,7 +2,7 @@
 Stitches a synthetic multi-drone lawn mower mission and saves the result.
 
 Usage (from 3ds_groundside/):
-    uv run python -m src.image_stitcher.demo [output_dir] [--gps-noise M]
+    uv run python -m tests.image_stitcher.demo [output_dir] [--gps-noise M]
         [--drones N] [--seed N]
 """
 
@@ -20,7 +20,7 @@ import cv2
 
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.stitcher import ImageStitcher
-from src.image_stitcher.synthetic import lawn_mower_mission, make_ground
+from tests.image_stitcher.synthetic import lawn_mower_mission, make_ground
 
 
 def main() -> None:

@@ -4,7 +4,7 @@ import pytest
 
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.geo import apply
-from src.image_stitcher.synthetic import make_ground, take_photo
+from tests.image_stitcher.synthetic import make_ground, take_photo
 
 # Strong barrel distortion, so errors in undistortion are easy to see.
 BARREL = Camera(

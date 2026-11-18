@@ -13,7 +13,6 @@ import cv2
 import numpy as np
 import pytest
 
-from src.image_stitcher import evaluate
 from src.image_stitcher.camera import Camera
 from src.image_stitcher.features import XFeatMatcher
 from src.image_stitcher.geo import (
@@ -25,7 +24,8 @@ from src.image_stitcher.geo import (
 )
 from src.image_stitcher.message import ImageMessage
 from src.image_stitcher.stitcher import ImageStitcher, StitcherConfig
-from src.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
+from tests.image_stitcher import evaluate
+from tests.image_stitcher.synthetic import lawn_mower_mission, make_ground, take_photo
 
 GPS_NOISE_M = 1.0
 
