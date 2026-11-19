@@ -1,0 +1,77 @@
+name: 3DS SITL Mission
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "3ds/**"
+      - "camera/**"
+      - "utils/**"
+      - ".github/workflows/3ds-sitl.yml"
+  pull_request:
+    paths:
+      - "3ds/**"
+      - "camera/**"
+      - "utils/**"
+      - ".github/workflows/3ds-sitl.yml"
+  workflow_dispatch:
+
+jobs:
+  sitl-mission:
+    name: Fly waypoint and land
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build cached ArduPilot SITL image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 3ds/docker/sitl/Dockerfile
+          tags: warg/arducopter-sitl:4.7.2
+          load: true
+          cache-from: type=gha,scope=ardupilot-sitl
+          cache-to: type=gha,mode=max,scope=ardupilot-sitl
+
+      - name: Build cached 3DS image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: 3ds/docker/Dockerfile
+          tags: warg/3ds:latest
+          load: true
+          cache-from: type=gha,scope=3ds-image
+          cache-to: type=gha,mode=max,scope=3ds-image
+
+      - name: Run ArduPilot SITL mission
+        working-directory: 3ds
+        run: >
+          docker compose -f compose.sitl-test.yaml up --no-build
+          --abort-on-container-exit
+          --exit-code-from sitl-test
+
+      - name: Collect SITL logs
+        if: always()
+        working-directory: 3ds
+        run: docker compose -f compose.sitl-test.yaml logs --no-color > ../sitl-compose.log
+
+      - name: Upload SITL diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sitl-diagnostics
+          path: |
+            sitl-compose.log
+            3ds/log/ros
+          if-no-files-found: warn
+
+      - name: Clean up SITL containers
+        if: always()
+        working-directory: 3ds
+        run: docker compose -f compose.sitl-test.yaml down --remove-orphans
