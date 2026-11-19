@@ -42,6 +42,26 @@ plan.sweep_angle_deg       # chosen sweep orientation
 plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
 ```
 
+### Multiple drones
+
+```python
+from orthomosaic import DroneSpec, plan_swarm_orthomosaic
+
+success, setpoints = plan_swarm_orthomosaic(
+    request,
+    [DroneSpec("alpha", start=Coordinate(lat, lon, 0.0)), DroneSpec("bravo")],
+)
+
+if setpoints is not None:
+    alpha_captures = setpoints["alpha"]
+```
+
+The planner divides one survey into contiguous groups of whole passes. Known
+starts help assign groups by distance to the first or last capture. The planner
+assigns the remaining groups by drone ID. Each ID gets ordered photo setpoints,
+with an empty list for a drone without a pass. Invalid requests return
+`(False, None)`.
+
 ### What it computes
 
 1. **Altitude** — derived from the target GSD, camera FOV, and image size. The
@@ -67,11 +87,12 @@ plan.estimated_path_length_m, plan.estimated_turn_count, plan.photo_count
 
 | File | Responsibility |
 |---|---|
-| `models.py` | `CameraSpec`, `ScanRequest`, `ScanPlan` value objects |
+| `models.py` | `CameraSpec`, `DroneSpec`, `ScanRequest`, `ScanPlan` value objects |
 | `footprint.py` | altitude, footprint, GSD, and spacing math |
 | `decompose.py` | boustrophedon cell decomposition + cell ordering |
 | `sweep.py` | per-cell coverage generation and orientation cost |
 | `pathing.py` | orchestration: `plan_orthomosaic_path` |
+| `swarm.py` | per-drone capture setpoints for a shared survey |
 
 ### Assumptions and limitations
 

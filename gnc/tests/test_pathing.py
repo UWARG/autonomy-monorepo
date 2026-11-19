@@ -14,7 +14,7 @@ from orthomosaic.decompose import HORIZONTAL, decompose_polygon, order_cells
 from orthomosaic.footprint import derive_altitude, ground_footprint, spacings
 from orthomosaic.models import CameraSpec, ScanRequest
 from orthomosaic.pathing import _candidate_angles, _evaluate_orientation, plan_orthomosaic_path
-from orthomosaic.sweep import SweepParams, default_turn_penalty_m, path_length, sweep_cell
+from orthomosaic.sweep import SweepParams, default_turn_penalty_m, sweep_cell
 from utils.src.types import Coordinate
 
 ANCHOR = Coordinate(43.5, -80.5, 0.0)
@@ -232,7 +232,7 @@ def test_plan_rejects_degenerate_boundaries():
 # --- assembly: no unnecessary pathing --------------------------------------
 
 
-def test_assembly_is_exact_concatenation():
+def test_orientation_retains_ordered_cell_sweeps():
     u_shape = [
         (0.0, 0.0),
         (200.0, 0.0),
@@ -247,22 +247,12 @@ def test_assembly_is_exact_concatenation():
     params = sweep_params()
     penalty = default_turn_penalty_m(params.line_spacing_m)
 
-    cost, capture, path, turns, plan_length, cell_count = _evaluate_orientation(
-        polygon, 0.0, params, penalty, None
-    )
-    assert cell_count == 3
-
+    cost, sweeps = _evaluate_orientation(polygon, 0.0, params, penalty, None)
     cells = order_cells(decompose_polygon(polygon, HORIZONTAL), None)
     per_cell = [sweep_cell(cell, params) for cell in cells]
+    assert len(sweeps) == 3
+    assert sweeps == per_cell
 
     expected_straight = sum(result.straight_length_m for result in per_cell)
     expected_turns = sum(result.turn_count for result in per_cell) + (len(cells) - 1)
     assert cost == pytest.approx(expected_straight + penalty * expected_turns)
-    assert turns == expected_turns
-
-    assembled = []
-    for result in per_cell:
-        assembled.extend(result.path_waypoints)
-    assert path == assembled
-    assert plan_length == pytest.approx(path_length(assembled))
-    assert len(capture) == sum(len(result.capture_waypoints) for result in per_cell)
