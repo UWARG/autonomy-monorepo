@@ -44,7 +44,8 @@ Root [Sequence]
         │           └── ServeSetpoint
         │               ├── WaitForSetpoint
         │               ├── FlyToSetpoint
-        │               └── TakePhoto
+        │               └── RetryPhoto [Retry PHOTO_CAPTURE_MAX_ATTEMPTS]
+        │                   └── TakePhoto
         ├── LandPhase                     (fly to launch point, land)
         └── MissionComplete [Running]
 ```
@@ -59,8 +60,11 @@ Once the pilot arms, `RecordLaunchPoint` reads back the FCU home position
 
 After takeoff the drone hovers and waits for setpoints. Each setpoint is
 flown to, photographed, and then the drone waits for the next one. Setpoints
-received while busy are queued in order. A setpoint that is not reached
-within `WAYPOINT_NAV_TIMEOUT_S`, or whose photo fails, is skipped.
+received while busy are queued in order. A photo that is rejected or times
+out is retried at the same waypoint up to `PHOTO_CAPTURE_MAX_ATTEMPTS` times
+before that setpoint is skipped. A setpoint that is not reached within
+`WAYPOINT_NAV_TIMEOUT_S` is skipped immediately (the retry covers only the
+photo, not the flight).
 
 The go-home command preempts everything, including a flight in progress:
 queued setpoints are dropped and the drone flies back over the launch point
@@ -70,7 +74,7 @@ at `RETURN_ALTITUDE_M` and lands.
 |---|---|---|---|
 | `/mission/setpoint` | `airside_interfaces/Coordinate` | subscribe | Next location to photograph (`lat`, `lon`, relative `alt` in meters, at least `SETPOINT_MIN_ALTITUDE_M`) |
 | `/mission/go_home` | `std_msgs/Empty` | subscribe | Return home and land |
-| `/camera/capture` | `airside_interfaces/CapturePhoto` | service (camera node) | Saves the latest camera frame, tagged with the setpoint and measured position |
+| `/camera/capture` | `airside_interfaces/CapturePhoto` | service (camera node) | Checks the camera frame and saves it only if it passes |
 
 From the ground (or inside the container):
 
@@ -100,6 +104,32 @@ Each camera node start creates `$PHOTO_DATA_DIR/run_<YYYY-MM-DDTHH-MM-SS>/`
 and a `photos.jsonl` index with one record per photo: `stamp`, `file`,
 `setpoint` and `position` (each `lat`, `lon`, `alt`; `position` is NaN if no
 GPS fix was available).
+
+Set `RECTIFIED_IMAGE_TOPIC` in Compose (or the camera node's
+`rectified_image_topic` parameter) to the rectified feed used by the vehicle.
+The node accepts `rgb8`, `bgr8`, and `mono8` images. It does not publish a
+raw image stream. If no topic is configured, it reads the in-process camera
+when the service is called. The default simulator is a black-frame stub,
+so it will be rejected by the quality check.
+
+The camera rejects unavailable, stale, and low-sharpness frames; a
+malformed feed is a programming/configuration error and is surfaced as a
+traceback instead of a quiet rejection. `max_frame_age_s` defaults to 0.5
+seconds for rectified frames; `min_sharpness` defaults to 100.0 (variance
+of the grayscale Laplacian); `max_imu_offset_s` defaults to 0.25 seconds.
+Invalid values for these parameters are clamped to their allowed ranges with
+a warning instead of stopping the node. Calibrate the sharpness threshold
+against the flight camera before deployment. A rejection leaves the photo
+dataset untouched and causes `TakePhoto` to return failure, which the
+`RetryPhoto` decorator re-attempts at the same waypoint up to
+`PHOTO_CAPTURE_MAX_ATTEMPTS` times before the setpoint is skipped. Saved
+entries include `sharpness`, `frame_stamp_ns` and an `attitude` record: the
+camera node subscribes to `mavros/imu/data` (parameter `imu_topic`) itself
+and attaches the sample closest to the captured frame's timestamp, or `null`
+when no sample is within `max_imu_offset_s` (stream stopped, stale, or
+disabled). The recorded `frame_offset_ns` is that timing difference; the
+camera and IMU are not hardware-synchronized here. Rebuild the 3DS image to
+update both sides of the capture service.
 
 ## Prerequisites
 
@@ -147,6 +177,7 @@ RUN pip install /monorepo/camera
 |---|---|---|
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `PHOTO_DATA_DIR` | `/ros_ws/data/photos` | Directory where the camera node saves captured photos |
+| `IMU_TOPIC` | `mavros/imu/data` | IMU topic the camera node subscribes to for photo attitude (empty disables it; see the `imu_topic` parameter) |
 | `FCU_URL` | `serial:///dev/serial0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
 
 ### Networking
@@ -239,7 +270,7 @@ The `BehaviourTree` runner passes `rclpy.Node` as the `node` keyword argument to
 ```python
 def setup(self, **kwargs):
     self._node = kwargs["node"]
-    self._sub = self._node.create_subscription(Image, "/camera/image_raw", self._cb, 10)
+    self._sub = self._node.create_subscription(Image, rectified_topic, self._cb, 10)
     self._pub = self._node.create_publisher(Twist, "/cmd_vel", 10)
 ```
 

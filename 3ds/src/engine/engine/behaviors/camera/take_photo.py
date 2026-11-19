@@ -20,9 +20,12 @@ class TakePhoto(py_trees.behaviour.Behaviour):
 
     Calls the ``camera/capture`` service with ``current_waypoint`` as the
     setpoint and the latest MAVROS fix as the measured position (NaN if no
-    fix has arrived). Returns RUNNING until the camera responds, SUCCESS once
-    the photo is saved, and FAILURE if the capture is rejected or not
-    completed within ``PHOTO_CAPTURE_TIMEOUT_S``.
+    fix has arrived). Attitude is picked by the camera node near the frame's
+    timestamp, so no sensor data rides on the request. Returns RUNNING until
+    the camera responds, SUCCESS once the photo is saved, and FAILURE if the
+    capture is rejected or times out after ``PHOTO_CAPTURE_TIMEOUT_S``; the
+    setpoints subtree wraps this behaviour in a bounded retry at the same
+    waypoint.
     """
 
     CAPTURE_SERVICE = "camera/capture"

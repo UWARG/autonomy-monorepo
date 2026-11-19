@@ -38,6 +38,12 @@ SETPOINT_MIN_ALTITUDE_M = 2.0
 # Give up on a photo if the camera has not saved it within this many seconds.
 PHOTO_CAPTURE_TIMEOUT_S = 10.0
 
+# Photo attempts allowed per setpoint before it is skipped (the RetryPhoto
+# decorator in the setpoints subtree). Each attempt may take up to
+# PHOTO_CAPTURE_TIMEOUT_S, so repeated failures at a waypoint stay bounded
+# instead of retrying forever.
+PHOTO_CAPTURE_MAX_ATTEMPTS = 3
+
 # Relative altitude (meters) to climb to on takeoff.
 TAKEOFF_ALTITUDE_M = 15.0
 

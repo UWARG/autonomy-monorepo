@@ -1,4 +1,8 @@
-# Save the latest camera frame as a photo.
+# Check the camera frame and save it if acceptable.
+# Attitude data is no longer shipped with the request: the camera node
+# subscribes to the IMU topic itself and picks the sample closest to the
+# frame it captured, so the sample matches the photo's timestamp instead of
+# whenever TakePhoto happened to send the request.
 
 # Where the photo was meant to be taken.
 Coordinate setpoint

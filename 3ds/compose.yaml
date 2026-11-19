@@ -12,6 +12,7 @@ services:
       ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
       FCU_URL: ${FCU_URL:-serial:///dev/serial0:115200}
       ROS_LOG_DIR: /ros_ws/log/ros
+      RECTIFIED_IMAGE_TOPIC: ${RECTIFIED_IMAGE_TOPIC:-}
     devices:
       - /dev/serial0:/dev/serial0
       - /dev/ttyAMA0:/dev/ttyAMA0
