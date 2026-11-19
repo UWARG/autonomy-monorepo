@@ -8,9 +8,13 @@ from src.coordinates import (
     boundary_to_enu,
     coordinate_to_enu,
     enu_to_coordinate,
+    enu_to_positions,
+    local_region,
+    positions_to_enu,
     rotate_point,
     rotate_points,
     rotate_polygon,
+    validate_polygon,
 )
 from src.constants import EARTH_RADIUS_M
 from src.types import Coordinate
@@ -163,3 +167,73 @@ def test_rotate_polygon_round_trip_preserves_area():
     recovered = rotate_polygon(rotated, -0.6)
     assert recovered.symmetric_difference(polygon).area < 1e-9
     assert recovered.area == pytest.approx(polygon.area)
+
+
+def test_validate_polygon_rejects_holes():
+    ring = Polygon(
+        shell=[(0, 0), (10, 0), (10, 10), (0, 10)],
+        holes=[[(3, 3), (7, 3), (7, 7), (3, 7)]],
+    )
+    with pytest.raises(ValueError, match="holes"):
+        validate_polygon(ring)
+
+
+def test_validate_polygon_rejects_self_intersecting():
+    bowtie = Polygon([(0, 0), (10, 10), (0, 10), (10, 0)])
+    with pytest.raises(ValueError, match="self-intersecting"):
+        validate_polygon(bowtie)
+
+
+def test_validate_polygon_rejects_empty():
+    with pytest.raises(ValueError, match="empty"):
+        validate_polygon(Polygon())
+
+
+def test_validate_polygon_rejects_degenerate():
+    degenerate = Polygon([(0, 0), (1, 0), (2, 0)])
+    with pytest.raises(ValueError):
+        validate_polygon(degenerate)
+
+def test_local_region_matches_boundary_conversion():
+    boundary = [
+        enu_to_coordinate(ANCHOR, east, north)
+        for east, north in [(0.0, 0.0), (100.0, 0.0), (100.0, 60.0), (0.0, 60.0)]
+    ]
+    anchor, region = local_region(boundary)
+    assert anchor == anchor_for_boundary(boundary)
+    assert region.equals(Polygon(boundary_to_enu(anchor, boundary)))
+    assert region.area == pytest.approx(6000.0, rel=1e-5)
+
+
+def test_local_region_rejects_too_few_vertices():
+    with pytest.raises(ValueError, match="3 vertices"):
+        local_region([ANCHOR, Coordinate(43.501, -80.5, 0.0)])
+
+
+def test_local_region_rejects_invalid_polygon():
+    bowtie = [
+        enu_to_coordinate(ANCHOR, east, north)
+        for east, north in [(0.0, 0.0), (10.0, 10.0), (0.0, 10.0), (10.0, 0.0)]
+    ]
+    with pytest.raises(ValueError, match="self-intersecting"):
+        local_region(bowtie)
+
+
+def test_positions_round_trip_keeps_ids_and_altitude():
+    positions = {
+        7: enu_to_coordinate(ANCHOR, 12.0, -3.0, 25.0),
+        2: enu_to_coordinate(ANCHOR, -40.0, 18.0, 40.0),
+    }
+    local = positions_to_enu(ANCHOR, positions)
+    assert list(local) == [7, 2]
+    assert local[7] == pytest.approx((12.0, -3.0), abs=1e-6)
+    moved = {drone_id: (east + 5.0, north) for drone_id, (east, north) in local.items()}
+    back = enu_to_positions(ANCHOR, moved, positions)
+    assert back[7].alt == 25.0
+    assert back[2].alt == 40.0
+    assert coordinate_to_enu(ANCHOR, back[2]) == pytest.approx((-35.0, 18.0), abs=1e-6)
+
+
+def test_positions_to_enu_rejects_non_finite():
+    with pytest.raises(ValueError, match="finite"):
+        positions_to_enu(ANCHOR, {1: Coordinate(math.nan, -80.5, 0.0)})
