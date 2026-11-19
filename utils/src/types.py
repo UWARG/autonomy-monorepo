@@ -18,6 +18,19 @@ class Coordinate:
         return f"({self.lat}, {self.lon}, {self.alt})"
 
 
+@dataclass(frozen=True)
+class PathConflict:
+    """Two drones whose planned flight segments come closer than the minimum separation."""
+
+    drone_a: str
+    segment_a: int  # index into drone_a's segments, 0 = leg from its current position
+    drone_b: str
+    segment_b: int
+    point_a: Coordinate  # closest point on drone_a's segment
+    point_b: Coordinate  # closest point on drone_b's segment
+    distance_m: float  # horizontal distance between point_a and point_b
+
+
 @dataclass
 class Vector3D:
     """Data class for a 3D vector."""
