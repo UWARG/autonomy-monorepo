@@ -108,7 +108,7 @@ export default function CameraWidget({
       : { className: 'pill bg-edge text-ink-3', label: 'NO DATA' };
 
   return (
-    <section className="widget flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
+    <section className="widget widget-overflow flex h-full min-h-[120px] flex-col overflow-y-auto p-4">
       <header className="flex items-center justify-between gap-4">
         <div className="flex items-baseline gap-2">
           <h2 className="widget-label">Camera</h2>
