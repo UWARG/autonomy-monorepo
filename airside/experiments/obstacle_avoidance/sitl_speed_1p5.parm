@@ -1,0 +1,14 @@
+# Pinned warg/sitl:latest ArduCopter uses legacy WPNAV_SPEED in cm/s.
+# Verify readback through MAVROS before treating this as a 1.5 m/s limit.
+PRX1_TYPE 0
+AVOID_ENABLE 0
+OA_TYPE 0
+WPNAV_SPEED 150
+WPNAV_SPEED_UP 100
+WPNAV_SPEED_DN 100
+SR0_EXT_STAT 5
+SR0_EXTRA1 10
+SR0_EXTRA2 10
+SR0_EXTRA3 5
+SR0_POSITION 10
+SR0_RAW_SENS 5
