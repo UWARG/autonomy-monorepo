@@ -32,6 +32,14 @@ class ScanRequest:
 
 
 @dataclass(frozen=True)
+class DroneSpec:
+    """A unique drone ID and its optional GPS starting position."""
+
+    drone_id: str
+    start: Coordinate | None = None
+
+
+@dataclass(frozen=True)
 class ScanPlan:
     """The planned coverage: GPS waypoints plus diagnostic metadata."""
 
