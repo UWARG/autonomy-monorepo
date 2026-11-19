@@ -12,6 +12,12 @@ class ProjectEntry:
 
 
 @dataclass(frozen=True)
+class StartupConfig:
+    commands: tuple[str, ...] = field(default_factory=tuple)
+    restart: str = "on-failure"
+
+
+@dataclass(frozen=True)
 class Project:
     name: str
     path: Path
@@ -19,6 +25,7 @@ class Project:
     depends_on: tuple[str, ...] = field(default_factory=tuple)
     commands: dict[str, str] = field(default_factory=dict)
     ci: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    startup: StartupConfig = field(default_factory=StartupConfig)
 
     @property
     def relative_path(self) -> str:
