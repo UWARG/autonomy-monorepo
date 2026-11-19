@@ -6,7 +6,13 @@ import cv2
 import numpy as np
 
 from .abstract_camera import AbstractCamera
-from .constants import ARDU_DEVICE_INDEX, ARDUCAM_DEFAULT_HEIGHT, ARDUCAM_DEFAULT_WIDTH
+from .constants import (
+    ARDU_DEVICE_INDEX,
+    ARDUCAM_AUTO_EXPOSURE,
+    ARDUCAM_DEFAULT_HEIGHT,
+    ARDUCAM_DEFAULT_WIDTH,
+    ARDUCAM_WARMUP_FRAMES,
+)
 from .frame import CameraFrame
 
 logger = logging.getLogger(__name__)
@@ -27,8 +33,8 @@ class Arducam(AbstractCamera):
         try:
             self.cap = self._open_camera()
 
-            # Check UVC is running by taking a few photos
-            self._drain_frames(5)
+            # Discard frames while auto exposure converges
+            self._drain_frames(ARDUCAM_WARMUP_FRAMES)
             return True
         except RuntimeError:
             return False
@@ -58,6 +64,7 @@ class Arducam(AbstractCamera):
                 cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                 cap.set(cv2.CAP_PROP_FPS, 60)
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, ARDUCAM_AUTO_EXPOSURE)
 
                 backend_name = "unknown"
                 try:
