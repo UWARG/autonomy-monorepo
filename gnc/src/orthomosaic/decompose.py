@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.polygon import orient
+from shapely.ops import linemerge, unary_union
 
 # Sweep-axis identifiers. A cell is swept along its axis:
 #   HORIZONTAL — slice lines run along x at constant y; passes run along x and
@@ -186,18 +187,33 @@ def _slice_count(polygon: Polygon, axis: int, position: float) -> int:
 
 
 def _count_intervals(geometry) -> int:
-    """Counts LineString parts, ignoring points that arise from tangency."""
+    """Counts intervals in a slice, merging collinear fragments into one.
 
-    if geometry.is_empty:
-        return 0
-    geometry_type = geometry.geom_type
-    if geometry_type == "LineString":
+    Overlapping fragments are noded with ``unary_union`` and touching collinear
+    ones rejoined with ``linemerge``, so only a real gap counts as two.
+    """
+
+    lines = _linear_components(geometry)
+    if len(lines) < 2:
+        return len(lines)
+    noded = unary_union(lines)
+    if noded.geom_type != "MultiLineString":
         return 1
-    if geometry_type == "MultiLineString":
-        return len(geometry.geoms)
-    if geometry_type in ("GeometryCollection", "MultiPoint"):
-        return sum(_count_intervals(part) for part in geometry.geoms)
-    return 0
+    merged = linemerge(noded)
+    return 1 if merged.geom_type == "LineString" else len(merged.geoms)
+
+
+def _linear_components(geometry) -> list[LineString]:
+    """Flattens ``geometry`` into its positive-length LineString components."""
+
+    if geometry.geom_type == "LineString":
+        return [geometry] if geometry.length > 0 else []
+    if geometry.geom_type in ("MultiLineString", "GeometryCollection"):
+        components: list[LineString] = []
+        for part in geometry.geoms:
+            components.extend(_linear_components(part))
+        return components
+    return []
 
 
 def _reflex_vertices(polygon: Polygon) -> list[tuple[float, float]]:
