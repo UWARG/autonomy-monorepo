@@ -145,5 +145,14 @@ def generate_launch_description() -> LaunchDescription:
                 name="engine_manager",
                 output="both",
             ),
+            Node(
+                package="tracker",
+                executable="tracker_bridge",
+                name="tracker_bridge",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                parameters=[{"session_id": "+", "data_dir": "/ros_ws/data"}],
+            ),
         ]
     )
