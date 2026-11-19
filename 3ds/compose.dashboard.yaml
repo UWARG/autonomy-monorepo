@@ -1,0 +1,14 @@
+# Standalone ROS bridge only. Start the frontend separately with npm run dev.
+# No device mappings, mission nodes or MAVROS.
+services:
+  dashboard:
+    build:
+      context: ..
+      dockerfile: 3ds/docker/Dockerfile
+    image: warg/3ds:latest
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    command: ros2 launch airside_bringup dashboard.launch.py
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
