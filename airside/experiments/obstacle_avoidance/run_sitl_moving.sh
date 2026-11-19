@@ -5,15 +5,31 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|multi|turn|dropout|blocked|pilot|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|engine-triangle|engine-eight|multi|turn|dropout|blocked|pilot|replay}"
 case "$scenario" in
-    clear|moving|listener-moving|listener-dropout|multi|turn|dropout|blocked|pilot|replay) ;;
+    clear|moving|listener-moving|listener-dropout|engine-triangle|engine-eight|multi|turn|dropout|blocked|pilot|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
 route_in_container=""
 own_index=""
 replay_start_s=""
+sitl_home=""
+if [[ "$scenario" == engine-triangle ]]; then
+    route_path="$repo_root/airside/src/engine/config/waypoints.yaml"
+elif [[ "$scenario" == engine-eight ]]; then
+    route_path="$script_dir/routes/cornfield-eight.yaml"
+fi
+if [[ "$scenario" == engine-* ]]; then
+    route_in_container="/repo/${route_path#"$repo_root/"}"
+    home_lat="$(awk '/^[[:space:]]*- lat:/ { print $3; exit }' "$route_path")"
+    home_lon="$(awk '/^[[:space:]]*lon:/ { print $2; exit }' "$route_path")"
+    [[ -n "$home_lat" && -n "$home_lon" ]] || {
+        echo "could not read first route coordinate from $route_path" >&2
+        exit 2
+    }
+    sitl_home="$home_lat,$home_lon,300,0"
+fi
 if [[ "$scenario" == replay ]]; then
     [[ -n "${2:-}" && -n "${3:-}" ]] || {
         echo "usage: run_sitl_moving.sh replay <capture.jsonl> <confirmed-own-index> --start-s <seconds> [--route route.yaml]" >&2
@@ -85,9 +101,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 "$docker_bin" run -d --name "$sitl_name" --network host \
+    -e SITL_HOME="$sitl_home" \
     -v "$script_dir":/test:ro \
     warg/sitl:latest bash -lc \
-    'cd /ardupilot && exec build/sitl/bin/arducopter -S -I0 --model + --speedup 1 \
+    'cd /ardupilot && home_options=(); \
+     if [[ -n "$SITL_HOME" ]]; then home_options=(--home "$SITL_HOME"); fi; \
+     exec build/sitl/bin/arducopter -S -I0 --model + --speedup 1 "${home_options[@]}" \
      --sim-address=127.0.0.1 \
      --defaults Tools/autotest/default_params/copter.parm,/test/sitl_speed_1p5.parm' \
     > "$artifact_dir/sitl-id.txt"
@@ -109,9 +128,13 @@ sleep 3
     warg/airside:latest bash -lc '
         source /opt/ros/humble/setup.bash
         source /ros_ws/install/setup.bash
-        if [[ "$SCENARIO" == listener-* ]]; then
+        if [[ "$SCENARIO" == listener-* || "$SCENARIO" == engine-* ]]; then
+            use_engine=false
+            if [[ "$SCENARIO" == engine-* ]]; then use_engine=true; fi
             ros2 launch airside_bringup airside.launch.py \
-                use_camera:=false use_engine:=false \
+                use_camera:=false \
+                use_engine:="$use_engine" \
+                lap_count:=1 waypoints_file:="$ROUTE_FILE" \
                 fcu_url:=tcp://127.0.0.1:5760 \
                 > /artifacts/launch.log 2>&1 &
             stack_pid=$!
@@ -128,6 +151,7 @@ sleep 3
         fi
         setsid ros2 bag record -o /artifacts/rosbag \
             /position_controller/target /position_controller/avoidance_status \
+            /engine/waypoints \
             /aeac/traffic /position_controller/obstacle \
             /mavros/state /mavros/local_position/pose \
             /mavros/global_position/global /mavros/global_position/rel_alt \
@@ -144,6 +168,9 @@ sleep 3
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
                 --scenario "${SCENARIO#listener-}" --traffic-source listener \
                 --summary /artifacts/summary.json
+        elif [[ "$SCENARIO" == engine-* ]]; then
+            timeout 650 python3 /repo/airside/experiments/obstacle_avoidance/sitl_engine_moving.py \
+                --route "$ROUTE_FILE" --summary /artifacts/summary.json
         else
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
                 --scenario "$SCENARIO" --summary /artifacts/summary.json
@@ -160,7 +187,7 @@ sleep 3
             echo "rosbag metadata missing" >&2
             result=1
         fi
-        if [[ "$SCENARIO" == listener-* ]]; then
+        if [[ "$SCENARIO" == listener-* || "$SCENARIO" == engine-* ]]; then
             kill -TERM "$stack_pid" >/dev/null 2>&1 || true
         else
             kill -TERM "$controller_pid" "$mavros_pid" >/dev/null 2>&1 || true

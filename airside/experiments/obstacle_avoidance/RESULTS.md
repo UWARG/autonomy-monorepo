@@ -1,7 +1,34 @@
 # Moving traffic results
 
-Status on 2026-11-17: **ready for code review; not ready for live props-on
+Status on 2026-11-19: **ready for code review; not ready for live props-on
 flight testing.**
+
+## Mission-manager moving SITL (2026-11-19)
+
+The earlier listener-to-controller mock runs disabled the mission manager and
+published a target without a waypoint path. New runs enabled the real mission
+manager, used its spline path and completed one lap on each route:
+
+- Three-point route: PASS. Four ordered targets including lap closure; path
+  lengths 3, 5, 4, 3; 97 listener snapshots; aircraft 2 received; 4.523 m
+  minimum measured margin beyond the raw 5 m keep-away; 1.540 m/s peak.
+- Eight-point route fixture from #232: PASS. Nine ordered targets including lap
+  closure; path lengths 3, 5, 5, 5, 5, 5, 5, 4, 3; 247 listener snapshots;
+  aircraft 2 received; 4.678 m minimum margin; 1.568 m/s peak.
+
+Both runs read back a 1.5 m/s FCU setting, found one MAVROS setpoint node,
+and saw a temporary no-path hold/pilot alert before replanning and completing
+the lap. Traffic age stayed under 1.0 s. The Airside image was rebuilt and
+`colcon test` passed (70 tests, 0 failures). Rosbags and summaries are in
+ignored `artifacts/engine-triangle-Qn1ONmuQ/` and
+`artifacts/engine-eight-s6id62wP/`.
+
+These tests rule out a general failure of #237's waypoint-path/16 m look-ahead
+with this local crossing. They do not establish the cause of the reported
+merged-copy failure, which has no known commit or rosbag. The eight-point
+route is a test fixture; this branch's active route remains three-point. A
+Git pull without an Airside image rebuild can also leave old installed code.
+Real-track replay and props-off flight gates below remain open.
 
 ## Passed on the final image
 

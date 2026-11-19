@@ -37,6 +37,8 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh clear
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh moving  # run 3 times
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-moving  # run 3 times
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-dropout
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-triangle
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-eight
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh multi
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh turn
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
@@ -55,6 +57,15 @@ traffic to the real `traffic_listener`; no real token or server is used. These
 tests check the listener-to-controller link, including own-aircraft filtering
 and disconnect/reconnect behavior. The direct `moving` test bypasses the
 listener.
+
+`engine-triangle` and `engine-eight` additionally start the real mission
+manager with one lap and use its waypoint targets and spline path. The runner
+places SITL at the route's first waypoint and generates a moving 1 Hz crossing
+on its first travel leg. `engine-eight` uses a test fixture with the eight
+waypoints from #232; it does not change this branch's active three-point
+route. The summary records target order, path lengths, traffic, clearance,
+speed, hold reasons and setpoint publishers. These local tests still do not
+reproduce an unidentified merged copy or qualify real server traffic.
 
 If a merged copy fails, save its commit SHA, launch command, controller log,
 and rosbag. Check that exactly one node publishes

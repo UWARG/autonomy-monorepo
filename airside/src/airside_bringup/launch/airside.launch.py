@@ -1,9 +1,10 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 # Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
 # where the RC bridge listens for RC_CHANNELS.
@@ -36,6 +37,13 @@ def generate_launch_description() -> LaunchDescription:
                 "use_engine",
                 default_value="true",
                 description="Start the mission manager (false for isolated SITL tests)",
+            ),
+            DeclareLaunchArgument(
+                "waypoints_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("engine"), "config", "waypoints.yaml"]
+                ),
+                description="Waypoint YAML loaded by the mission manager",
             ),
             Node(
                 package="mavros",
@@ -134,6 +142,7 @@ def generate_launch_description() -> LaunchDescription:
                             LaunchConfiguration("lap_count"),
                             value_type=int,
                         ),
+                        "waypoints_file": LaunchConfiguration("waypoints_file"),
                     }
                 ],
             ),
