@@ -10,6 +10,9 @@ import numpy as np
 from .abstract_camera import AbstractCamera
 from .constants import OAKD_DEFAULT_HEIGHT, OAKD_DEFAULT_WIDTH
 from .frame import CameraFrame
+from .imu import CameraIMU
+
+import depthai as dai
 
 class OakD(AbstractCamera):
 
@@ -25,8 +28,6 @@ class OakD(AbstractCamera):
 
     def initialize_camera(self) -> bool:
         try:
-            import depthai as dai
-
             self._pipeline = dai.Pipeline()
 
             # RGB stream
@@ -44,6 +45,13 @@ class OakD(AbstractCamera):
                 right.requestOutput((1280, 800))
             )
             self._depth_queue = stereo.depth.createOutputQueue(maxSize=4, blocking=False)
+
+            # IMU
+            imu = self._pipeline.create(dai.node.IMU)
+            imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW, dai.IMUSensor.MAGNETOMETER_RAW], 100)
+            imu.setBatchReportThreshold(1)
+            imu.setMaxBatchReports(10)
+            self._imu_queue = imu.out.createOutputQueue(maxSize=4, blocking=False)
 
             self._pipeline.start()
             logging.info("OAK-D camera initialized successfully")
@@ -73,6 +81,34 @@ class OakD(AbstractCamera):
             logging.error(f"OAK-D frame capture failed: {e}")
             return None
 
+    def capture_imu(self) -> CameraIMU | None:
+        if self._imu_queue is None:
+            logging.warning("OAK-D IMU queue not initialized")
+            return None
+
+        try:
+            data: dai.IMUData = self._imu_queue.get()
+            packet = data.packets[-1]
+            accel = packet.acceleroMeter
+            gyro = packet.gyroscope
+            mag = packet.magneticField
+
+            return CameraIMU(
+                accel_x=accel.x,
+                accel_y=accel.y,
+                accel_z=accel.z,
+                gyro_x=gyro.x,
+                gyro_y=gyro.y,
+                gyro_z=gyro.z,
+                mag_x=mag.x,
+                mag_y=mag.y,
+                mag_z=mag.z
+            )
+
+        except Exception as e:
+            logging.error(f"OAK-D IMU capture failed: {e}")
+            return None
+
     def sample_centre_depth(self, depth_frame: np.ndarray) -> float:
         if depth_frame is None:
             return math.nan
@@ -92,4 +128,5 @@ class OakD(AbstractCamera):
             self._pipeline = None
             self._rgb_queue = None
             self._depth_queue = None
+            self._imu_queue = None
             logging.info("OAK-D pipeline stopped")
