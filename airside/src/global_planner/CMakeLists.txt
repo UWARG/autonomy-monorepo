@@ -12,7 +12,6 @@ find_package(airside_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(octomap_msgs REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(octomap REQUIRED)
@@ -20,8 +19,6 @@ find_package(octomap REQUIRED)
 # Library (algorithm + helpers)
 add_library(global_planner_lib
   src/theta_star.cpp
-  src/octomap_decoder.cpp
-  src/frames.cpp
 )
 target_include_directories(global_planner_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -33,7 +30,6 @@ ament_target_dependencies(global_planner_lib
   geometry_msgs
   nav_msgs
   octomap_msgs
-  sensor_msgs
   mavros_msgs
   std_msgs
   airside_interfaces
@@ -53,7 +49,6 @@ ament_target_dependencies(global_planner_node
   geometry_msgs
   nav_msgs
   octomap_msgs
-  sensor_msgs
   mavros_msgs
   std_msgs
   airside_interfaces
@@ -74,7 +69,6 @@ if(BUILD_TESTING)
     geometry_msgs
     nav_msgs
     octomap_msgs
-    sensor_msgs
     mavros_msgs
     std_msgs
     airside_interfaces
@@ -117,7 +111,6 @@ ament_export_dependencies(
   geometry_msgs
   nav_msgs
   octomap_msgs
-  sensor_msgs
   mavros_msgs
   std_msgs
   octomap
