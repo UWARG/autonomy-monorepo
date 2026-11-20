@@ -81,6 +81,34 @@ class OakD(AbstractCamera):
             logging.error(f"OAK-D frame capture failed: {e}")
             return None
 
+    def capture_imu(self) -> CameraIMU | None:
+        if self._imu_queue is None:
+            logging.warning("OAK-D IMU queue not initialized")
+            return None
+
+        try:
+            data: dai.IMUData = self._imu_queue.get()
+            packet = data.packets[-1]
+            accel = packet.acceleroMeter
+            gyro = packet.gyroscope
+            mag = packet.magneticField
+
+            return CameraIMU(
+                accel_x=accel.x,
+                accel_y=accel.y,
+                accel_z=accel.z,
+                gyro_x=gyro.x,
+                gyro_y=gyro.y,
+                gyro_z=gyro.z,
+                mag_x=mag.x,
+                mag_y=mag.y,
+                mag_z=mag.z
+            )
+
+        except Exception as e:
+            logging.error(f"OAK-D IMU capture failed: {e}")
+            return None
+
     def sample_centre_depth(self, depth_frame: np.ndarray) -> float:
         if depth_frame is None:
             return math.nan
