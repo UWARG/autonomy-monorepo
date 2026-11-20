@@ -77,5 +77,13 @@ def generate_launch_description() -> LaunchDescription:
                 name="engine_manager",
                 output="both",
             ),
+            Node(
+                package="engine",
+                executable="preflight",
+                name="preflight_node",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
         ]
     )

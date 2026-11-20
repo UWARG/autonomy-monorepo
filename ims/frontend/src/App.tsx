@@ -1,8 +1,3 @@
-// Grid (lg):
-//   row 1:  Camera (5)   Target (4)    Attitude (3)
-//   row 2:  Connection (4)        Script (8)
-//   row 3:  Log (12)
-
 import AttitudeWidget from './widgets/AttitudeWidget';
 import CameraWidget from './widgets/CameraWidget';
 import ConnectionWidget from './widgets/ConnectionWidget';
@@ -10,6 +5,7 @@ import ScriptWidget from './widgets/ScriptWidget';
 import TargetWidget from './widgets/TargetWidget';
 import LogWidget from './widgets/LogWidget';
 import HeaderStatus from './widgets/Header';
+import PreflightWidget from './widgets/PreflightWidget';
 
 export default function App() {
   return (
@@ -28,8 +24,11 @@ export default function App() {
       <main
         className="mx-auto grid w-full max-w-[1400px] grid-cols-12 gap-4 px-5 py-4
                    lg:min-h-0 lg:flex-1 lg:overflow-y-auto
-                   lg:[grid-template-rows:minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
+                   lg:[grid-template-rows:auto_minmax(220px,5fr)_minmax(180px,4fr)_minmax(150px,3fr)]"
       >
+        <div className="col-span-12">
+          <PreflightWidget />
+        </div>
         <div className="col-span-12 h-[340px] min-h-0 lg:col-span-5 lg:h-auto">
           <CameraWidget />
         </div>
