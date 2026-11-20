@@ -10,6 +10,9 @@ import numpy as np
 from .abstract_camera import AbstractCamera
 from .constants import OAKD_DEFAULT_HEIGHT, OAKD_DEFAULT_WIDTH
 from .frame import CameraFrame
+from .imu import CameraIMU
+
+import depthai as dai
 
 class OakD(AbstractCamera):
 
@@ -25,8 +28,6 @@ class OakD(AbstractCamera):
 
     def initialize_camera(self) -> bool:
         try:
-            import depthai as dai
-
             self._pipeline = dai.Pipeline()
 
             # RGB stream
