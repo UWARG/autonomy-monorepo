@@ -45,6 +45,13 @@ class OakD(AbstractCamera):
             )
             self._depth_queue = stereo.depth.createOutputQueue(maxSize=4, blocking=False)
 
+            # IMU
+            imu = self._pipeline.create(dai.node.IMU)
+            imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW, dai.IMUSensor.MAGNETOMETER_RAW], 100)
+            imu.setBatchReportThreshold(1)
+            imu.setMaxBatchReports(10)
+            self._imu_queue = imu.out.createOutputQueue(maxSize=4, blocking=False)
+
             self._pipeline.start()
             logging.info("OAK-D camera initialized successfully")
             return True
@@ -92,4 +99,5 @@ class OakD(AbstractCamera):
             self._pipeline = None
             self._rgb_queue = None
             self._depth_queue = None
+            self._imu_queue = None
             logging.info("OAK-D pipeline stopped")
