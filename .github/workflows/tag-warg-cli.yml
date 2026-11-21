@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,6 +37,7 @@ jobs:
       - name: Create tag if it does not exist
         env:
           TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
             echo "Tag ${TAG} already exists. Nothing to do."
@@ -43,4 +45,6 @@ jobs:
             git tag "${TAG}"
             git push origin "${TAG}"
             echo "Created and pushed ${TAG}."
+            gh workflow run publish-warg-cli.yml --repo "${GITHUB_REPOSITORY}" --ref "${TAG}"
+            echo "Started publish workflow for ${TAG}."
           fi
