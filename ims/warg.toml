@@ -7,6 +7,10 @@ depends_on = ["utils", "camera"]
 setup = "uv sync && pnpm --dir frontend install"
 run = "pnpm --dir frontend dev --host 127.0.0.1 --port 5173"
 lint = "uv run --extra dev ruff check ."
+# Everything on the laptop in one terminal; Ctrl+C stops all of it.
+# `pnpm exec` runs from frontend/, so paths below are relative to it.
+start = 'pnpm --dir frontend exec concurrently -n tunnel,ims,telem -c cyan,green,magenta "ssh -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=5 -L 9090:localhost:9090 warg@raspberrypi" "pnpm dev --host 127.0.0.1 --port 5173" "uv run --project ../../aeac_telemetry --env-file ../../aeac_telemetry/.env aeac-telemetry"'
+"start:sitl" = 'pnpm --dir frontend exec concurrently -n airside,ims,telem -c cyan,green,magenta "docker compose -f ../../airside/compose.sitl.yaml up" "pnpm dev --host 127.0.0.1 --port 5173" "uv run --project ../../aeac_telemetry --env-file ../../aeac_telemetry/.env aeac-telemetry"'
 
 [ci]
 pr = ["lint"]
