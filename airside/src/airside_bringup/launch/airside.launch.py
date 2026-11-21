@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
@@ -11,8 +13,35 @@ _RC_BRIDGE_PORT = 14550
 _MAVROS_GCS_URL = f"udp://@127.0.0.1:{_RC_BRIDGE_PORT}"
 _RC_BRIDGE_MAVLINK_URL = f"udpin:127.0.0.1:{_RC_BRIDGE_PORT}"
 
+# Topics saved to the flight recording. Raw camera images are left out
+# because they fill the onboard disk in minutes.
+_RECORDED_TOPICS = [
+    "/mavros/state",
+    "/mavros/global_position/global",
+    "/mavros/global_position/rel_alt",
+    "/mavros/imu/data",
+    "/mavros/rangefinder/rangefinder",
+    "/mavros/rc/in",
+    "/mavros/setpoint_raw/global",
+    "/mavros/statustext/recv",
+    "/mavros/statustext/send",
+    "/heartbeat",
+    "/capture/target_location",
+    "/trigger_post_processing",
+    "/commander/abort",
+    "/processed_map",
+    "/targets_located",
+    "/rosout",
+]
+
+# Mounted to airside/data/ on the host. ros2 bag record refuses to write
+# into an existing directory, so every launch gets a timestamped name.
+_BAG_DIR = "/ros_ws/data/bags"
+_BAG_SPLIT_SECONDS = 300
+
 
 def generate_launch_description() -> LaunchDescription:
+    bag_name = datetime.now(timezone.utc).strftime("airside_%Y-%m-%dT%H-%M-%SZ")
     return LaunchDescription(
         [
             DeclareLaunchArgument(
@@ -31,6 +60,18 @@ def generate_launch_description() -> LaunchDescription:
                 "use_camera",
                 default_value=EnvironmentVariable("USE_CAMERA", default_value="true"),
                 description="Start the camera node (false for SITL, which has none)",
+            ),
+            ExecuteProcess(
+                cmd=[
+                    "ros2", "bag", "record",
+                    "--storage", "mcap",
+                    "--storage-preset-profile", "zstd_fast",
+                    "--max-bag-duration", str(_BAG_SPLIT_SECONDS),
+                    "--output", f"{_BAG_DIR}/{bag_name}",
+                    *_RECORDED_TOPICS,
+                ],
+                name="bag_recorder",
+                output="both",
             ),
             Node(
                 package="mavros",
@@ -113,6 +154,14 @@ def generate_launch_description() -> LaunchDescription:
                 package="comms",
                 executable="traffic_listener",
                 name="traffic_listener",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+            ),
+            Node(
+                package="comms",
+                executable="behaviour_tree_reporter",
+                name="behaviour_tree_reporter",
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,

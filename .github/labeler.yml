@@ -47,4 +47,4 @@
 
 "3d-scan":
   - changed-files:
-      - any-glob-to-any-file: "3DS_Groundside/**"
+      - any-glob-to-any-file: "3ds_groundside/**"

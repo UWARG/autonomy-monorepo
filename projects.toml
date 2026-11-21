@@ -35,5 +35,5 @@ path = "target_tracking"
 [projects.aeac_telemetry]
 path = "aeac_telemetry"
 
-[projects.3DS_Groundside]
-path = "3DS_Groundside"
+[projects.3ds_groundside]
+path = "3ds_groundside"

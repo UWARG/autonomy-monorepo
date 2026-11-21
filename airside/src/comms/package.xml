@@ -3,7 +3,7 @@
 <package format="3">
   <name>comms</name>
   <version>0.1.0</version>
-  <description>Link to the AEAC competition server: receives AEAC traffic for obstacle avoidance.</description>
+  <description>Ground and competition-server links: receives AEAC traffic for obstacle avoidance and reports behaviour tree status to the ground over MAVLink STATUSTEXT.</description>
   <maintainer email="uwarg@uwaterloo.ca">WARG Autonomy Subteam</maintainer>
   <license>MIT</license>
 
@@ -11,6 +11,8 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
+  <depend>py_trees_ros_interfaces</depend>
+  <exec_depend>engine</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

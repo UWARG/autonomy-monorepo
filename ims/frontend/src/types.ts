@@ -64,3 +64,34 @@ export interface Capture {
   time: string;
   imageUrl: string;
 }
+
+export interface AttitudeMessage {
+  roll: number;
+  pitch: number;
+  yaw: number;
+  rollspeed?: number;
+  pitchspeed?: number;
+  yawspeed?: number;
+}
+
+export interface CameraMessage {
+  src?: string;
+  width?: number; // px
+  height?: number; // px
+  latencyMs?: number;
+}
+
+export interface TargetMessage {
+  /** degrees */
+  lat: number;
+  lon: number;
+  label?: string;
+  tracking?: boolean;
+}
+
+/** Mission/script state. */
+export interface StatusMessage {
+  task: string;
+  state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
+  text: string;
+}
