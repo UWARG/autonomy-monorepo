@@ -8,17 +8,22 @@ Groundside operator tooling for 3DS autonomy.
 ## Layout
 
 ```text
-3DS_Groundside/
+3ds_groundside/
 ├── src/           # Python package (import src.*)
 ├── tests/
 ├── pyproject.toml
 └── warg.toml
 ```
 
+## Modules
+
+- `src/image_stitcher/`: builds an orthomosaic map from drone photos. See
+  [its README](src/image_stitcher/README.md).
+
 ## Commands
 
 ```bash
-warg run 3DS_Groundside setup
-warg run 3DS_Groundside test
-warg run 3DS_Groundside lint
+warg run 3ds_groundside setup
+warg run 3ds_groundside test
+warg run 3ds_groundside lint
 ```

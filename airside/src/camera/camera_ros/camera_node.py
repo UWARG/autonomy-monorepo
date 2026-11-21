@@ -44,7 +44,10 @@ class CameraNode(Node):
             camera_factory = SimCamera
 
         self._camera: AbstractCamera = camera_factory()
-        self._camera.initialize_camera()
+        if not self._camera.initialize_camera():
+            self.get_logger().error(
+                f"Failed to initialize {type(self._camera).__name__}; publishing black frames."
+            )
 
         self._publisher = self.create_publisher(Image, self._topic, 10)
         self._frame_id = 0

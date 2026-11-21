@@ -11,6 +11,8 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     # AEAC_CONNECTION_TOKEN and optional AEAC_OWN_AIRCRAFT_INDEX.
     env_file:
       - path: .env
@@ -23,4 +25,5 @@ services:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
+      - ./data:/ros_ws/data
     command: ros2 launch airside_bringup airside.launch.py

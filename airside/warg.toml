@@ -10,7 +10,7 @@ run = "docker compose up"
 compose-up = "docker compose up -d"
 compose-down = "docker compose down"
 logs = "docker compose logs -f"
-test = "docker compose run --rm airside bash -lc 'colcon test --event-handlers console_direct+ && colcon test-result --verbose'"
+test = "docker compose -f compose.sitl.yaml run --rm airside bash -lc 'colcon test --event-handlers console_direct+ && colcon test-result --verbose'"
 shell = "docker compose run --rm airside bash"
 
 [ci]

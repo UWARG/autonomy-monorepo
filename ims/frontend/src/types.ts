@@ -64,3 +64,38 @@ export interface Capture {
   time: string;
   imageUrl: string;
 }
+
+/** payload for { "type": "attitude" } */
+export interface AttitudeMessage {
+  /** radians;  */
+  roll: number;
+  pitch: number;
+  yaw: number;
+  rollspeed?: number;
+  pitchspeed?: number;
+  yawspeed?: number; 
+}
+
+/** payload for { "type": "camera" } */
+export interface CameraMessage {
+  src?: string;
+  width?: number; // px
+  height?: number; // px
+  latencyMs?: number; 
+}
+
+/** payload for { "type": "target" } */
+export interface TargetMessage {
+  /** degrees */
+  lat: number; 
+  lon: number;
+  label?: string; 
+  tracking?: boolean;
+}
+
+/** payload for { "type": "status" } */
+export interface StatusMessage {
+  task: string;
+  state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
+  text: string;
+}

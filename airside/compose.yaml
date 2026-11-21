@@ -5,6 +5,8 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     # Fallback if host networking is unavailable:
     # ports:
     #   - "14550:14550/udp"
@@ -23,7 +25,9 @@ services:
       - ./src:/ros_ws/src
       - ./log:/ros_ws/log
       - ..:/monorepo
+      - ./data:/ros_ws/data
       - /dev/bus/usb:/dev/bus/usb
     privileged: true
     command: ros2 launch airside_bringup airside.launch.py
-    restart: on-failure
+    # Comes back up on every Pi boot once started with `docker compose up -d`.
+    restart: unless-stopped

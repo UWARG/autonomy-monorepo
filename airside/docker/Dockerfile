@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-rmw-cyclonedds-cpp \
     ros-humble-ros2bag \
     ros-humble-rosbag2-storage-default-plugins \
+    ros-humble-rosbag2-storage-mcap \
     ros-humble-rosbridge-suite \
     wget \
   && rm -rf /var/lib/apt/lists/*
