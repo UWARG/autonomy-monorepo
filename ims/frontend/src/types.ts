@@ -65,31 +65,35 @@ export interface Capture {
   imageUrl: string;
 }
 
+/** payload for { "type": "attitude" } */
 export interface AttitudeMessage {
+  /** radians;  */
   roll: number;
   pitch: number;
   yaw: number;
   rollspeed?: number;
   pitchspeed?: number;
-  yawspeed?: number;
+  yawspeed?: number; 
 }
 
+/** payload for { "type": "camera" } */
 export interface CameraMessage {
   src?: string;
   width?: number; // px
   height?: number; // px
-  latencyMs?: number;
+  latencyMs?: number; 
 }
 
+/** payload for { "type": "target" } */
 export interface TargetMessage {
   /** degrees */
-  lat: number;
+  lat: number; 
   lon: number;
-  label?: string;
+  label?: string; 
   tracking?: boolean;
 }
 
-/** Mission/script state. */
+/** payload for { "type": "status" } */
 export interface StatusMessage {
   task: string;
   state: string; // "RUNNING" | "PAUSED" | "IDLE" | "ABORTED"
