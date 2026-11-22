@@ -129,18 +129,57 @@ class ObstacleAvoider:
             self.reset()
             return AvoidancePlan.hold(str(error), goal_distance_m=goal_distance_m)
 
+        field = CircularObstacleField(obstacles)
+        if (
+            field.point_clearance(Point2D(0.0, 0.0))
+            < settings.planner.clearance_margin_m
+        ):
+            self.reset()
+            return AvoidancePlan.hold(
+                "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED",
+                goal_distance_m=goal_distance_m,
+                obstacle_count=len(obstacles),
+            )
+        if request.required_waypoint is not None:
+            required = request.required_waypoint
+            if not _valid_coordinate(required):
+                self.reset()
+                return AvoidancePlan.hold("INVALID_REQUIRED_WAYPOINT")
+            required_east_m, required_north_m = east_north_coordinate_offset_m(
+                position.lat, position.lon, required.lat, required.lon
+            )
+            if (
+                field.point_clearance(Point2D(required_east_m, required_north_m))
+                < settings.planner.clearance_margin_m
+            ):
+                self.reset()
+                return AvoidancePlan.hold(
+                    "WAYPOINT_IN_TRAFFIC_BUFFER",
+                    goal_distance_m=goal_distance_m,
+                    obstacle_count=len(obstacles),
+                )
+        if (
+            field.point_clearance(Point2D(goal_east_m, goal_north_m))
+            < settings.planner.clearance_margin_m
+        ):
+            self.reset()
+            return AvoidancePlan.hold(
+                "AIM_IN_TRAFFIC_BUFFER",
+                goal_distance_m=goal_distance_m,
+                obstacle_count=len(obstacles),
+            )
+
         result = self._planner.plan(
             PlanRequest(
                 start=Point2D(0.0, 0.0),
                 goal=Point2D(goal_east_m, goal_north_m),
                 obstacles=ObstacleSnapshot(obstacles, timestamp_s=-age_s),
                 now_s=0.0,
+                excluded_headings_rad=request.excluded_headings_rad,
             )
         )
         if result.status is PlanStatus.NO_PATH or result.waypoint is None:
-            hold_clearance_m = CircularObstacleField(obstacles).point_clearance(
-                Point2D(0.0, 0.0)
-            )
+            hold_clearance_m = field.point_clearance(Point2D(0.0, 0.0))
             reason = (
                 "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED"
                 if hold_clearance_m < settings.planner.clearance_margin_m

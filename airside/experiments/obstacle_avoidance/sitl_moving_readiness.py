@@ -507,7 +507,11 @@ class Scenario(Node):
 
         if self.scenario == "blocked":
             self.wait_for(
-                "blocked hold", lambda: "BLOCKED" in self.status_reasons, 10.0
+                "blocked hold",
+                lambda: bool(
+                    {"BLOCKED", "WAYPOINT_IN_TRAFFIC_BUFFER"} & self.hold_reasons
+                ),
+                10.0,
             )
             self.wait_for("pilot alert", lambda: bool(self.alerts), 10.0)
             self.pump(1.0)

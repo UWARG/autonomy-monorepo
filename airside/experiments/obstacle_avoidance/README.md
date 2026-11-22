@@ -17,6 +17,23 @@ The 15/20 m/s runs are unsupported stress cases, not autonomous flight cases.
 If the hold point may be entered, the controller immediately asks the pilot
 to take over; hover is not claimed to be safe avoidance.
 
+The controller also requires `FLIGHT_BOUNDARY_WGS84` in ignored `airside/.env`:
+an approved horizontal polygon as `[[lat,lon],[lat,lon],...]`. It holds and
+alerts if the polygon is missing/invalid, the vehicle or mission target is
+outside its 5 m inward margin, or the next setpoint segment crosses that
+margin. This companion guard is **not** a hard FCU geofence; configure and
+verify the flight controller's fence separately before physical flight. The
+runner creates a wide SITL-only polygon, not a field-approved boundary.
+
+On one leg, spline aim distance is monotonic so GPS noise cannot pull it
+backward. After 8 s of commanded path following without 1.5 m net progress,
+the controller excludes the last heading and tries another clearance-checked
+candidate. It never shrinks the traffic buffer. If there is no safe alternate,
+it holds and alerts. If only the optional look-ahead aim is blocked, it
+replans toward the current required waypoint. If that waypoint is inside the
+traffic buffer, it holds, replans on new snapshots and alerts; it never skips
+the waypoint.
+
 The planner uses 2 m/s for conservative relative-motion calculations. SITL
 sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first
 physical flight remains limited to 1 m/s.
@@ -30,9 +47,8 @@ cd airside
 docker compose -f compose.sitl.yaml build
 cd ..
 uv run --project gnc --extra dev pytest gnc/tests
-docker run --rm warg/airside:latest bash -lc \
-  'source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && \
-   cd /ros_ws && colcon test && colcon test-result --verbose'
+docker run --rm -v "$PWD":/repo:ro warg/airside:latest \
+  bash /repo/airside/experiments/obstacle_avoidance/run_colcon_test.sh
 ```
 
 Run each mock scenario in a fresh SITL instance:

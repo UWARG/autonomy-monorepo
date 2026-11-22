@@ -1,6 +1,36 @@
 # Moving traffic results
 
-Status on 2026-11-21: **draft; not cleared for live props-on flight.**
+Status on 2026-11-22: **draft; not cleared for live props-on flight.**
+
+## Boundary and stuck-path update (2026-11-22)
+
+The controller now requires an approved WGS84 flight polygon and keeps each
+setpoint segment inside a 5 m inward margin. Missing/invalid boundary holds
+and alerts. The SITL runner uses a test-only polygon; an actual site polygon
+and an independent FCU fence are still required before physical flight.
+Spline look-ahead cannot move backward on one leg. After 8 s of commanded
+movement without 1.5 m net progress, the planner excludes the last heading
+and tries a clearance-checked alternate; if none exists it holds and alerts.
+A blocked optional aim replans to the current required waypoint. A required
+waypoint inside the traffic buffer is never skipped: it holds and alerts.
+
+The rebuilt image passed 169 GNC tests and 85/85 ROS tests. One final-image
+mock eight-waypoint SITL lap passed through the real listener and controller:
+248 index-2 snapshots, 6.161 m minimum **extra** separation beyond the 5 m
+server keep-away, 1.552 m/s measured peak, and one setpoint publisher. Its
+rosbag and summary are in ignored `artifacts/engine-eight-IOXFR4iQ/`.
+Three fresh direct-feed moving SITL runs also reached the goal, with
+5.812/5.878/5.878 m minimum extra separation and 1.539/1.531/1.537 m/s
+measured peaks; each found one setpoint publisher and saved a rosbag. The
+blocked-route run held and alerted without moving into the buffer. Its first
+harness attempt reported a false timeout because it only recognized the old
+`BLOCKED` code; after accepting `WAYPOINT_IN_TRAFFIC_BUFFER`, the rerun passed.
+The final-image 15 m/s triangle remained `PASS_STRESS_ONLY`: it held and
+alerted on traffic beyond the 5 m/s envelope, without claiming route completion.
+Capture/replay tests passed 7/7.
+Boundary rejection, blocked-waypoint behavior and alternate heading are
+unit-tested; a repeatable in-flight stall has not yet exercised the retry in
+SITL. This mock lap does not qualify the real server track or props-on flight.
 
 ## High-speed turn check (2026-11-21)
 

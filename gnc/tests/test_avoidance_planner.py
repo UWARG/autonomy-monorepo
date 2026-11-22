@@ -20,12 +20,14 @@ def request(
     timestamp_s: float = 10.0,
     now_s: float = 10.0,
     healthy: bool = True,
+    excluded_headings_rad: tuple[float, ...] = (),
 ) -> PlanRequest:
     return PlanRequest(
         start=Point2D(0.0, 0.0),
         goal=Point2D(20.0, 0.0),
         obstacles=ObstacleSnapshot(obstacles, timestamp_s, healthy),
         now_s=now_s,
+        excluded_headings_rad=excluded_headings_rad,
     )
 
 
@@ -92,6 +94,29 @@ def test_hysteresis_retains_a_safe_previous_detour() -> None:
     assert math.copysign(1.0, second.heading_rad) == math.copysign(
         1.0, first.heading_rad
     )
+
+
+def test_stuck_retry_chooses_a_different_safe_detour() -> None:
+    obstacle = CircleObstacle(Point2D(5.0, 0.0), 1.5)
+    planner = BendyRuler2D()
+    first = planner.plan(request((obstacle,)))
+    retry = planner.plan(
+        request((obstacle,), excluded_headings_rad=(first.heading_rad,))
+    )
+
+    assert first.status is PlanStatus.PATH_FOUND
+    assert retry.status is PlanStatus.PATH_FOUND
+    assert first.heading_rad > 0.0
+    assert retry.heading_rad < 0.0
+    assert retry.minimum_clearance_m >= planner.config.clearance_margin_m
+
+
+def test_stuck_retry_holds_when_no_safe_alternative_exists() -> None:
+    planner = BendyRuler2D(PlannerConfig(maximum_detour_deg=0.0))
+    result = planner.plan(request(excluded_headings_rad=(0.0,)))
+
+    assert result.status is PlanStatus.NO_PATH
+    assert result.reason is NoPathReason.BLOCKED
 
 
 def test_property_every_returned_segment_meets_clearance() -> None:

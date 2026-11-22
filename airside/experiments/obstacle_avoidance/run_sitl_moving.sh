@@ -76,6 +76,24 @@ if [[ "$scenario" == replay ]]; then
     route_in_container="/repo/${route_path#"$repo_root/"}"
 fi
 
+# SITL-only polygon around the known test origin. It is not an approved
+# physical-flight boundary; the live launch must receive a site-approved one.
+if [[ -z "$sitl_home" ]]; then
+    if [[ "$scenario" == replay ]]; then
+        home_lat="$(awk '/^[[:space:]]*- lat:/ { print $3; exit }' "$route_path")"
+        home_lon="$(awk '/^[[:space:]]*lon:/ { print $2; exit }' "$route_path")"
+    else
+        home_lat=43.477773
+        home_lon=-80.5685257
+    fi
+    sitl_home="$home_lat,$home_lon,300,0"
+fi
+flight_boundary="$(awk -v lat="$home_lat" -v lon="$home_lon" 'BEGIN {
+    printf "[[%.7f,%.7f],[%.7f,%.7f],[%.7f,%.7f],[%.7f,%.7f]]", \
+        lat-0.004,lon-0.006,lat-0.004,lon+0.006, \
+        lat+0.004,lon+0.006,lat+0.004,lon-0.006
+}')"
+
 docker_bin="${DOCKER_BIN:-docker}"
 airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
 if ! command -v "$docker_bin" >/dev/null 2>&1 && [[ -x /snap/bin/docker ]]; then
@@ -132,6 +150,7 @@ sleep 3
     -e AEAC_CONNECTION_TOKEN=local-test-token \
     -e AEAC_OWN_AIRCRAFT_INDEX=1 \
     -e AEAC_WEBSOCKET_URL=ws://127.0.0.1:18765 \
+    -e FLIGHT_BOUNDARY_WGS84="$flight_boundary" \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
     "$airside_image" bash -lc '

@@ -92,6 +92,31 @@ def test_detours_around_traffic_on_the_direct_line() -> None:
     assert plan.minimum_clearance_m is not None and plan.minimum_clearance_m >= 1.0
 
 
+def test_aim_inside_traffic_buffer_waits_instead_of_claiming_completion() -> None:
+    blocked_goal = offset(0.0, 20.0)
+    plan = ObstacleAvoider().plan(request(blocked_goal, intruder(blocked_goal, 5.0)))
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "AIM_IN_TRAFFIC_BUFFER"
+    assert plan.next_waypoint is None
+
+
+def test_required_waypoint_inside_buffer_holds_even_if_aim_is_clear() -> None:
+    required = offset(0.0, 30.0)
+    plan = ObstacleAvoider().plan(
+        AvoidanceRequest(
+            position=HERE,
+            goal=offset(0.0, 12.0),
+            traffic=(intruder(required, 5.0),),
+            traffic_age_s=0.0,
+            required_waypoint=required,
+        )
+    )
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "WAYPOINT_IN_TRAFFIC_BUFFER"
+
+
 @pytest.mark.parametrize(
     ("plan_request", "reason"),
     [

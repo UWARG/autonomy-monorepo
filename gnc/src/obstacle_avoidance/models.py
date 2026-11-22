@@ -54,6 +54,7 @@ class PlanRequest:
     goal: Point2D
     obstacles: ObstacleSnapshot
     now_s: float
+    excluded_headings_rad: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,8 @@ class AvoidanceRequest:
     goal: Coordinate
     traffic: tuple[TrafficAircraft, ...]
     traffic_age_s: float  # how long ago ``traffic`` was sampled
+    excluded_headings_rad: tuple[float, ...] = ()
+    required_waypoint: Coordinate | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,6 @@
 """Decision tests for the position controller."""
 
+import json
 import math
 import time
 
@@ -32,7 +33,15 @@ def ros():
 
 
 @pytest.fixture
-def controller():
+def controller(monkeypatch):
+    corners = [
+        enu_to_coordinate(HERE, east, north)
+        for east, north in ((-100, -100), (100, -100), (100, 100), (-100, 100))
+    ]
+    monkeypatch.setenv(
+        "FLIGHT_BOUNDARY_WGS84",
+        json.dumps([[point.lat, point.lon] for point in corners]),
+    )
     node = PositionController()
     node._state = State(connected=True, armed=True, mode="GUIDED")
     node._target, node._target_received_s = TARGET, NOW
@@ -57,6 +66,35 @@ def test_clear_path_goes_to_lookahead_point_toward_target(controller) -> None:
     assert HERE.lat < setpoint.lat < TARGET.lat
     assert setpoint.lon == pytest.approx(HERE.lon)
     assert setpoint.alt == TARGET.alt
+
+
+def test_missing_flight_boundary_holds_and_alerts(controller) -> None:
+    controller._boundary = None
+    controller._boundary_error = "FLIGHT_BOUNDARY_UNCONFIGURED"
+
+    assert controller._next_setpoint(NOW) == HERE
+    assert controller._hold_reason == "FLIGHT_BOUNDARY_UNCONFIGURED"
+    assert controller._last_alert_s == NOW
+
+
+def test_target_outside_flight_boundary_holds(controller) -> None:
+    controller._target = enu_to_coordinate(HERE, 200.0, 0.0)
+
+    assert controller._next_setpoint(NOW) == HERE
+    assert controller._hold_reason == "TARGET_OUTSIDE_FLIGHT_BOUNDARY"
+
+
+def test_stuck_progress_excludes_old_heading(controller) -> None:
+    controller._progress_anchor = HERE
+    controller._progress_active_s = controller.STUCK_AFTER_ACTIVE_S
+    controller._last_path_s = NOW - 0.1
+    controller._last_command_heading_rad = math.pi / 2
+
+    setpoint = controller._next_setpoint(NOW)
+
+    assert len(controller._tried_headings_rad) == 1
+    assert setpoint is not None
+    assert setpoint.lon != pytest.approx(HERE.lon, abs=1e-7)
 
 
 def test_near_target_goes_to_target_itself(controller) -> None:
@@ -128,6 +166,32 @@ def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:
     )
 
     assert controller._next_setpoint(NOW).lon != pytest.approx(HERE.lon, abs=1e-6)
+
+
+def test_blocked_required_waypoint_holds_without_skipping(controller) -> None:
+    controller._traffic_aircraft = (
+        TrafficAircraft(2, TARGET.lat, TARGET.lon, 10.0, 0.0, 0.0, 5.0, 5.0),
+    )
+
+    assert controller._next_setpoint(NOW) == HERE
+    assert controller._hold_reason == "WAYPOINT_IN_TRAFFIC_BUFFER"
+
+
+def test_blocked_optional_lookahead_replans_to_required_waypoint(controller) -> None:
+    controller._path = [HERE, TARGET, enu_to_coordinate(TARGET, 30.0, 0.0)]
+    controller._target_index = 1
+    optional_aim = controller._aim_point(HERE)
+    assert optional_aim != TARGET
+    controller._traffic_aircraft = (
+        TrafficAircraft(
+            2, optional_aim.lat, optional_aim.lon, 10.0, 0.0, 0.0, 2.0, 5.0
+        ),
+    )
+
+    setpoint = controller._next_setpoint(NOW)
+
+    assert setpoint != HERE
+    assert controller._hold_reason is None
 
 
 def test_snapshot_age_includes_time_before_ros_callback(controller) -> None:

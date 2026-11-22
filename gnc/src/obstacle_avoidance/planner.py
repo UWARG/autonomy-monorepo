@@ -23,6 +23,7 @@ class PlannerConfig:
     clearance_reward_weight: float = 0.05
     clearance_reward_cap_m: float = 5.0
     hysteresis_cost_m: float = 0.75
+    retry_exclusion_deg: float = 30.0
 
     def __post_init__(self) -> None:
         positive = (
@@ -44,6 +45,8 @@ class PlannerConfig:
             raise ValueError("clearance reward must be non-negative")
         if self.hysteresis_cost_m < 0.0:
             raise ValueError("hysteresis cost must be non-negative")
+        if not 0.0 < self.retry_exclusion_deg <= 180.0:
+            raise ValueError("retry exclusion must be in (0, 180] degrees")
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +143,12 @@ class BendyRuler2D:
         for order, candidate_heading in enumerate(
             self._candidate_headings(goal_heading)
         ):
+            if any(
+                angular_distance(candidate_heading, rejected)
+                < math.radians(self.config.retry_exclusion_deg)
+                for rejected in request.excluded_headings_rad
+            ):
+                continue
             candidate = self._evaluate(
                 request,
                 field,
@@ -232,13 +241,19 @@ class BendyRuler2D:
                 candidate.order,
             ),
         )
-        exact_previous = self._evaluate(
-            request,
-            field,
-            goal_heading,
-            self._previous_heading_rad,
-            previous.order,
-        )
+        exact_previous = None
+        if all(
+            angular_distance(self._previous_heading_rad, rejected)
+            >= math.radians(self.config.retry_exclusion_deg)
+            for rejected in request.excluded_headings_rad
+        ):
+            exact_previous = self._evaluate(
+                request,
+                field,
+                goal_heading,
+                self._previous_heading_rad,
+                previous.order,
+            )
         if exact_previous is not None:
             previous = exact_previous
         if previous.cost <= best.cost + self.config.hysteresis_cost_m:

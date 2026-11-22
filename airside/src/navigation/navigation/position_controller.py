@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 
 import rclpy
@@ -20,11 +21,12 @@ from obstacle_avoidance import (
     TrafficAircraft,
     live_traffic_buffer_m,
 )
+from obstacle_avoidance.boundary import FlightBoundary
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64, String
 
-from navigation.spline_path import SplinePath, aim_point
+from navigation.spline_path import SplinePath, aim_point_with_progress
 from utils.src.coordinates import enu_to_coordinate
 from utils.src.types import Coordinate
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
@@ -63,6 +65,8 @@ class PositionController(rclpy.node.Node):
     # to this. Bounds how far inside the spline the drone cuts a corner.
     CORNER_LOOKAHEAD_M = 3.0
     POSITION_FRESHNESS_S = 1.0
+    STUCK_AFTER_ACTIVE_S = 8.0
+    STUCK_PROGRESS_M = 1.5
 
     TYPE_MASK = (
         GlobalPositionTarget.IGNORE_VX
@@ -91,6 +95,7 @@ class PositionController(rclpy.node.Node):
         self._target_index = 0
         self._spline: SplinePath | None = None
         self._spline_key: tuple | None = None
+        self._aim_arc_m = 0.0
         self._target_received_s = -math.inf
         self._fix: NavSatFix | None = None
         self._fix_received_s = -math.inf
@@ -110,6 +115,20 @@ class PositionController(rclpy.node.Node):
         self._hold_reason: str | None = None
         self._last_status_s = -math.inf
         self._last_alert_s = -math.inf
+        self._progress_anchor: Coordinate | None = None
+        self._progress_active_s = 0.0
+        self._last_path_s: float | None = None
+        self._last_command_heading_rad: float | None = None
+        self._tried_headings_rad: list[float] = []
+        boundary_raw = os.environ.get("FLIGHT_BOUNDARY_WGS84", "").strip()
+        self._boundary: FlightBoundary | None = None
+        self._boundary_error = "FLIGHT_BOUNDARY_UNCONFIGURED"
+        if boundary_raw:
+            try:
+                self._boundary = FlightBoundary.from_json(boundary_raw)
+                self._boundary_error = ""
+            except ValueError:
+                self._boundary_error = "INVALID_FLIGHT_BOUNDARY"
 
         self._setpoint_pub = self.create_publisher(
             GlobalPositionTarget, self.POSITION_SETPOINT_TOPIC, 10
@@ -144,7 +163,10 @@ class PositionController(rclpy.node.Node):
         )
 
     def _target_callback(self, msg: PositionTarget) -> None:
-        self._target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
+        target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
+        if target != self._target:
+            self._reset_progress()
+        self._target = target
         self._path = [Coordinate(point.lat, point.lon, point.alt) for point in msg.path]
         self._target_index = (
             msg.target_index if msg.target_index < len(self._path) else 0
@@ -291,6 +313,12 @@ class PositionController(rclpy.node.Node):
         position_received_s = min(self._fix_received_s, self._rel_alt_received_s)
         if not 0.0 <= now_s - position_received_s <= self.POSITION_FRESHNESS_S:
             return self._hold(position, "STALE_POSITION", now_s)
+        if self._boundary is None:
+            return self._hold(position, self._boundary_error, now_s)
+        if not self._boundary.allows_point(position):
+            return self._hold(position, "FLIGHT_BOUNDARY_POSITION_UNSAFE", now_s)
+        if not self._boundary.allows_point(self._target):
+            return self._hold(position, "TARGET_OUTSIDE_FLIGHT_BOUNDARY", now_s)
         traffic = self._traffic
         if traffic is None:
             return self._hold(position, "NO_TRAFFIC", now_s)
@@ -311,22 +339,56 @@ class PositionController(rclpy.node.Node):
             return self._hold(position, "OWN_AIRCRAFT_IN_TRAFFIC", now_s)
 
         aim = self._aim_point(position)
+        self._update_progress(position, now_s)
+        traffic_age_s = now_s - self._traffic_received_s
         plan = self._avoider.plan(
             AvoidanceRequest(
                 position=position,
                 goal=aim,
                 traffic=self._traffic_aircraft,
-                traffic_age_s=now_s - self._traffic_received_s,
+                traffic_age_s=traffic_age_s,
+                excluded_headings_rad=tuple(self._tried_headings_rad),
+                required_waypoint=self._target,
             )
         )
+        if plan.reason == "AIM_IN_TRAFFIC_BUFFER" and aim != self._target:
+            # A blocked look-ahead point is optional; the current mission
+            # waypoint is not. Replan to that waypoint without skipping it.
+            aim = self._target
+            plan = self._avoider.plan(
+                AvoidanceRequest(
+                    position=position,
+                    goal=aim,
+                    traffic=self._traffic_aircraft,
+                    traffic_age_s=traffic_age_s,
+                    excluded_headings_rad=tuple(self._tried_headings_rad),
+                    required_waypoint=self._target,
+                )
+            )
         if plan.status is not PlanStatus.PATH_FOUND or plan.next_waypoint is None:
-            return self._hold(position, plan.reason or "NO_PATH", now_s)
+            reason = plan.reason or "NO_PATH"
+            if self._tried_headings_rad and reason == "BLOCKED":
+                reason = "STUCK_NO_SAFE_ALTERNATE"
+            return self._hold(position, reason, now_s)
+
+        next_setpoint = aim if plan.goal_reached else plan.next_waypoint
+        if not self._boundary.allows_segment(position, next_setpoint):
+            return self._hold(position, "SETPOINT_OUTSIDE_FLIGHT_BOUNDARY", now_s)
+        east_m, north_m = east_north_coordinate_offset_m(
+            position.lat,
+            position.lon,
+            next_setpoint.lat,
+            next_setpoint.lon,
+        )
+        if math.hypot(east_m, north_m) > 0.1:
+            self._last_command_heading_rad = math.atan2(north_m, east_m)
+        self._last_path_s = now_s
 
         self._hold_at = None
         self._blocked_since_s = None
         self._hold_reason = None
         self._report_status(now_s, "PATH_FOUND", plan.minimum_clearance_m)
-        return aim if plan.goal_reached else plan.next_waypoint
+        return next_setpoint
 
     def _aim_point(self, position: Coordinate) -> Coordinate:
         """
@@ -348,14 +410,47 @@ class PositionController(rclpy.node.Node):
         if key != self._spline_key:
             self._spline = SplinePath([local(point) for point in self._path])
             self._spline_key = key
-        east_m, north_m, alt_m = aim_point(
+            self._aim_arc_m = 0.0
+        (east_m, north_m, alt_m), self._aim_arc_m = aim_point_with_progress(
             self._spline,
             self._target_index,
             local(position),
             self.PATH_LOOKAHEAD_M,
             self.CORNER_LOOKAHEAD_M,
+            self._aim_arc_m,
         )
         return enu_to_coordinate(target, east_m, north_m, alt_m)
+
+    def _reset_progress(self) -> None:
+        self._progress_anchor = None
+        self._progress_active_s = 0.0
+        self._last_path_s = None
+        self._last_command_heading_rad = None
+        self._tried_headings_rad = []
+
+    def _update_progress(self, position: Coordinate, now_s: float) -> None:
+        if self._progress_anchor is None:
+            self._progress_anchor = position
+            return
+        east_m, north_m = east_north_coordinate_offset_m(
+            self._progress_anchor.lat,
+            self._progress_anchor.lon,
+            position.lat,
+            position.lon,
+        )
+        if math.hypot(east_m, north_m) >= self.STUCK_PROGRESS_M:
+            self._reset_progress()
+            self._progress_anchor = position
+            return
+        if self._last_path_s is not None and 0 <= now_s - self._last_path_s <= 0.5:
+            self._progress_active_s += now_s - self._last_path_s
+        if (
+            self._progress_active_s >= self.STUCK_AFTER_ACTIVE_S
+            and self._last_command_heading_rad is not None
+        ):
+            self._tried_headings_rad.append(self._last_command_heading_rad)
+            self._progress_active_s = 0.0
+            self._avoider.reset()
 
     def _hold(
         self, position: Coordinate | None, reason: str, now_s: float
@@ -363,8 +458,11 @@ class PositionController(rclpy.node.Node):
         """Latch the position where the hold began and keep returning it."""
 
         self._avoider.reset()
+        self._last_path_s = None
         if reason in (
             "BLOCKED",
+            "AIM_IN_TRAFFIC_BUFFER",
+            "WAYPOINT_IN_TRAFFIC_BUFFER",
             "YIELD_CROSSING",
             "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED",
         ):
@@ -381,6 +479,12 @@ class PositionController(rclpy.node.Node):
             "INCONSISTENT_TRAFFIC_MOTION",
             "INVALID_TRAFFIC_RECEIVE_TIME",
             "AEAC_DISCONNECTED",
+            "FLIGHT_BOUNDARY_UNCONFIGURED",
+            "INVALID_FLIGHT_BOUNDARY",
+            "FLIGHT_BOUNDARY_POSITION_UNSAFE",
+            "TARGET_OUTSIDE_FLIGHT_BOUNDARY",
+            "SETPOINT_OUTSIDE_FLIGHT_BOUNDARY",
+            "STUCK_NO_SAFE_ALTERNATE",
         }
         takeover = urgent or (
             self._blocked_since_s is not None
@@ -407,6 +511,7 @@ class PositionController(rclpy.node.Node):
 
     def _release(self) -> None:
         self._avoider.reset()
+        self._reset_progress()
         self._hold_at = None
         self._active = False
         self._blocked_since_s = None
@@ -448,6 +553,7 @@ class PositionController(rclpy.node.Node):
             "minimum_clearance_m": minimum_clearance_m,
             "radii": radii,
             "sharp_turn_indices": sorted(self._traffic_turns),
+            "tried_heading_count": len(self._tried_headings_rad),
         }
         self._status_pub.publish(String(data=json.dumps(payload)))
         self._last_status_s = now_s
