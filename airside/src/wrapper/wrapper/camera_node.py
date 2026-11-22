@@ -1,40 +1,11 @@
 from __future__ import annotations
 
-import os
-
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 
 from camera.src.abstract_camera import AbstractCamera
-
-CAMERA_TYPES = ("sim", "arducam", "oakd")
-
-
-def _create_camera(camera_type: str) -> AbstractCamera:
-    """Build a camera backend by name.
-
-    Hardware backends are imported lazily so the sim camera works without
-    their dependencies (cv2, depthai) installed.
-    """
-    normalized = camera_type.strip().lower().replace("-", "")
-
-    if normalized == "sim":
-        from camera.src.sim import SimCamera
-
-        return SimCamera()
-    if normalized == "arducam":
-        from camera.src.arducam import Arducam
-
-        return Arducam()
-    if normalized == "oakd":
-        from camera.src.oakd import OakD
-
-        return OakD()
-
-    raise ValueError(
-        f"Unknown camera type '{camera_type}'. Expected one of: {', '.join(CAMERA_TYPES)}."
-    )
+from camera.src.sim import SimCamera
 
 
 class CameraNode(Node):
@@ -42,18 +13,12 @@ class CameraNode(Node):
     PUBLISH_HZ = 50.0
     WIDTH = 640
     HEIGHT = 480
-    CAMERA_ENV_VAR = "CAMERA_TYPE"
-    DEFAULT_CAMERA = "sim"
 
     def __init__(self) -> None:
         super().__init__("camera_node")
 
-        camera_type = os.environ.get(self.CAMERA_ENV_VAR, self.DEFAULT_CAMERA)
-        self._camera: AbstractCamera = _create_camera(camera_type)
-        if not self._camera.initialize_camera():
-            self.get_logger().error(
-                f"Failed to initialize {type(self._camera).__name__}; publishing blank frames."
-            )
+        self._camera: AbstractCamera = SimCamera()
+        self._camera.initialize_camera()
 
         self._publisher = self.create_publisher(Image, self.TOPIC, 10)
         self._frame_id = 0
@@ -97,3 +62,4 @@ def main(args: list[str] | None = None) -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
+
