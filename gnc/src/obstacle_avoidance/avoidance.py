@@ -34,6 +34,9 @@ class AvoidanceConfig:
     maximum_prediction_step_m: float = 1.0
     maximum_predicted_obstacles: int = 512
     crossing_yield_horizon_s: float = 20.0
+    live_response_s: float = 4.5
+    # Above the tested 5 m/s traffic envelope, hold for pilot takeover.
+    maximum_live_traffic_speed_mps: float = 5.0
     # Fail closed after a missed 1 Hz traffic snapshot.
     planner: PlannerConfig = field(
         default_factory=lambda: PlannerConfig(map_freshness_s=1.5)
@@ -46,6 +49,8 @@ class AvoidanceConfig:
             self.goal_tolerance_m,
             self.maximum_prediction_step_m,
             self.maximum_predicted_obstacles,
+            self.live_response_s,
+            self.maximum_live_traffic_speed_mps,
         )
         if any(value <= 0 for value in positive):
             raise ValueError(
@@ -117,6 +122,8 @@ class ObstacleAvoider:
                 all_altitudes=True,
                 live_buffer=True,
                 own_speed_mps=settings.horizontal_speed_mps,
+                response_s=settings.live_response_s,
+                max_live_speed_mps=settings.maximum_live_traffic_speed_mps,
             )
         except ValueError as error:
             self.reset()
@@ -215,11 +222,6 @@ class ObstacleAvoider:
             heading_rad = math.radians(aircraft.heading_deg)
             other_east_mps = aircraft.speed_mps * math.sin(heading_rad)
             other_north_mps = aircraft.speed_mps * math.cos(heading_rad)
-            along_mps = (
-                other_east_mps * goal_east_m + other_north_mps * goal_north_m
-            ) / distance_m
-            if abs(along_mps) >= 0.5 * aircraft.speed_mps:
-                continue
             east_m, north_m = east_north_coordinate_offset_m(
                 own_lat, own_lon, aircraft.lat, aircraft.lon
             )
@@ -244,7 +246,12 @@ class ObstacleAvoider:
             )
             radius_m = (
                 aircraft.horizontal_keep_away_m
-                + live_traffic_buffer_m(aircraft.speed_mps, age_s, own_speed)
+                + live_traffic_buffer_m(
+                    aircraft.speed_mps,
+                    age_s,
+                    own_speed,
+                    self.config.live_response_s,
+                )
                 + self.config.planner.clearance_margin_m
             )
             if closest_m >= radius_m:

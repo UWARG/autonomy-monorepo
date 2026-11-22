@@ -6,11 +6,16 @@ the #181 synthetic static-obstacle test. The data flow is:
 `AEAC -> comms/traffic_listener -> /aeac/traffic -> position_controller -> GNC`
 
 The controller is the only MAVROS position-setpoint publisher. Live traffic
-keeps the server radius and adds 3 m for stationary traffic or 5.75 m for
-moving traffic. Moving positions are age-compensated and swept for 3 s. A
-snapshot older than 1.5 s causes a hold. No path causes hold, replan on each
-new snapshot, and a pilot alert. Holding is not called safe when traffic is
-predicted to enter the hold point.
+keeps the server radius. A moving aircraft has both a 3 s straight-line sweep
+and a heading-independent reachability disc around its last observed position:
+the disc adds at least 5.75 m, or speed times (snapshot age + 4.5 s), whichever
+is larger. The 4.5 s response bound must cover the allowed 1.5 s update gap
+plus measured FCU stopping time before flight. A snapshot older than 1.5 s,
+impossible position jump, or traffic over the current 5 m/s test envelope
+causes a hold and pilot alert.
+The 15/20 m/s runs are unsupported stress cases, not autonomous flight cases.
+If the hold point may be entered, the controller immediately asks the pilot
+to take over; hover is not claimed to be safe avoidance.
 
 The planner uses 2 m/s for conservative relative-motion calculations. SITL
 sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first
@@ -41,6 +46,10 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-triangle
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-eight
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh multi
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh turn
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh sharp_turn
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh triangle15
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh triangle20
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-triangle15
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh blocked
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh pilot
@@ -49,7 +58,9 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh pilot
 Ignored `artifacts/<scenario>-*/` directories contain the summary, logs and
 rosbag. A pass requires one setpoint publisher, no raw keep-away entry, at
 least 3 m additional measured margin, correct stale hold, and the expected
-goal completion or blocked-route alert.
+goal completion or blocked-route alert. The sharp-turn and 15/20 m/s triangle
+runs are **stress-only**: their success does not qualify those speeds for
+props-on flight, and a hold is not counted as route completion.
 
 `listener-moving` and `listener-dropout` start the Airside launch with the
 mission manager and camera disabled. A local mock WebSocket supplies 1 Hz AEAC
@@ -61,9 +72,9 @@ listener.
 `engine-triangle` and `engine-eight` additionally start the real mission
 manager with one lap and use its waypoint targets and spline path. The runner
 places SITL at the route's first waypoint and generates a moving 1 Hz crossing
-on its first travel leg. `engine-eight` uses a test fixture with the eight
-waypoints from #232; it does not change this branch's active three-point
-route. The summary records target order, path lengths, traffic, clearance,
+on its first travel leg. After syncing #232, the active route is the eight-point
+Cornfield route; `engine-eight` uses an equivalent test fixture. The summary
+records target order, path lengths, traffic, clearance,
 speed, hold reasons and setpoint publishers. These local tests still do not
 reproduce an unidentified merged copy or qualify real server traffic.
 

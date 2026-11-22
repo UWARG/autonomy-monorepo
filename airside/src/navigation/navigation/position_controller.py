@@ -99,6 +99,11 @@ class PositionController(rclpy.node.Node):
         self._traffic: TrafficSnapshot | None = None
         self._traffic_aircraft: tuple[TrafficAircraft, ...] = ()
         self._traffic_received_s = -math.inf
+        self._traffic_timestamp_invalid = False
+        self._traffic_motion_error = False
+        self._traffic_turns: set[int] = set()
+        self._traffic_tracks: dict[int, tuple[float, float, float, float, float]] = {}
+        self._traffic_sequence = 0
         self._hold_at: Coordinate | None = None
         self._active = False
         self._blocked_since_s: float | None = None
@@ -141,13 +146,83 @@ class PositionController(rclpy.node.Node):
     def _target_callback(self, msg: PositionTarget) -> None:
         self._target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
         self._path = [Coordinate(point.lat, point.lon, point.alt) for point in msg.path]
-        self._target_index = msg.target_index if msg.target_index < len(self._path) else 0
+        self._target_index = (
+            msg.target_index if msg.target_index < len(self._path) else 0
+        )
         if not self._path or self._path[self._target_index] != self._target:
             # A path that does not run through the target is ignored.
             self._path, self._target_index = [], 0
         self._target_received_s = time.monotonic()
 
     def _traffic_callback(self, msg: TrafficSnapshot) -> None:
+        now_s = time.monotonic()
+        now_ros_ns = self.get_clock().now().nanoseconds
+        source_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
+        source_age_s = (now_ros_ns - source_ns) / 1_000_000_000
+        self._traffic_timestamp_invalid = (
+            source_ns <= 0 or source_age_s < -0.1 or not math.isfinite(source_age_s)
+        )
+        if self._traffic_timestamp_invalid:
+            source_age_s = 0.0
+        self._traffic_motion_error = False
+        self._traffic_turns = set()
+        if (
+            msg.sequence
+            and self._traffic_sequence
+            and msg.sequence <= self._traffic_sequence
+        ):
+            self._traffic_motion_error = True
+        self._traffic_sequence = msg.sequence
+        sample_s = now_s - max(0.0, source_age_s)
+        tracks: dict[int, tuple[float, float, float, float, float]] = {}
+        if msg.connected and msg.healthy:
+            for item in msg.aircraft:
+                previous = self._traffic_tracks.get(item.aircraft_index)
+                if previous is not None:
+                    elapsed_s = sample_s - previous[0]
+                    if elapsed_s <= 0.0:
+                        self._traffic_motion_error = True
+                    else:
+                        east_m, north_m = east_north_coordinate_offset_m(
+                            previous[1],
+                            previous[2],
+                            item.latitude_deg,
+                            item.longitude_deg,
+                        )
+                        apparent_speed = math.hypot(east_m, north_m) / elapsed_s
+                        allowed_speed = max(
+                            0.75, 1.5 * max(previous[3], item.speed_mps) + 0.75
+                        )
+                        if (
+                            not math.isfinite(apparent_speed)
+                            or apparent_speed > allowed_speed
+                        ):
+                            self._traffic_motion_error = True
+                        heading_change = abs(
+                            (item.heading_deg_true - previous[4] + 180.0) % 360.0
+                            - 180.0
+                        )
+                        if heading_change >= 60.0:
+                            self._traffic_turns.add(item.aircraft_index)
+                        if math.hypot(east_m, north_m) >= 2.0:
+                            course_deg = (
+                                math.degrees(math.atan2(east_m, north_m)) % 360.0
+                            )
+                            course_error = abs(
+                                (course_deg - item.heading_deg_true + 180.0) % 360.0
+                                - 180.0
+                            )
+                            if course_error >= 60.0:
+                                self._traffic_turns.add(item.aircraft_index)
+                                self._traffic_motion_error = True
+                tracks[item.aircraft_index] = (
+                    sample_s,
+                    item.latitude_deg,
+                    item.longitude_deg,
+                    item.speed_mps,
+                    item.heading_deg_true,
+                )
+        self._traffic_tracks = tracks
         self._traffic = msg
         self._traffic_aircraft = tuple(
             TrafficAircraft(
@@ -162,7 +237,7 @@ class PositionController(rclpy.node.Node):
             )
             for item in msg.aircraft
         )
-        self._traffic_received_s = time.monotonic()
+        self._traffic_received_s = sample_s
 
     def _state_callback(self, msg: State) -> None:
         self._state = msg
@@ -223,6 +298,10 @@ class PositionController(rclpy.node.Node):
             return self._hold(position, traffic.reason or "TRAFFIC_DISCONNECTED", now_s)
         if not traffic.healthy:
             return self._hold(position, traffic.reason or "UNHEALTHY_TRAFFIC", now_s)
+        if self._traffic_timestamp_invalid:
+            return self._hold(position, "INVALID_TRAFFIC_RECEIVE_TIME", now_s)
+        if self._traffic_motion_error:
+            return self._hold(position, "INCONSISTENT_TRAFFIC_MOTION", now_s)
         if not 0 <= traffic.own_aircraft_index <= 255:
             return self._hold(position, "OWN_AIRCRAFT_INDEX_UNCONFIRMED", now_s)
         if any(
@@ -295,7 +374,15 @@ class PositionController(rclpy.node.Node):
             self._blocked_since_s = None
         self._hold_reason = reason
         alert_after_s = 20.0 if reason == "YIELD_CROSSING" else 5.0
-        takeover = reason == "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED" or (
+        urgent = reason in {
+            "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED",
+            "STALE_TRAFFIC",
+            "TRAFFIC_SPEED_OUT_OF_ENVELOPE",
+            "INCONSISTENT_TRAFFIC_MOTION",
+            "INVALID_TRAFFIC_RECEIVE_TIME",
+            "AEAC_DISCONNECTED",
+        }
+        takeover = urgent or (
             self._blocked_since_s is not None
             and now_s - self._blocked_since_s >= alert_after_s
         )
@@ -339,7 +426,11 @@ class PositionController(rclpy.node.Node):
                 try:
                     expanded_m = (
                         aircraft.horizontal_keep_away_m
-                        + live_traffic_buffer_m(aircraft.speed_mps, age_s)
+                        + live_traffic_buffer_m(
+                            aircraft.speed_mps,
+                            age_s,
+                            response_s=self._avoider.config.live_response_s,
+                        )
                     )
                 except ValueError:
                     continue
@@ -352,9 +443,11 @@ class PositionController(rclpy.node.Node):
                 )
         payload = {
             "reason": reason,
+            "hold_reason": self._hold_reason,
             "traffic_age_s": age_s if math.isfinite(age_s) else None,
             "minimum_clearance_m": minimum_clearance_m,
             "radii": radii,
+            "sharp_turn_indices": sorted(self._traffic_turns),
         }
         self._status_pub.publish(String(data=json.dumps(payload)))
         self._last_status_s = now_s

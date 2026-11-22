@@ -1,7 +1,67 @@
 # Moving traffic results
 
-Status on 2026-11-19: **ready for code review; not ready for live props-on
-flight testing.**
+Status on 2026-11-21: **draft; not cleared for live props-on flight.**
+
+## High-speed turn check (2026-11-21)
+
+The personal branch now includes the latest #232 changes. Live planning uses
+WebSocket receive time, checks impossible position jumps, and guards turns with
+a speed/age-dependent reachability disc. Reported traffic above the 5 m/s
+test envelope holds and alerts; 15/20 m/s are unsupported stress cases.
+The response allowance was raised from 3.5 to 4.5 s after one moving SITL run
+measured a 1.93 s stop. It exceeds the 1.5 s stale threshold plus that stop;
+repeat stop measurements before flight.
+
+GNC passed 157 tests, capture/replay passed 7 tests, and the rebuilt Airside
+image passed 79/79 ROS tests. Final-image SITL stress runs used independent
+instances, a 5 m server keep-away, one setpoint publisher and rosbag recording:
+
+| Scenario | Minimum extra margin | Outcome |
+| --- | ---: | --- |
+| 5 m/s sharp-turn loop | 14.982 m | Held/alerted; route incomplete |
+| 15 m/s triangle | 14.966 m | Speed-envelope hold/alert; no progress |
+| 20 m/s triangle | 14.974 m | Speed-envelope hold/alert; no progress |
+| 15 m/s via listener | 14.966 m | 32 snapshots of index 2; speed hold/alert |
+
+These are stress-only outcomes. They do not qualify 15/20 m/s traffic for
+autonomous flight or show that the route can be completed around a fast loop.
+The original server failure had no recording, so its root cause is not proven;
+the previous straight-line-only prediction and fixed 5.75 m buffer were a
+concrete risk for turns between 1 Hz updates.
+
+With the final 4.5 s response allowance, three fresh 1.2 m/s moving-crossing
+SITL runs reached the goal. Their minimum extra margins beyond the raw 5 m
+keep-away were 5.880/5.787/5.788 m; measured peak speeds were
+1.531/1.528/1.533 m/s. Each found one MAVROS setpoint publisher and saved a
+rosbag. This is a local mock result, not a real server-track qualification.
+The final-image two-aircraft crossing also reached the goal with 5.559 m
+minimum extra margin and a 1.532 m/s peak.
+The low-speed turn reached the goal with 16.034 m extra margin. Dropout held
+on stale traffic and resumed after data returned; the first dropout harness
+run falsely failed because it checked only the alert status, not the stored
+`hold_reason`. The corrected harness run passed. The blocked-route test held
+and alerted without retreating; pilot takeover stopped setpoints in LOITER
+and did not replay an old target on returning to GUIDED. Each saved a rosbag.
+
+The final-image listener-to-controller moving run also reached the goal:
+57 index-2 snapshots, 5.754 m minimum extra margin, 1.544 m/s measured peak,
+and one setpoint publisher. Its rosbag is saved locally.
+The final-image full eight-waypoint mission-manager run completed one lap
+with 266 index-2 snapshots, 6.138 m minimum extra margin, 1.559 m/s measured
+peak, and one setpoint publisher. Its rosbag is saved locally.
+
+A 360 s receive-only server capture had 360 moving snapshots at about 1 Hz:
+index 0 reached 5 m/s; index 1 was stationary. It had no 15/20 m/s aircraft
+and returned `NO_MOVING_ROUTE_MATCH` against the active eight-point route.
+An independent 360 s receive-only capture on 2026-11-21 returned 359 moving
+snapshots with the same indices and speed range. Its average interval was
+1.000 s, with one 1.543 s gap, and it also returned `NO_MOVING_ROUTE_MATCH`.
+No valid full-route server replay or simulated telemetry transmission occurred.
+Docker ran out of host disk space during verification. After space was freed,
+35.81 GB of unused Docker build cache was pruned; images, containers and test
+artifacts were retained. The #181 static regression remains open.
+
+The sections below are historical results from before the latest #232 sync.
 
 ## Mission-manager moving SITL (2026-11-19)
 

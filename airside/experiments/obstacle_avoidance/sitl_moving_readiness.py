@@ -32,7 +32,19 @@ from mock_aeac_websocket import MockAeacWebSocket
 EARTH_RADIUS_M = 6_371_000.0
 ALTITUDE_M = 15.0
 GOAL_NORTH_M = 40.0
-SCENARIOS = ("clear", "moving", "multi", "turn", "dropout", "blocked", "pilot")
+SCENARIOS = (
+    "clear",
+    "moving",
+    "multi",
+    "turn",
+    "dropout",
+    "blocked",
+    "pilot",
+    "sharp_turn",
+    "triangle15",
+    "triangle20",
+)
+STRESS_SCENARIOS = {"sharp_turn", "triangle15", "triangle20"}
 
 
 def offset(
@@ -61,12 +73,17 @@ class Scenario(Node):
         self.sequence = time.time_ns()
         self.setpoint_count = 0
         self.status_reasons: set[str] = set()
+        self.hold_reasons: set[str] = set()
         self.max_traffic_age_s = 0.0
         self.max_expanded_radii: dict[int, dict[str, float]] = {}
         self.alerts: list[str] = []
         self.min_raw_clearance_m = math.inf
         self.min_raw_clearance_event: dict[str, object] | None = None
         self.max_observed_speed_mps = 0.0
+        self.current_observed_speed_mps = 0.0
+        self.hold_started_s: float | None = None
+        self.hold_start_speed_mps = 0.0
+        self.measured_stop_s: float | None = None
         self.track: deque[tuple[float, float, float]] = deque()
         self.listener_snapshots = 0
         self.listener_indices: set[int] = set()
@@ -153,6 +170,14 @@ class Scenario(Node):
                 self.max_observed_speed_mps = max(
                     self.max_observed_speed_mps, speed_mps
                 )
+                self.current_observed_speed_mps = speed_mps
+                if (
+                    self.hold_started_s is not None
+                    and self.hold_start_speed_mps >= 0.5
+                    and self.measured_stop_s is None
+                    and speed_mps <= 0.2
+                ):
+                    self.measured_stop_s = now_s - self.hold_started_s
                 break
         for index, obstacle_east, obstacle_north, _, _, keepaway_m in self.aircraft(
             now_s
@@ -177,6 +202,13 @@ class Scenario(Node):
     def _status(self, msg: String) -> None:
         payload = json.loads(msg.data)
         self.status_reasons.add(payload["reason"])
+        if payload.get("hold_reason"):
+            self.hold_reasons.add(payload["hold_reason"])
+        if payload["reason"] == "PATH_FOUND":
+            self.hold_started_s = None
+        elif self.hold_started_s is None:
+            self.hold_started_s = time.monotonic()
+            self.hold_start_speed_mps = self.current_observed_speed_mps
         age_s = payload.get("traffic_age_s")
         if isinstance(age_s, (int, float)) and math.isfinite(age_s):
             self.max_traffic_age_s = max(self.max_traffic_age_s, age_s)
@@ -241,6 +273,29 @@ class Scenario(Node):
     def aircraft(
         self, now_s: float
     ) -> list[tuple[int, float, float, float, float, float]]:
+        if self.scenario in STRESS_SCENARIOS:
+            elapsed_s = max(0.0, now_s - (self.traffic_started_s or now_s))
+            speed_mps = {
+                "sharp_turn": 5.0,
+                "triangle15": 15.0,
+                "triangle20": 20.0,
+            }[self.scenario]
+            corners = ((-30.0, 20.0), (30.0, 20.0), (0.0, 50.0))
+            lengths = [math.dist(corners[i], corners[(i + 1) % 3]) for i in range(3)]
+            distance_m = (elapsed_s * speed_mps) % sum(lengths)
+            for i, length_m in enumerate(lengths):
+                if distance_m <= length_m:
+                    start, end = corners[i], corners[(i + 1) % 3]
+                    fraction = distance_m / length_m
+                    east_m = start[0] + fraction * (end[0] - start[0])
+                    north_m = start[1] + fraction * (end[1] - start[1])
+                    heading_deg = (
+                        math.degrees(math.atan2(end[0] - start[0], end[1] - start[1]))
+                        % 360.0
+                    )
+                    return [(2, east_m, north_m, speed_mps, heading_deg, 5.0)]
+                distance_m -= length_m
+            raise AssertionError("triangle segment not found")
         if self.scenario == "blocked":
             return [
                 (
@@ -281,7 +336,11 @@ class Scenario(Node):
         )
 
     def publish_traffic(self) -> None:
-        if not self.traffic_enabled or self.home_wgs84 is None or self.traffic_pub is None:
+        if (
+            not self.traffic_enabled
+            or self.home_wgs84 is None
+            or self.traffic_pub is None
+        ):
             return
         now_s = time.monotonic()
         self.sequence += 1
@@ -429,8 +488,10 @@ class Scenario(Node):
             self.mock_server.start()
             self.wait_for(
                 "healthy listener snapshot",
-                lambda: self.listener_healthy
-                and (self.scenario != "moving" or 2 in self.listener_indices),
+                lambda: (
+                    self.listener_healthy
+                    and (self.scenario != "moving" or 2 in self.listener_indices)
+                ),
                 15.0,
             )
             owners = [
@@ -463,8 +524,12 @@ class Scenario(Node):
                 self.traffic_enabled = False
             self.wait_for(
                 "stale traffic hold",
-                lambda: "STALE_TRAFFIC" in self.status_reasons
-                or "AEAC_DISCONNECTED" in self.status_reasons,
+                lambda: (
+                    "STALE_TRAFFIC" in self.status_reasons
+                    or "STALE_TRAFFIC" in self.hold_reasons
+                    or "AEAC_DISCONNECTED" in self.status_reasons
+                    or "AEAC_DISCONNECTED" in self.hold_reasons
+                ),
                 7.0,
             )
             self.pump(2.0)
@@ -473,7 +538,9 @@ class Scenario(Node):
             if self.traffic_source == "listener":
                 self.mock_server = MockAeacWebSocket(self.mock_event)
                 self.mock_server.start()
-                self.wait_for("reconnected listener", lambda: self.listener_healthy, 15.0)
+                self.wait_for(
+                    "reconnected listener", lambda: self.listener_healthy, 15.0
+                )
             else:
                 self.traffic_enabled = True
                 self.publish_traffic()
@@ -494,6 +561,20 @@ class Scenario(Node):
             self.target_enabled = True
             self.publish_target()
             self.wait_for("resumed goal", lambda: self.position()[1] >= 38.0, 90.0)
+        elif self.scenario in STRESS_SCENARIOS:
+            # This is a safety stress test, not a flight-route qualification.
+            # A conservative controller may remain in hold for the whole loop.
+            self.pump(25.0)
+            if not self.status_reasons:
+                raise RuntimeError("controller emitted no avoidance status")
+            if self.scenario in ("triangle15", "triangle20") and (
+                "TRAFFIC_SPEED_OUT_OF_ENVELOPE" not in self.hold_reasons
+            ):
+                raise RuntimeError("high-speed traffic did not trigger the speed hold")
+            if self.position()[1] < 38.0 and not self.alerts:
+                raise RuntimeError(
+                    "stress route did not complete and pilot was not alerted"
+                )
         else:
             self.wait_for("goal", lambda: self.position()[1] >= 38.0, 110.0)
 
@@ -508,18 +589,22 @@ class Scenario(Node):
         return {
             "scenario": self.scenario,
             "traffic_source": self.traffic_source,
-            "result": "PASS",
+            "result": "PASS_STRESS_ONLY"
+            if self.scenario in STRESS_SCENARIOS
+            else "PASS",
             "listener_snapshots": self.listener_snapshots,
             "listener_indices": sorted(self.listener_indices),
             "configured_speed_mps": configured_speed_mps,
             "setpoint_publishers": self.setpoint_publishers,
             "max_observed_speed_mps": round(self.max_observed_speed_mps, 3),
+            "measured_stop_s": self.measured_stop_s,
             "min_raw_clearance_m": None
             if math.isinf(self.min_raw_clearance_m)
             else round(self.min_raw_clearance_m, 3),
             "min_raw_clearance_event": self.min_raw_clearance_event,
             "setpoint_count": self.setpoint_count,
             "status_reasons": sorted(self.status_reasons),
+            "hold_reasons": sorted(self.hold_reasons),
             "max_traffic_age_s": round(self.max_traffic_age_s, 3),
             "max_expanded_radii": self.max_expanded_radii,
             "pilot_alerts": self.alerts,
@@ -530,7 +615,9 @@ class Scenario(Node):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=SCENARIOS, required=True)
-    parser.add_argument("--traffic-source", choices=("direct", "listener"), default="direct")
+    parser.add_argument(
+        "--traffic-source", choices=("direct", "listener"), default="direct"
+    )
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
     rclpy.init()
@@ -544,6 +631,7 @@ def main() -> None:
             "result": "FAIL",
             "error": f"{type(error).__name__}: {error}",
             "status_reasons": sorted(node.status_reasons),
+            "hold_reasons": sorted(node.hold_reasons),
             "max_traffic_age_s": round(node.max_traffic_age_s, 3),
             "max_expanded_radii": node.max_expanded_radii,
             "min_raw_clearance_m": node.min_raw_clearance_m,
@@ -551,6 +639,7 @@ def main() -> None:
             "listener_snapshots": node.listener_snapshots,
             "listener_indices": sorted(node.listener_indices),
             "max_observed_speed_mps": node.max_observed_speed_mps,
+            "measured_stop_s": node.measured_stop_s,
             "setpoint_count": node.setpoint_count,
             "configured_speed_mps": node.configured_speed_mps,
             "setpoint_publishers": node.setpoint_publishers,
@@ -563,7 +652,7 @@ def main() -> None:
         rclpy.shutdown()
     args.summary.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result))
-    raise SystemExit(0 if result["result"] == "PASS" else 1)
+    raise SystemExit(0 if result["result"].startswith("PASS") else 1)
 
 
 if __name__ == "__main__":

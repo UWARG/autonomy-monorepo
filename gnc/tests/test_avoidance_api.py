@@ -174,3 +174,13 @@ def test_crossing_traffic_clear_of_route_allows_progress() -> None:
     plan = ObstacleAvoider().plan(request(offset(0.0, 40.0), past_route))
 
     assert plan.status is PlanStatus.PATH_FOUND
+
+
+def test_fast_aircraft_can_turn_across_a_heading_clear_route() -> None:
+    # The reported heading points north, parallel to the route. A triangle
+    # corner may turn it east before the next 1 Hz sample.
+    fast = intruder(offset(-20.0, 20.0), 5.0, speed_mps=15.0, heading_deg=0.0)
+    plan = ObstacleAvoider().plan(request(offset(0.0, 40.0), fast))
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "TRAFFIC_SPEED_OUT_OF_ENVELOPE"

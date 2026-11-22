@@ -1,11 +1,16 @@
 """Decision tests for the position controller."""
 
 import math
+import time
 
 import pytest
 import rclpy
 from airside_interfaces.msg import Coordinate as CoordinateMsg
-from airside_interfaces.msg import PositionTarget, TrafficSnapshot
+from airside_interfaces.msg import (
+    PositionTarget,
+    TrafficAircraft as TrafficAircraftMsg,
+    TrafficSnapshot,
+)
 from mavros_msgs.msg import State
 from obstacle_avoidance import TrafficAircraft
 from sensor_msgs.msg import NavSatFix
@@ -125,6 +130,100 @@ def test_traffic_on_the_line_bends_the_setpoint(controller) -> None:
     assert controller._next_setpoint(NOW).lon != pytest.approx(HERE.lon, abs=1e-6)
 
 
+def test_snapshot_age_includes_time_before_ros_callback(controller) -> None:
+    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    received_ns = controller.get_clock().now().nanoseconds - 2_000_000_000
+    snapshot.header.stamp.sec = received_ns // 1_000_000_000
+    snapshot.header.stamp.nanosec = received_ns % 1_000_000_000
+    controller._traffic_callback(snapshot)
+
+    assert time.monotonic() - controller._traffic_received_s == pytest.approx(
+        2.0, abs=0.1
+    )
+
+
+def test_missing_receive_time_holds(controller) -> None:
+    controller._traffic_callback(
+        TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    )
+    now_s = time.monotonic()
+    controller._target_received_s = now_s
+    place(controller, HERE, now_s)
+
+    assert controller._next_setpoint(now_s) == HERE
+    assert controller._hold_reason == "INVALID_TRAFFIC_RECEIVE_TIME"
+
+
+def test_impossible_aircraft_jump_holds(controller) -> None:
+    controller._traffic_tracks[2] = (
+        time.monotonic() - 1.0,
+        HERE.lat,
+        HERE.lon,
+        1.0,
+        0.0,
+    )
+    jumped = enu_to_coordinate(HERE, 100.0, 0.0)
+    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    snapshot.header.stamp = controller.get_clock().now().to_msg()
+    snapshot.aircraft = [
+        TrafficAircraftMsg(
+            aircraft_index=2,
+            latitude_deg=jumped.lat,
+            longitude_deg=jumped.lon,
+            altitude_agl_m=10.0,
+            speed_mps=1.0,
+            heading_deg_true=90.0,
+            horizontal_keepaway_m=5.0,
+            vertical_keepaway_m=5.0,
+        )
+    ]
+    controller._traffic_callback(snapshot)
+    now_s = time.monotonic()
+    controller._target_received_s = now_s
+    place(controller, HERE, now_s)
+
+    assert controller._next_setpoint(now_s) == HERE
+    assert controller._hold_reason == "INCONSISTENT_TRAFFIC_MOTION"
+
+
+@pytest.mark.parametrize(
+    ("reported_speed", "heading_deg", "actual_east_m"),
+    [(0.0, 90.0, 1.2), (1.2, 0.0, 2.0)],
+)
+def test_speed_or_heading_inconsistency_holds(
+    controller, reported_speed, heading_deg, actual_east_m
+) -> None:
+    controller._traffic_tracks[2] = (
+        time.monotonic() - 1.0,
+        HERE.lat,
+        HERE.lon,
+        reported_speed,
+        heading_deg,
+    )
+    moved = enu_to_coordinate(HERE, actual_east_m, 0.0)
+    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    snapshot.header.stamp = controller.get_clock().now().to_msg()
+    snapshot.aircraft = [
+        TrafficAircraftMsg(
+            aircraft_index=2,
+            latitude_deg=moved.lat,
+            longitude_deg=moved.lon,
+            altitude_agl_m=10.0,
+            speed_mps=reported_speed,
+            heading_deg_true=heading_deg,
+            horizontal_keepaway_m=5.0,
+            vertical_keepaway_m=5.0,
+        )
+    ]
+    controller._traffic_callback(snapshot)
+    now_s = time.monotonic()
+    controller._target_received_s = now_s
+    place(controller, HERE, now_s)
+
+    assert controller._next_setpoint(now_s) == HERE
+    assert controller._hold_reason == "INCONSISTENT_TRAFFIC_MOTION"
+
+
 def test_persistent_blockage_holds_and_alerts_pilot(controller) -> None:
     assert controller._hold(HERE, "BLOCKED", NOW) == HERE
     assert controller._last_alert_s == -math.inf
@@ -134,6 +233,15 @@ def test_persistent_blockage_holds_and_alerts_pilot(controller) -> None:
 
 def test_predicted_hold_conflict_alerts_immediately(controller) -> None:
     assert controller._hold(HERE, "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED", NOW) == HERE
+    assert controller._last_alert_s == NOW
+
+
+@pytest.mark.parametrize(
+    "reason",
+    ["STALE_TRAFFIC", "TRAFFIC_SPEED_OUT_OF_ENVELOPE", "INCONSISTENT_TRAFFIC_MOTION"],
+)
+def test_untrusted_moving_traffic_alerts_immediately(controller, reason) -> None:
+    assert controller._hold(HERE, reason, NOW) == HERE
     assert controller._last_alert_s == NOW
 
 

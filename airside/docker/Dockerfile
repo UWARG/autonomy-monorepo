@@ -53,6 +53,8 @@ RUN pip install \
     "/monorepo/camera[oakd,arducam]" \
     /monorepo/gnc \
     /monorepo/utils
+RUN pip install --no-cache-dir --force-reinstall 'PyYAML>=6.0,<7' \
+  && python3 -c 'import yaml; assert callable(yaml.safe_load)'
 
 COPY airside/src/ src/
 
@@ -61,7 +63,9 @@ RUN source /opt/ros/humble/setup.bash \
   && colcon build --symlink-install
 
 COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
-RUN sed -i 's/\r$//' /entrypoint.sh \
+RUN test -s /entrypoint.sh \
+  && grep -q '^#!' /entrypoint.sh \
+  && sed -i 's/\r$//' /entrypoint.sh \
   && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

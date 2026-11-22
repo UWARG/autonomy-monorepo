@@ -5,9 +5,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|engine-triangle|engine-eight|multi|turn|dropout|blocked|pilot|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|replay}"
 case "$scenario" in
-    clear|moving|listener-moving|listener-dropout|engine-triangle|engine-eight|multi|turn|dropout|blocked|pilot|replay) ;;
+    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
@@ -77,6 +77,7 @@ if [[ "$scenario" == replay ]]; then
 fi
 
 docker_bin="${DOCKER_BIN:-docker}"
+airside_image="${AIRSIDE_IMAGE:-warg/airside:latest}"
 if ! command -v "$docker_bin" >/dev/null 2>&1 && [[ -x /snap/bin/docker ]]; then
     docker_bin=/snap/bin/docker
 fi
@@ -90,6 +91,14 @@ done
 artifact_root="${ARTIFACT_DIR:-$repo_root/airside/experiments/obstacle_avoidance/artifacts}"
 mkdir -p "$artifact_root"
 artifact_dir="$(mktemp -d "$(realpath "$artifact_root")/${scenario}-XXXXXXXX")"
+"$docker_bin" image inspect "$airside_image" --format '{{.Id}}' \
+    > "$artifact_dir/airside-image-id.txt"
+source_commit="$(git -c "safe.directory=$repo_root" -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
+if [[ -z "$source_commit" ]] && command -v git.exe >/dev/null 2>&1; then
+    win_repo="$(wslpath -w "$repo_root")"
+    source_commit="$(git.exe -c "safe.directory=$win_repo" -C "$win_repo" rev-parse HEAD 2>/dev/null || true)"
+fi
+printf '%s\n' "${source_commit:-unavailable}" > "$artifact_dir/source-commit.txt"
 sitl_name="sitl-232-moving-$$"
 airside_name="airside-232-moving-$$"
 echo "Artifacts: $artifact_dir"
@@ -125,16 +134,18 @@ sleep 3
     -e AEAC_WEBSOCKET_URL=ws://127.0.0.1:18765 \
     -v "$repo_root":/repo:ro \
     -v "$artifact_dir":/artifacts \
-    warg/airside:latest bash -lc '
+    "$airside_image" bash -lc '
         source /opt/ros/humble/setup.bash
         source /ros_ws/install/setup.bash
         if [[ "$SCENARIO" == listener-* || "$SCENARIO" == engine-* ]]; then
             use_engine=false
             if [[ "$SCENARIO" == engine-* ]]; then use_engine=true; fi
+            route_args=()
+            if [[ -n "$ROUTE_FILE" ]]; then route_args=(waypoints_file:="$ROUTE_FILE"); fi
             ros2 launch airside_bringup airside.launch.py \
                 use_camera:=false \
                 use_engine:="$use_engine" \
-                lap_count:=1 waypoints_file:="$ROUTE_FILE" \
+                lap_count:=1 "${route_args[@]}" \
                 fcu_url:=tcp://127.0.0.1:5760 \
                 > /artifacts/launch.log 2>&1 &
             stack_pid=$!

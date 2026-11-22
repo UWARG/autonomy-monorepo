@@ -53,20 +53,39 @@ def test_altitude_band_filters_irrelevant_aircraft() -> None:
     )
 
 
-def test_live_mode_keeps_all_altitudes_and_adds_fixed_buffer() -> None:
+def test_live_mode_keeps_all_altitudes_and_guards_unobserved_turns() -> None:
     far_above = aircraft(altitude_agl_m=80.0, speed_mps=4.0, horizontal_keep_away_m=3.0)
     obstacles = convert(far_above, age_s=1.0, live_buffer=True, all_altitudes=True)
 
     assert obstacles
-    assert all(item.radius_m == pytest.approx(3.0 + 5.75) for item in obstacles)
+    assert obstacles[0].radius_m == pytest.approx(3.0 + 4.0 * (1.0 + 4.5))
+    assert all(item.radius_m == pytest.approx(3.0 + 5.75) for item in obstacles[1:])
     assert convert(far_above, age_s=1.0, live_buffer=True) == ()
 
 
 def test_live_buffer_distinguishes_stationary_and_moving_traffic() -> None:
     assert live_traffic_buffer_m(0.0, 0.0) == 3.0
-    assert live_traffic_buffer_m(4.0, 1.0) == 5.75
+    assert live_traffic_buffer_m(4.0, 1.0) == 22.0
+    assert live_traffic_buffer_m(15.0, 1.0) == 82.5
     with pytest.raises(ValueError, match="INVALID_TRAFFIC_BUFFER_INPUT"):
         live_traffic_buffer_m(math.nan, 0.0)
+
+
+def test_high_speed_turn_guard_is_centered_on_observed_position() -> None:
+    predicted = convert(
+        aircraft(speed_mps=15.0, heading_deg=90.0, horizontal_keep_away_m=5.0),
+        age_s=1.0,
+        live_buffer=True,
+        max_live_speed_mps=20.0,
+    )
+    assert predicted[0].center.x == pytest.approx(0.0)
+    assert predicted[0].center.y == pytest.approx(0.0)
+    assert predicted[0].radius_m == pytest.approx(87.5)
+
+
+def test_traffic_faster_than_tested_envelope_fails_closed() -> None:
+    with pytest.raises(ValueError, match="TRAFFIC_SPEED_OUT_OF_ENVELOPE"):
+        convert(aircraft(speed_mps=5.1), live_buffer=True)
 
 
 @pytest.mark.parametrize(

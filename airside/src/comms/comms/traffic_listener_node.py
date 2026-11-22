@@ -40,6 +40,7 @@ class SnapshotDelivery:
     healthy: bool
     reason: str
     aircraft: tuple[TrafficAircraft, ...] = ()
+    received_monotonic_ns: int = 0
 
 
 def parse_own_aircraft_index(raw: str) -> int | None:
@@ -74,7 +75,9 @@ class TrafficListener(rclpy.node.Node):
         # Starting from wall-clock nanoseconds keeps the sequence increasing
         # across a respawn, so subscribers do not reject the new stream as old.
         self._sequence = time.time_ns()
-        self._url = os.environ.get(WEBSOCKET_URL_ENV, "").strip() or DEFAULT_WEBSOCKET_URL
+        self._url = (
+            os.environ.get(WEBSOCKET_URL_ENV, "").strip() or DEFAULT_WEBSOCKET_URL
+        )
         self._token = os.environ.get(CONNECTION_TOKEN_ENV, "").strip()
         self._config_valid = True
         try:
@@ -119,6 +122,7 @@ class TrafficListener(rclpy.node.Node):
                 connected=connected,
                 healthy=False,
                 reason=reason,
+                received_monotonic_ns=time.monotonic_ns(),
             )
         )
 
@@ -151,6 +155,7 @@ class TrafficListener(rclpy.node.Node):
             connection.close()
 
     def _handle_message(self, raw: str | bytes) -> None:
+        received_monotonic_ns = time.monotonic_ns()
         message = decode_message(raw)
         if message is None:
             self._queue_unhealthy("INVALID_AEAC_MESSAGE", connected=True)
@@ -168,6 +173,7 @@ class TrafficListener(rclpy.node.Node):
                     healthy=not problems,
                     reason="; ".join(problems),
                     aircraft=filtered,
+                    received_monotonic_ns=received_monotonic_ns,
                 )
             )
         elif event == ERROR_EVENT:
@@ -180,7 +186,13 @@ class TrafficListener(rclpy.node.Node):
             except queue.Empty:
                 return
             snapshot = TrafficSnapshot()
-            snapshot.header.stamp = self.get_clock().now().to_msg()
+            # Stamp the WebSocket receive time, not the later ROS queue drain.
+            # This prevents queued/batched frames from looking freshly sampled.
+            now_ns = self.get_clock().now().nanoseconds
+            elapsed_ns = max(0, time.monotonic_ns() - delivery.received_monotonic_ns)
+            received_ns = max(0, now_ns - elapsed_ns)
+            snapshot.header.stamp.sec = received_ns // 1_000_000_000
+            snapshot.header.stamp.nanosec = received_ns % 1_000_000_000
             snapshot.header.frame_id = "wgs84"
             snapshot.sequence = delivery.sequence
             snapshot.connected = delivery.connected
