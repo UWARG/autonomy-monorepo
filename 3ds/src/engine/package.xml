@@ -21,6 +21,7 @@
   <depend>py_trees_ros</depend>
   <depend>py_trees_ros_interfaces</depend>
 
+  <test_depend>builtin_interfaces</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>python3-pytest</test_depend>
