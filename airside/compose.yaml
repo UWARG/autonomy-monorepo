@@ -5,6 +5,8 @@ services:
       dockerfile: airside/docker/Dockerfile
     image: warg/airside:latest
     network_mode: host
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     # Fallback if host networking is unavailable:
     # ports:
     #   - "14550:14550/udp"
