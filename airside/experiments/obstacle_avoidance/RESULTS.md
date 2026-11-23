@@ -11,6 +11,8 @@ and an independent FCU fence are still required before physical flight.
 Spline look-ahead cannot move backward on one leg. After 8 s of commanded
 movement without 1.5 m net progress, the planner excludes the last heading
 and tries a clearance-checked alternate; if none exists it holds and alerts.
+Lateral movement no longer clears a failed heading; only 1.5 m progress toward
+the required waypoint or a new waypoint does.
 A blocked optional aim replans to the current required waypoint. A required
 waypoint inside the traffic buffer is never skipped: it holds and alerts.
 
@@ -29,8 +31,25 @@ The final-image 15 m/s triangle remained `PASS_STRESS_ONLY`: it held and
 alerted on traffic beyond the 5 m/s envelope, without claiming route completion.
 Capture/replay tests passed 7/7.
 Boundary rejection, blocked-waypoint behavior and alternate heading are
-unit-tested; a repeatable in-flight stall has not yet exercised the retry in
-SITL. This mock lap does not qualify the real server track or props-on flight.
+unit-tested. A test-only 0.1 m/s GUIDED SITL run exercised the in-flight
+retry: the setpoint heading changed from 0.02 to 30.04 degrees. This is not
+a physical-stall or real-server qualification. Its rosbag and summary are in
+ignored `artifacts/stall-PtMeq89P/`.
+
+After the retry fix, the image was rebuilt and 169 GNC, 86 ROS and 7
+capture/replay tests passed. Three fresh moving SITL runs reached the goal;
+minimum extra margins were 5.855/5.885/5.880 m, measured peaks were
+1.533/1.531/1.533 m/s, and each had one setpoint publisher and a rosbag.
+The rebuilt-image eight-waypoint listener/controller lap also passed with
+248 index-2 snapshots, 6.107 m extra margin and a 1.560 m/s peak.
+Separate 5 m/s sharp-turn and 20 m/s triangle stress runs held and alerted;
+neither completed the route or qualified high-speed flight. A 120 s
+receive-only server capture had 117 moving snapshots at 0.75-1.23 s intervals,
+but its moving track stayed at least 4.8 km from the active eight-point route.
+It cannot be used as a full-route real-track acceptance replay.
+The separate #181 static-obstacle image passed its clear and pilot-takeover
+checks plus three fresh static SITL runs (5/5 total). Its files and commits
+were not changed; results are in ignored `artifacts/pr181-static-20261122/`.
 
 ## High-speed turn check (2026-11-21)
 

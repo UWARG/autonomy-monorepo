@@ -40,6 +40,7 @@ SCENARIOS = (
     "dropout",
     "blocked",
     "pilot",
+    "stall",
     "sharp_turn",
     "triangle15",
     "triangle20",
@@ -72,6 +73,9 @@ class Scenario(Node):
         self.traffic_enabled = False
         self.sequence = time.time_ns()
         self.setpoint_count = 0
+        self.initial_setpoint_heading_deg: float | None = None
+        self.retry_setpoint_heading_deg: float | None = None
+        self.max_tried_heading_count = 0
         self.status_reasons: set[str] = set()
         self.hold_reasons: set[str] = set()
         self.max_traffic_age_s = 0.0
@@ -196,11 +200,30 @@ class Scenario(Node):
                     "raw_keepaway_m": keepaway_m,
                 }
 
-    def _setpoint(self, _: GlobalPositionTarget) -> None:
+    def _setpoint(self, msg: GlobalPositionTarget) -> None:
         self.setpoint_count += 1
+        if self.scenario != "stall" or self.fix is None or not self.target_enabled:
+            return
+        east_m = (
+            math.radians(msg.longitude - self.fix.longitude)
+            * EARTH_RADIUS_M
+            * math.cos(math.radians(self.fix.latitude))
+        )
+        north_m = math.radians(msg.latitude - self.fix.latitude) * EARTH_RADIUS_M
+        if math.hypot(east_m, north_m) < 2.0:
+            return
+        heading_deg = math.degrees(math.atan2(east_m, north_m)) % 360.0
+        if self.max_tried_heading_count == 0:
+            if self.initial_setpoint_heading_deg is None:
+                self.initial_setpoint_heading_deg = heading_deg
+        else:
+            self.retry_setpoint_heading_deg = heading_deg
 
     def _status(self, msg: String) -> None:
         payload = json.loads(msg.data)
+        self.max_tried_heading_count = max(
+            self.max_tried_heading_count, int(payload.get("tried_heading_count", 0))
+        )
         self.status_reasons.add(payload["reason"])
         if payload.get("hold_reason"):
             self.hold_reasons.add(payload["hold_reason"])
@@ -435,7 +458,8 @@ class Scenario(Node):
         else:
             raise RuntimeError("WPNAV_SPEED has unsupported type")
         speed_mps = raw_value / 100.0
-        if not 1.49 <= speed_mps <= 1.51:
+        expected_mps = 0.1 if self.scenario == "stall" else 1.5
+        if abs(speed_mps - expected_mps) > 0.01:
             raise RuntimeError(f"WPNAV_SPEED readback was {speed_mps:.2f} m/s")
         return speed_mps
 
@@ -565,6 +589,26 @@ class Scenario(Node):
             self.target_enabled = True
             self.publish_target()
             self.wait_for("resumed goal", lambda: self.position()[1] >= 38.0, 90.0)
+        elif self.scenario == "stall":
+            self.wait_for(
+                "in-flight alternate heading",
+                lambda: (
+                    self.max_tried_heading_count >= 1
+                    and self.retry_setpoint_heading_deg is not None
+                ),
+                35.0,
+            )
+            assert self.initial_setpoint_heading_deg is not None
+            delta_deg = (
+                self.retry_setpoint_heading_deg
+                - self.initial_setpoint_heading_deg
+                + 180.0
+            ) % 360.0 - 180.0
+            difference_deg = abs(delta_deg)
+            if difference_deg < 20.0:
+                raise RuntimeError(
+                    f"stalled setpoint heading changed only {difference_deg:.1f} deg"
+                )
         elif self.scenario in STRESS_SCENARIOS:
             # This is a safety stress test, not a flight-route qualification.
             # A conservative controller may remain in hold for the whole loop.
@@ -593,9 +637,16 @@ class Scenario(Node):
         return {
             "scenario": self.scenario,
             "traffic_source": self.traffic_source,
-            "result": "PASS_STRESS_ONLY"
-            if self.scenario in STRESS_SCENARIOS
-            else "PASS",
+            "result": (
+                "PASS_STRESS_ONLY"
+                if self.scenario in STRESS_SCENARIOS
+                else "PASS_STALL_DIAGNOSTIC"
+                if self.scenario == "stall"
+                else "PASS"
+            ),
+            "max_tried_heading_count": self.max_tried_heading_count,
+            "initial_setpoint_heading_deg": self.initial_setpoint_heading_deg,
+            "retry_setpoint_heading_deg": self.retry_setpoint_heading_deg,
             "listener_snapshots": self.listener_snapshots,
             "listener_indices": sorted(self.listener_indices),
             "configured_speed_mps": configured_speed_mps,
@@ -634,6 +685,9 @@ def main() -> None:
             "traffic_source": args.traffic_source,
             "result": "FAIL",
             "error": f"{type(error).__name__}: {error}",
+            "max_tried_heading_count": node.max_tried_heading_count,
+            "initial_setpoint_heading_deg": node.initial_setpoint_heading_deg,
+            "retry_setpoint_heading_deg": node.retry_setpoint_heading_deg,
             "status_reasons": sorted(node.status_reasons),
             "hold_reasons": sorted(node.hold_reasons),
             "max_traffic_age_s": round(node.max_traffic_age_s, 3),

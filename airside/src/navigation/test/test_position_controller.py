@@ -97,6 +97,20 @@ def test_stuck_progress_excludes_old_heading(controller) -> None:
     assert setpoint.lon != pytest.approx(HERE.lon, abs=1e-7)
 
 
+def test_lateral_motion_does_not_retry_failed_heading(controller) -> None:
+    controller._update_progress(HERE, NOW)
+    controller._tried_headings_rad = [math.pi / 2]
+    sideways = enu_to_coordinate(HERE, 2.0, 0.0)
+
+    controller._update_progress(sideways, NOW + 1.0)
+
+    assert controller._progress_anchor == sideways
+    assert controller._tried_headings_rad == [math.pi / 2]
+    toward_target = enu_to_coordinate(HERE, 0.0, 2.0)
+    controller._update_progress(toward_target, NOW + 2.0)
+    assert controller._tried_headings_rad == []
+
+
 def test_near_target_goes_to_target_itself(controller) -> None:
     controller._target = enu_to_coordinate(HERE, 0.0, 0.5, 10.0)
 

@@ -116,6 +116,7 @@ class PositionController(rclpy.node.Node):
         self._last_status_s = -math.inf
         self._last_alert_s = -math.inf
         self._progress_anchor: Coordinate | None = None
+        self._best_target_distance_m: float | None = None
         self._progress_active_s = 0.0
         self._last_path_s: float | None = None
         self._last_command_heading_rad: float | None = None
@@ -423,12 +424,27 @@ class PositionController(rclpy.node.Node):
 
     def _reset_progress(self) -> None:
         self._progress_anchor = None
+        self._best_target_distance_m = None
         self._progress_active_s = 0.0
         self._last_path_s = None
         self._last_command_heading_rad = None
         self._tried_headings_rad = []
 
     def _update_progress(self, position: Coordinate, now_s: float) -> None:
+        to_target_east_m, to_target_north_m = east_north_coordinate_offset_m(
+            position.lat,
+            position.lon,
+            self._target.lat,
+            self._target.lon,
+        )
+        target_distance_m = math.hypot(to_target_east_m, to_target_north_m)
+        if self._best_target_distance_m is None:
+            self._best_target_distance_m = target_distance_m
+        elif target_distance_m <= self._best_target_distance_m - self.STUCK_PROGRESS_M:
+            # Lateral motion can reset the stall timer, but must not make a
+            # failed heading eligible again while circling the same waypoint.
+            self._best_target_distance_m = target_distance_m
+            self._tried_headings_rad.clear()
         if self._progress_anchor is None:
             self._progress_anchor = position
             return
@@ -439,8 +455,9 @@ class PositionController(rclpy.node.Node):
             position.lon,
         )
         if math.hypot(east_m, north_m) >= self.STUCK_PROGRESS_M:
-            self._reset_progress()
             self._progress_anchor = position
+            self._progress_active_s = 0.0
+            self._last_path_s = None
             return
         if self._last_path_s is not None and 0 <= now_s - self._last_path_s <= 0.5:
             self._progress_active_s += now_s - self._last_path_s

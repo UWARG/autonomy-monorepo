@@ -29,10 +29,11 @@ On one leg, spline aim distance is monotonic so GPS noise cannot pull it
 backward. After 8 s of commanded path following without 1.5 m net progress,
 the controller excludes the last heading and tries another clearance-checked
 candidate. It never shrinks the traffic buffer. If there is no safe alternate,
-it holds and alerts. If only the optional look-ahead aim is blocked, it
-replans toward the current required waypoint. If that waypoint is inside the
-traffic buffer, it holds, replans on new snapshots and alerts; it never skips
-the waypoint.
+it holds and alerts. A failed heading stays excluded until the required
+waypoint is 1.5 m closer or the mission advances. If the optional look-ahead
+aim is blocked, it replans toward the required waypoint. If that waypoint is
+inside the traffic buffer, it holds, replans on new snapshots and alerts;
+it never skips the waypoint.
 
 The planner uses 2 m/s for conservative relative-motion calculations. SITL
 sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first
@@ -69,6 +70,7 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh listener-triangle
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh blocked
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh pilot
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh stall
 ```
 
 Ignored `artifacts/<scenario>-*/` directories contain the summary, logs and
@@ -77,6 +79,8 @@ least 3 m additional measured margin, correct stale hold, and the expected
 goal completion or blocked-route alert. The sharp-turn and 15/20 m/s triangle
 runs are **stress-only**: their success does not qualify those speeds for
 props-on flight, and a hold is not counted as route completion.
+`stall` uses a test-only 0.1 m/s FCU setting to verify that an in-flight
+retry changes the setpoint heading; it is not a physical-stall qualification.
 
 `listener-moving` and `listener-dropout` start the Airside launch with the
 mission manager and camera disabled. A local mock WebSocket supplies 1 Hz AEAC

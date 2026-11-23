@@ -5,9 +5,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay}"
 case "$scenario" in
-    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|replay) ;;
+    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
@@ -15,6 +15,8 @@ route_in_container=""
 own_index=""
 replay_start_s=""
 sitl_home=""
+sitl_param_file=sitl_speed_1p5.parm
+if [[ "$scenario" == stall ]]; then sitl_param_file=sitl_stall_speed.parm; fi
 if [[ "$scenario" == engine-triangle ]]; then
     route_path="$repo_root/airside/src/engine/config/waypoints.yaml"
 elif [[ "$scenario" == engine-eight ]]; then
@@ -129,13 +131,14 @@ trap cleanup EXIT INT TERM
 
 "$docker_bin" run -d --name "$sitl_name" --network host \
     -e SITL_HOME="$sitl_home" \
+    -e SITL_PARAM_FILE="$sitl_param_file" \
     -v "$script_dir":/test:ro \
     warg/sitl:latest bash -lc \
     'cd /ardupilot && home_options=(); \
      if [[ -n "$SITL_HOME" ]]; then home_options=(--home "$SITL_HOME"); fi; \
      exec build/sitl/bin/arducopter -S -I0 --model + --speedup 1 "${home_options[@]}" \
      --sim-address=127.0.0.1 \
-     --defaults Tools/autotest/default_params/copter.parm,/test/sitl_speed_1p5.parm' \
+     --defaults "Tools/autotest/default_params/copter.parm,/test/$SITL_PARAM_FILE"' \
     > "$artifact_dir/sitl-id.txt"
 sleep 3
 
