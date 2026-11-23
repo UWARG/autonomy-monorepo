@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 
 from shapely import affinity
 from shapely.geometry import Polygon
@@ -90,3 +91,63 @@ def enu_to_coordinate(
         east_m / (math.cos(mean_latitude) * EARTH_RADIUS_M)
     )
     return Coordinate(latitude, longitude, alt_m)
+
+
+def validate_polygon(polygon: Polygon) -> None:
+    """Raises ``ValueError`` if ``polygon`` is outside the supported class.
+
+    Supported: a single, valid, non-degenerate simple polygon with no holes.
+    """
+
+    if not isinstance(polygon, Polygon):
+        raise ValueError("boundary must be a single polygon")
+    if polygon.is_empty:
+        raise ValueError("boundary polygon is empty")
+    if not polygon.is_valid:
+        raise ValueError("boundary polygon is self-intersecting or invalid")
+    if polygon.interiors:
+        raise ValueError("boundary polygon must not contain holes")
+    if polygon.area <= 0.0:
+        raise ValueError("boundary polygon has zero area")
+
+
+def local_region(boundary: list[Coordinate]) -> tuple[Coordinate, Polygon]:
+    """Returns the local frame anchor and the boundary as a validated ENU polygon."""
+
+    if len(boundary) < 3:
+        raise ValueError("boundary needs at least 3 vertices")
+    anchor = anchor_for_boundary(boundary)
+    region = Polygon(boundary_to_enu(anchor, boundary))
+    validate_polygon(region)
+    return anchor, region
+
+
+def positions_to_enu(
+    anchor: Coordinate, positions: Mapping[int, Coordinate]
+) -> dict[int, tuple[float, float]]:
+    """Converts GPS positions keyed by id to local ``(east, north)`` meters."""
+
+    for position in positions.values():
+        if not (math.isfinite(position.lat) and math.isfinite(position.lon)):
+            raise ValueError("drone positions must be finite")
+    return {
+        drone_id: coordinate_to_enu(anchor, position)
+        for drone_id, position in positions.items()
+    }
+
+
+def enu_to_positions(
+    anchor: Coordinate,
+    points: Mapping[int, tuple[float, float]],
+    originals: Mapping[int, Coordinate],
+) -> dict[int, Coordinate]:
+    """Converts local points keyed by id back to GPS.
+
+    Each point keeps the altitude of the position with the same id in
+    ``originals``.
+    """
+
+    return {
+        drone_id: enu_to_coordinate(anchor, east, north, originals[drone_id].alt)
+        for drone_id, (east, north) in points.items()
+    }
