@@ -49,6 +49,10 @@ jobs:
           cache-from: type=gha,scope=3ds-image
           cache-to: type=gha,mode=max,scope=3ds-image
 
+      - name: Run 3DS unit tests
+        working-directory: 3ds
+        run: docker compose -f compose.sitl-test.yaml run --rm unit-test
+
       - name: Run ArduPilot SITL mission
         working-directory: 3ds
         run: >

@@ -66,3 +66,20 @@ services:
       - ./src:/ros_ws/src:ro
     command: python3 /ros_ws/src/engine/test/sitl_mission_test.py
     restart: "no"
+
+  unit-test:
+    image: warg/3ds:latest
+    pull_policy: never
+    profiles: ["unit"]
+    volumes:
+      - ./src:/ros_ws/src:ro
+    command:
+      - python3
+      - -m
+      - pytest
+      - -p
+      - no:cacheprovider
+      - --ignore=src/engine/test/sitl_mission_test.py
+      - src/engine/test/test_setpoints.py
+      - src/camera/test/test_photo_log.py
+    restart: "no"

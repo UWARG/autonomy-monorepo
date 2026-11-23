@@ -123,14 +123,17 @@ warg run 3ds compose-up     # Start the real-hardware engine service (detached)
 warg run 3ds compose-down   # Stop the real-hardware engine service
 warg run 3ds logs           # Follow real-hardware service logs
 warg run 3ds sitl           # Connect 3DS to an external SITL (e.g. Mission Planner)
-warg run 3ds test-sitl      # Run the self-contained ArduCopter SITL mission test
+warg run 3ds test           # Run the unit tests, then the SITL mission test
+warg run 3ds test-unit      # Run only the 3DS unit tests
+warg run 3ds test-sitl      # Run only the self-contained ArduCopter SITL mission test
 warg run 3ds shell          # Open an interactive shell in the container
 ```
 
 ### SITL integration test
 
-`warg run 3ds test-sitl` (or `warg run 3ds test`) starts three Docker services on
-the Compose network via `compose.sitl-test.yaml`:
+`warg run 3ds test-sitl` starts three fresh Docker services on the Compose
+network via `compose.sitl-test.yaml`. `warg run 3ds test` does the same after the
+unit tests pass:
 
 1. `sitl` runs a headless ArduCopter simulator at the fixed default home
    location `-35.363261, 149.165230` and exposes MAVLink TCP port `5762`.
@@ -148,8 +151,8 @@ and can take several minutes. To preserve the stopped containers for log
 inspection, run the equivalent Compose command directly:
 
 ```bash
-docker compose -f compose.sitl-test.yaml up --build --abort-on-container-exit \
-  --exit-code-from sitl-test
+docker compose -f compose.sitl-test.yaml up --build --force-recreate \
+  --abort-on-container-exit --exit-code-from sitl-test
 docker compose -f compose.sitl-test.yaml logs
 ```
 
