@@ -1,6 +1,6 @@
 # Build a pinned, headless ArduCopter SITL binary for the integration test.
 # The build context is the monorepo root because compose.sitl.yaml uses context: ..
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:22.04@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6 AS builder
 
 ARG ARDUPILOT_REF=Copter-4.7.2
 ENV DEBIAN_FRONTEND=noninteractive
@@ -27,7 +27,7 @@ RUN git clone --depth 1 --branch "${ARDUPILOT_REF}" --recurse-submodules \
 WORKDIR /ardupilot
 RUN ./waf configure --board sitl && ./waf copter
 
-FROM ubuntu:22.04
+FROM ubuntu:22.04@sha256:f64b2ffc2f10ab8f8505aa56b2664bd846cbb9df87c7e2532e30f7667021c0e6
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

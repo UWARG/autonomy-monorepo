@@ -1,4 +1,4 @@
-FROM ros:humble-ros-base AS dev
+FROM ros:humble-ros-base@sha256:a18afd4a42ad603579d03b9012385dfeaf2e848423f0a6c41699766e7849c86c AS dev
 
 ENV DEBIAN_FRONTEND=noninteractive
 
