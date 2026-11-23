@@ -34,7 +34,7 @@ oakd = [
 
 [package.metadata]
 requires-dist = [
-    { name = "depthai", marker = "extra == 'oakd'", specifier = ">=3.0.0,<4.0.0" },
+    { name = "depthai", marker = "extra == 'oakd'", specifier = ">=3.6.0,<4.0.0" },
     { name = "numpy", specifier = ">=1.24.0" },
     { name = "opencv-python", marker = "extra == 'arducam'", specifier = ">=4.8.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
