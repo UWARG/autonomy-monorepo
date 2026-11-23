@@ -16,7 +16,7 @@ quality concern, not a coverage one.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from shapely import affinity
 from shapely.geometry import Polygon, box
@@ -37,6 +37,14 @@ class SweepParams:
 
 
 @dataclass(frozen=True)
+class CapturePass:
+    """Photo locations and straight-line distance in metres for one pass."""
+
+    capture_waypoints: list[tuple[float, float]]
+    straight_length_m: float
+
+
+@dataclass(frozen=True)
 class SweepResult:
     """Coverage waypoints and cost statistics for one cell."""
 
@@ -45,6 +53,7 @@ class SweepResult:
     straight_length_m: float
     turn_count: int
     path_length_m: float
+    capture_passes: tuple[CapturePass, ...] = field(default=(), compare=False, repr=False)
 
 
 def default_turn_penalty_m(line_spacing_m: float) -> float:
@@ -70,27 +79,20 @@ def sweep_cell(cell: Cell, params: SweepParams) -> SweepResult:
 
     _validate_params(params)
     if cell.axis == HORIZONTAL:
-        capture, path, straight, turns, path_length = _sweep_aligned(cell.polygon, params)
-        return SweepResult(
-            capture_waypoints=capture,
-            path_waypoints=path,
-            straight_length_m=straight,
-            turn_count=turns,
-            path_length_m=path_length,
-        )
+        return _sweep_aligned(cell.polygon, params)
 
     swapped = affinity.affine_transform(cell.polygon, [0, 1, 1, 0, 0, 0])
-    capture_swapped, path_swapped, straight, turns, path_length = _sweep_aligned(
-        swapped, params
-    )
-    capture_waypoints = [(y, x) for (x, y) in capture_swapped]
-    path_waypoints = [(y, x) for (x, y) in path_swapped]
-    return SweepResult(
-        capture_waypoints=capture_waypoints,
-        path_waypoints=path_waypoints,
-        straight_length_m=straight,
-        turn_count=turns,
-        path_length_m=path_length,
+    result = _sweep_aligned(swapped, params)
+    return replace(
+        result,
+        capture_waypoints=[(y, x) for x, y in result.capture_waypoints],
+        path_waypoints=[(y, x) for x, y in result.path_waypoints],
+        capture_passes=tuple(
+            CapturePass(
+                [(y, x) for x, y in sweep_pass.capture_waypoints], sweep_pass.straight_length_m
+            )
+            for sweep_pass in result.capture_passes
+        ),
     )
 
 
@@ -105,7 +107,7 @@ def _validate_params(params: SweepParams) -> None:
 
 def _sweep_aligned(
     polygon: Polygon, params: SweepParams
-) -> tuple[list[tuple[float, float]], list[tuple[float, float]], float, int, float]:
+) -> SweepResult:
     """Sweeps a polygon with passes along x, stacked in y."""
 
     xmin, ymin, xmax, ymax = polygon.bounds
@@ -116,13 +118,14 @@ def _sweep_aligned(
 
     height = ymax - ymin
     if height <= 0.0:
-        return [], [], 0.0, 0, 0.0
+        return SweepResult([], [], 0.0, 0, 0.0)
 
     n_passes = 1 + math.ceil(max(0.0, height - swath) / line_spacing)
     pass_heights = [ymin + swath / 2.0 + index * line_spacing for index in range(n_passes)]
 
     capture_waypoints: list[tuple[float, float]] = []
     path_waypoints: list[tuple[float, float]] = []
+    capture_passes: list[CapturePass] = []
     straight_length = 0.0
 
     for index, height_center in enumerate(pass_heights):
@@ -140,20 +143,26 @@ def _sweep_aligned(
         end = (right, height_center)
         pass_captures = [(x, height_center) for x in xs]
 
-        if index % 2 == 0:
-            points = [start] + pass_captures + [end]
-        else:
-            points = [end] + list(reversed(pass_captures)) + [start]
-            pass_captures = list(reversed(pass_captures))
+        if index % 2:
+            start, end = end, start
+            pass_captures.reverse()
+        path_waypoints.extend([start, *pass_captures, end])
 
-        capture_waypoints.extend(pass_captures)
-        path_waypoints.extend(points)
+        # Keep the same consecutive deduplication across pass boundaries.
+        previous = capture_waypoints[-1:]
+        unique_captures = _dedupe(previous + pass_captures)[len(previous):]
+        if unique_captures:
+            capture_passes.append(CapturePass(unique_captures, right - left))
+            capture_waypoints.extend(unique_captures)
 
     path_waypoints = _dedupe(path_waypoints)
-    capture_waypoints = _dedupe(capture_waypoints)
-    turn_count = max(0, n_passes - 1)
-    return capture_waypoints, path_waypoints, straight_length, turn_count, path_length(
-        path_waypoints
+    return SweepResult(
+        capture_waypoints=capture_waypoints,
+        path_waypoints=path_waypoints,
+        straight_length_m=straight_length,
+        turn_count=max(0, n_passes - 1),
+        path_length_m=path_length(path_waypoints),
+        capture_passes=tuple(capture_passes),
     )
 
 

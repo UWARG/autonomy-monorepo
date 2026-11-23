@@ -168,3 +168,22 @@ def test_sweep_result_is_frozen():
 def test_sweep_result_type():
     result = sweep_cell(Cell(RECT_100x50, HORIZONTAL), params())
     assert isinstance(result, SweepResult)
+
+
+@pytest.mark.parametrize("axis", [HORIZONTAL, VERTICAL])
+def test_capture_passes_preserve_flat_waypoints(axis: int) -> None:
+    result = sweep_cell(Cell(RECT_100x50, axis), params())
+    assert len(result.capture_passes) > 1
+    assert [
+        point for sweep_pass in result.capture_passes for point in sweep_pass.capture_waypoints
+    ] == result.capture_waypoints
+    total_length = sum(sweep_pass.straight_length_m for sweep_pass in result.capture_passes)
+    assert total_length == pytest.approx(result.straight_length_m)
+
+
+def test_capture_passes_preserve_deduplication_across_passes() -> None:
+    polygon = box(0.0, 0.0, 5.0, 10.0000005)
+    result = sweep_cell(Cell(polygon, HORIZONTAL), SweepParams(10.0, 10.0, 0.00000075, 1.0))
+    assert result.turn_count == 1
+    assert len(result.capture_waypoints) == 1
+    assert len(result.capture_passes) == 1
