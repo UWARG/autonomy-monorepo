@@ -11,6 +11,7 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
+  <depend>engine</depend>
   <depend>mavros_msgs</depend>
 
   <export>

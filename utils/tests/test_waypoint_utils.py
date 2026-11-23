@@ -5,6 +5,7 @@ import pytest
 from src.types import Coordinate
 from src.waypoint_utils import (
     east_north_coordinate_offset_m,
+    parse_geofence_file,
     parse_landing_pads_file,
     parse_waypoints_file,
     sort_clockwise_sweep,
@@ -187,6 +188,24 @@ def test_parse_landing_pads_rejects_out_of_range_coordinates(tmp_path):
 def test_parse_landing_pads_missing_file(tmp_path):
     with pytest.raises(OSError):
         parse_landing_pads_file(tmp_path / "nope.yaml")
+
+
+def test_parse_geofence(tmp_path):
+    path = tmp_path / "geofence.yaml"
+    path.write_text(
+        """
+        vertices:
+          - {lat: 43.47, lon: -80.54, alt: 15}
+          - {lat: 43.48, lon: -80.55}
+          - lat: 43.49
+            lon: -80.56
+        """
+    )
+    assert parse_geofence_file(path) == [
+        Coordinate(43.47, -80.54, 15.0),
+        Coordinate(43.48, -80.55, 0.0),
+        Coordinate(43.49, -80.56, 0.0),
+    ]
 
 
 def test_enu_offset_scale():

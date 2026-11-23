@@ -164,6 +164,48 @@ def parse_landing_pads_file(path: str | Path) -> list[Coordinate]:
     ]
 
 
+def parse_geofence_file(path: str | Path) -> list[Coordinate]:
+    """
+    Parses a YAML geofence file into an ordered list of polygon vertices.
+
+    The file is a mapping with a ``vertices`` list, each vertex a mapping of
+    ``lat`` and ``lon`` (and an optional, ignored ``alt``, defaulting to 0)::
+
+        vertices:
+          - {lat: 43.438391, lon: -80.571419}
+          - {lat: 43.438391, lon: -80.583781}
+          - {lat: 43.429409, lon: -80.583781}
+
+    Raises ``OSError`` if the file cannot be read and ``ValueError`` if its
+    contents are malformed. The list order is preserved: it is the polygon
+    winding sent to the FCU.
+    """
+
+    text = Path(path).read_text()
+    try:
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        raise ValueError(f"{path}: invalid YAML: {error}") from error
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"{path}: expected a mapping with 'vertices', got {raw!r}")
+
+    entries = raw.get("vertices")
+    if not isinstance(entries, list):
+        raise ValueError(f"{path}: 'vertices' must be a list, got {entries!r}")
+
+    vertices = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"{path}: vertex {index} must be a mapping, got {entry!r}"
+            )
+        vertices.append(
+            _coordinate_from_entry({"alt": 0.0, **entry}, path, f"vertex {index}")
+        )
+    return vertices
+
+
 def sort_clockwise_sweep(
     waypoints: list[Coordinate], home: Coordinate | None = None
 ) -> list[Coordinate]:

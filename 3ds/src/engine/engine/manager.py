@@ -9,12 +9,16 @@ import sys
 import py_trees
 import py_trees_ros
 import rclpy
+
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.geofence import Geofence, LoadGeofence
 from engine.behaviors.guided_mode_gate import PauseUnlessGuided
 from engine.behaviors.navigation.record_launch_point import RecordLaunchPoint
 from engine.behaviors.navigation.takeoff import Takeoff
+from engine.behaviors.safety_supervisor import WarnNearFence
 from engine.constants import TICK_PERIOD_MS, UNICODE_TREE_DEBUG
 from engine.subtrees.land import create_land_subtree
+from engine.subtrees.safety import create_fence_breach_subtree
 from engine.subtrees.setpoints import create_setpoints_subtree
 
 
@@ -30,19 +34,29 @@ def create_root() -> py_trees.behaviour.Behaviour:
     The engine never changes flight mode. PauseUnlessGuided freezes the
     mission (without resetting its progress) until the pilot selects GUIDED,
     and again whenever the pilot takes back control, so returning to GUIDED
-    resumes the mission where it left off. The final MissionComplete node
-    holds the tree in RUNNING after landing.
+    resumes the mission where it left off. LoadGeofence reads the fence from
+    config/geofence.yaml; SafetySupervisor logs a warning as the drone nears
+    it, and preempts the mission when it is breached, flies it back inside,
+    then lets the mission resume where it left off. The final MissionComplete
+    node holds the tree in RUNNING after landing.
 
     ```
     Root [Sequence]
     ├── ConfigureStreamRates
-    └── PauseUnlessGuided
-        └── Mission [Sequence]
-            ├── RecordLaunchPoint
-            ├── Takeoff
-            ├── UntilGoHome (setpoints subtree)
-            ├── LandPhase
-            └── MissionComplete [Running]
+    ├── LoadGeofence
+    ├── Geofence
+    └── SafetySupervisor [Selector]
+        ├── FenceBreach [Sequence]
+        │   ├── CheckFenceBreach
+        │   └── RecoverIntoGeofence
+        ├── WarnNearFence
+        └── PauseUnlessGuided
+            └── Mission [Sequence]
+                ├── RecordLaunchPoint
+                ├── Takeoff
+                ├── UntilGoHome (setpoints subtree)
+                ├── LandPhase
+                └── MissionComplete [Running]
     ```
     """
 
@@ -58,12 +72,24 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
+    safety_supervisor = py_trees.composites.Selector(
+        name="SafetySupervisor",
+        memory=False,
+        children=[
+            create_fence_breach_subtree(),
+            WarnNearFence(),
+            PauseUnlessGuided(child=mission),
+        ],
+    )
+
     return py_trees.composites.Sequence(
         name="Root",
         memory=True,
         children=[
             ConfigureStreamRates(),
-            PauseUnlessGuided(child=mission),
+            LoadGeofence(),
+            Geofence(),
+            safety_supervisor,
         ],
     )
 
