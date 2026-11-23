@@ -1,0 +1,2 @@
+airside/experiments/obstacle_avoidance/run_sitl_moving.sh text eol=lf
+airside/experiments/obstacle_avoidance/run_colcon_test.sh text eol=lf

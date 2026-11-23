@@ -9,6 +9,29 @@ from utils.src.waypoint_utils import east_north_coordinate_offset_m
 from .models import CircleObstacle, Point2D, TrafficAircraft
 
 
+def live_traffic_buffer_m(
+    speed_mps: float,
+    age_s: float,
+    own_speed_mps: float = 1.5,
+    response_s: float = 4.5,
+) -> float:
+    """Bound unobserved motion until the next update and a verified stop.
+
+    Heading is deliberately ignored: a server aircraft may turn at any point
+    between 1 Hz snapshots. ``response_s`` must cover the allowed update gap
+    plus the FCU's measured stop time; verify that bound before flight.
+    """
+
+    if not all(
+        math.isfinite(value) and value >= 0.0
+        for value in (speed_mps, age_s, own_speed_mps, response_s)
+    ):
+        raise ValueError("INVALID_TRAFFIC_BUFFER_INPUT")
+    if speed_mps <= 0.1:
+        return 3.0
+    return max(5.75, speed_mps * (age_s + response_s))
+
+
 def _valid_aircraft(aircraft: TrafficAircraft) -> bool:
     numbers = (
         aircraft.lat,
@@ -40,6 +63,11 @@ def traffic_to_obstacles(
     prediction_horizon_s: float,
     maximum_step_m: float,
     maximum_obstacles: int,
+    live_buffer: bool = False,
+    all_altitudes: bool = False,
+    own_speed_mps: float = 1.5,
+    response_s: float = 4.5,
+    max_live_speed_mps: float = 5.0,
 ) -> tuple[CircleObstacle, ...]:
     """
     Predicts each aircraft's keep-away cylinder along its track.
@@ -63,8 +91,10 @@ def traffic_to_obstacles(
         seen_indices.add(aircraft.aircraft_index)
         if not _valid_aircraft(aircraft):
             raise ValueError("INVALID_TRAFFIC_AIRCRAFT")
+        if live_buffer and aircraft.speed_mps > max_live_speed_mps:
+            raise ValueError("TRAFFIC_SPEED_OUT_OF_ENVELOPE")
 
-        if not (
+        if not all_altitudes and not (
             band_min_m <= aircraft.altitude_agl_m + aircraft.vertical_keep_away_m
             and aircraft.altitude_agl_m - aircraft.vertical_keep_away_m <= band_max_m
         ):
@@ -73,12 +103,30 @@ def traffic_to_obstacles(
         east_m, north_m = east_north_coordinate_offset_m(
             origin_lat, origin_lon, aircraft.lat, aircraft.lon
         )
+        if live_buffer:
+            # A reachability disc around the *observed* position covers any
+            # sharp turn during the unobserved interval. The straight sweep
+            # below remains useful for planning beyond the immediate guard.
+            obstacles.append(
+                CircleObstacle(
+                    center=Point2D(east_m, north_m),
+                    radius_m=aircraft.horizontal_keep_away_m
+                    + live_traffic_buffer_m(
+                        aircraft.speed_mps, age_s, own_speed_mps, response_s
+                    ),
+                )
+            )
         heading_rad = math.radians(aircraft.heading_deg)
         east_mps = aircraft.speed_mps * math.sin(heading_rad)
         north_mps = aircraft.speed_mps * math.cos(heading_rad)
         east_m += east_mps * age_s
         north_m += north_mps * age_s
 
+        radius_m = aircraft.horizontal_keep_away_m
+        if live_buffer:
+            # Do not apply the age-dependent reachability radius again to an
+            # age-compensated straight-line prediction.
+            radius_m += 3.0 if aircraft.speed_mps <= 0.1 else 5.75
         spacing_m = min(maximum_step_m, aircraft.horizontal_keep_away_m)
         segments = math.ceil(aircraft.speed_mps * prediction_horizon_s / spacing_m)
         for segment in range(segments + 1):
@@ -88,7 +136,7 @@ def traffic_to_obstacles(
                     center=Point2D(
                         east_m + east_mps * future_s, north_m + north_mps * future_s
                     ),
-                    radius_m=aircraft.horizontal_keep_away_m,
+                    radius_m=radius_m,
                 )
             )
             if len(obstacles) > maximum_obstacles:

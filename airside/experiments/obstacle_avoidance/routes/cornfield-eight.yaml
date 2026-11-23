@@ -1,0 +1,26 @@
+# Eight-point route from #232 (b9bae9ad). Used only by local SITL diagnostics.
+waypoints:
+  - lat: 43.4779087
+    lon: -80.5688352
+    alt: 10
+  - lat: 43.4777730
+    lon: -80.5685257
+    alt: 10
+  - lat: 43.4775016
+    lon: -80.5684019
+    alt: 10
+  - lat: 43.4771850
+    lon: -80.5687362
+    alt: 10
+  - lat: 43.4768684
+    lon: -80.5688352
+    alt: 10
+  - lat: 43.4771850
+    lon: -80.5689342
+    alt: 10
+  - lat: 43.4775016
+    lon: -80.5692685
+    alt: 10
+  - lat: 43.4777730
+    lon: -80.5691447
+    alt: 10

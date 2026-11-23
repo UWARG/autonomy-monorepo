@@ -3,9 +3,10 @@ import math
 import pytest
 
 from obstacle_avoidance import (
+    AvoidanceConfig,
     AvoidanceRequest,
-    ESCAPE_REASON,
     ObstacleAvoider,
+    PlannerConfig,
     PlanStatus,
     TrafficAircraft,
 )
@@ -19,8 +20,12 @@ def offset(east_m: float, north_m: float, alt_m: float = 10.0) -> Coordinate:
     return enu_to_coordinate(HERE, east_m, north_m, alt_m)
 
 
-def request(goal: Coordinate, *traffic: TrafficAircraft, age_s: float = 0.0) -> AvoidanceRequest:
-    return AvoidanceRequest(position=HERE, goal=goal, traffic=traffic, traffic_age_s=age_s)
+def request(
+    goal: Coordinate, *traffic: TrafficAircraft, age_s: float = 0.0
+) -> AvoidanceRequest:
+    return AvoidanceRequest(
+        position=HERE, goal=goal, traffic=traffic, traffic_age_s=age_s
+    )
 
 
 def intruder(
@@ -43,7 +48,9 @@ def intruder(
     )
 
 
-def ring(radius_m: float, keep_away_m: float, count: int = 8) -> tuple[TrafficAircraft, ...]:
+def ring(
+    radius_m: float, keep_away_m: float, count: int = 8
+) -> tuple[TrafficAircraft, ...]:
     """Stationary traffic all round, overlapping into a closed ring."""
     return tuple(
         intruder(
@@ -76,23 +83,55 @@ def test_vertical_speed_tracks_goal_altitude_within_limit() -> None:
 
 
 def test_detours_around_traffic_on_the_direct_line() -> None:
-    plan = ObstacleAvoider().plan(request(offset(0.0, 20.0), intruder(offset(0.0, 6.0), 2.0)))
+    plan = ObstacleAvoider().plan(
+        request(offset(0.0, 30.0), intruder(offset(0.0, 12.0), 2.0))
+    )
 
     assert plan.status is PlanStatus.PATH_FOUND
     assert abs(plan.east_mps) > 0.1
     assert plan.minimum_clearance_m is not None and plan.minimum_clearance_m >= 1.0
 
 
+def test_aim_inside_traffic_buffer_waits_instead_of_claiming_completion() -> None:
+    blocked_goal = offset(0.0, 20.0)
+    plan = ObstacleAvoider().plan(request(blocked_goal, intruder(blocked_goal, 5.0)))
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "AIM_IN_TRAFFIC_BUFFER"
+    assert plan.next_waypoint is None
+
+
+def test_required_waypoint_inside_buffer_holds_even_if_aim_is_clear() -> None:
+    required = offset(0.0, 30.0)
+    plan = ObstacleAvoider().plan(
+        AvoidanceRequest(
+            position=HERE,
+            goal=offset(0.0, 12.0),
+            traffic=(intruder(required, 5.0),),
+            traffic_age_s=0.0,
+            required_waypoint=required,
+        )
+    )
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "WAYPOINT_IN_TRAFFIC_BUFFER"
+
+
 @pytest.mark.parametrize(
     ("plan_request", "reason"),
     [
-        (request(offset(0.0, 20.0), *ring(6.0, 5.5)), "BLOCKED"),
+        (
+            request(offset(0.0, 20.0), *ring(6.0, 5.5)),
+            "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED",
+        ),
         (request(offset(0.0, 20.0), age_s=3.0), "STALE_TRAFFIC"),
         (request(offset(0.0, 20.0), age_s=-0.1), "STALE_TRAFFIC"),
         (request(Coordinate(float("nan"), 0.0, 10.0)), "INVALID_POSITION"),
     ],
 )
-def test_failures_hold_at_zero_velocity(plan_request: AvoidanceRequest, reason: str) -> None:
+def test_failures_hold_at_zero_velocity(
+    plan_request: AvoidanceRequest, reason: str
+) -> None:
     plan = ObstacleAvoider().plan(plan_request)
 
     assert plan.status is PlanStatus.NO_PATH
@@ -107,22 +146,66 @@ def test_goal_reached_within_tolerance_stops() -> None:
     assert (plan.east_mps, plan.north_mps, plan.up_mps) == (0.0, 0.0, 0.0)
 
 
-def test_escapes_out_of_a_keep_away_instead_of_holding() -> None:
+def test_no_autonomous_escape_from_a_keep_away() -> None:
     plan = ObstacleAvoider().plan(request(offset(0.0, 20.0), intruder(HERE, 20.0)))
 
-    assert plan.status is PlanStatus.PATH_FOUND
-    assert plan.reason == ESCAPE_REASON
-    # Every direction gets out equally fast, so it leaves toward the goal.
-    assert plan.north_mps == pytest.approx(2.0)
-    assert plan.up_mps == 0.0
-    assert plan.next_waypoint is not None and plan.next_waypoint.alt == HERE.alt
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED"
+    assert plan.next_waypoint is None
 
 
-def test_head_on_traffic_is_escaped_sideways_not_held() -> None:
+def test_head_on_traffic_requests_pilot_takeover() -> None:
     """An aircraft flying straight at us blocks every forward heading."""
     oncoming = intruder(offset(0.0, 10.0), 5.0, speed_mps=5.0, heading_deg=180.0)
     plan = ObstacleAvoider().plan(request(offset(0.0, 20.0), oncoming))
 
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED"
+
+
+def test_fresh_snapshot_replans_after_a_blockage() -> None:
+    avoider = ObstacleAvoider()
+    blocked = avoider.plan(request(offset(0.0, 20.0), intruder(HERE, 20.0)))
+    recovered = avoider.plan(request(offset(0.0, 20.0)))
+
+    assert blocked.status is PlanStatus.NO_PATH
+    assert recovered.status is PlanStatus.PATH_FOUND
+
+
+def test_traffic_expires_after_one_and_a_half_seconds() -> None:
+    assert (
+        ObstacleAvoider().plan(request(offset(0.0, 20.0), age_s=1.5)).status
+        is PlanStatus.PATH_FOUND
+    )
+    assert (
+        ObstacleAvoider().plan(request(offset(0.0, 20.0), age_s=1.501)).reason
+        == "STALE_TRAFFIC"
+    )
+
+
+def test_moving_crossing_yields_before_entering_its_future_path() -> None:
+    crossing = intruder(offset(-15.0, 20.0), 5.0, speed_mps=1.2, heading_deg=90.0)
+    avoider = ObstacleAvoider(
+        AvoidanceConfig(planner=PlannerConfig(first_lookahead_m=16.0))
+    )
+    plan = avoider.plan(request(offset(0.0, 40.0), crossing))
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "YIELD_CROSSING"
+
+
+def test_crossing_traffic_clear_of_route_allows_progress() -> None:
+    past_route = intruder(offset(15.0, 20.0), 5.0, speed_mps=1.2, heading_deg=90.0)
+    plan = ObstacleAvoider().plan(request(offset(0.0, 40.0), past_route))
+
     assert plan.status is PlanStatus.PATH_FOUND
-    assert plan.reason == ESCAPE_REASON
-    assert abs(plan.east_mps) > abs(plan.north_mps)
+
+
+def test_fast_aircraft_can_turn_across_a_heading_clear_route() -> None:
+    # The reported heading points north, parallel to the route. A triangle
+    # corner may turn it east before the next 1 Hz sample.
+    fast = intruder(offset(-20.0, 20.0), 5.0, speed_mps=15.0, heading_deg=0.0)
+    plan = ObstacleAvoider().plan(request(offset(0.0, 40.0), fast))
+
+    assert plan.status is PlanStatus.NO_PATH
+    assert plan.reason == "TRAFFIC_SPEED_OUT_OF_ENVELOPE"

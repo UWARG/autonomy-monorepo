@@ -3,9 +3,10 @@ from datetime import datetime, timezone
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
 
 # Local UDP endpoint where MAVROS mirrors the FCU stream (gcs_url) and
 # where the RC bridge listens for RC_CHANNELS.
@@ -25,6 +26,9 @@ _RECORDED_TOPICS = [
     "/mavros/setpoint_raw/global",
     "/mavros/statustext/recv",
     "/mavros/statustext/send",
+    "/aeac/traffic",
+    "/position_controller/target",
+    "/position_controller/avoidance_status",
     "/heartbeat",
     "/capture/target_location",
     "/trigger_post_processing",
@@ -60,6 +64,18 @@ def generate_launch_description() -> LaunchDescription:
                 "use_camera",
                 default_value=EnvironmentVariable("USE_CAMERA", default_value="true"),
                 description="Start the camera node (false for SITL, which has none)",
+            ),
+            DeclareLaunchArgument(
+                "use_engine",
+                default_value="true",
+                description="Start the mission manager (false for isolated SITL tests)",
+            ),
+            DeclareLaunchArgument(
+                "waypoints_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("engine"), "config", "waypoints.yaml"]
+                ),
+                description="Waypoint YAML loaded by the mission manager",
             ),
             ExecuteProcess(
                 cmd=[
@@ -171,12 +187,14 @@ def generate_launch_description() -> LaunchDescription:
                 executable="manager",
                 name="engine_manager",
                 output="both",
+                condition=IfCondition(LaunchConfiguration("use_engine")),
                 parameters=[
                     {
                         "lap_count": ParameterValue(
                             LaunchConfiguration("lap_count"),
                             value_type=int,
                         ),
+                        "waypoints_file": LaunchConfiguration("waypoints_file"),
                     }
                 ],
             ),

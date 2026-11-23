@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
 import rclpy
 import websocket
 from comms.constants import CONNECTION_TOKEN_ENV, OWN_AIRCRAFT_INDEX_ENV
-from comms.traffic_listener_node import TrafficListener, parse_own_aircraft_index
+from comms.traffic_listener_node import (
+    SnapshotDelivery,
+    TrafficListener,
+    parse_own_aircraft_index,
+)
 
 
 @pytest.fixture
@@ -36,7 +41,9 @@ def test_own_aircraft_index_is_optional() -> None:
     assert parse_own_aircraft_index("7") == 7
 
 
-def test_invalid_websocket_message_invalidates_snapshot(listener: TrafficListener) -> None:
+def test_invalid_websocket_message_invalidates_snapshot(
+    listener: TrafficListener,
+) -> None:
     listener._handle_message("not-json")
 
     delivery = listener._deliveries.get_nowait()
@@ -82,7 +89,9 @@ def test_mock_websocket_snapshot_filters_own_aircraft(
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr(websocket, "create_connection", lambda *args, **kwargs: FakeConnection())
+    monkeypatch.setattr(
+        websocket, "create_connection", lambda *args, **kwargs: FakeConnection()
+    )
 
     with pytest.raises(websocket.WebSocketConnectionClosedException):
         listener._receive_until_disconnected()
@@ -96,7 +105,9 @@ def test_traffic_topic_gets_complete_snapshot(
     listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     published = []
-    monkeypatch.setattr(listener, "_traffic_pub", SimpleNamespace(publish=published.append))
+    monkeypatch.setattr(
+        listener, "_traffic_pub", SimpleNamespace(publish=published.append)
+    )
     listener._handle_message(
         json.dumps(
             {
@@ -136,7 +147,9 @@ def test_traffic_topic_empty_and_invalid_snapshots(
     listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     published = []
-    monkeypatch.setattr(listener, "_traffic_pub", SimpleNamespace(publish=published.append))
+    monkeypatch.setattr(
+        listener, "_traffic_pub", SimpleNamespace(publish=published.append)
+    )
     listener._handle_message('{"event":"traffic","payload":{"traffic":[]}}')
     listener._handle_message("not-json")
     listener._publish_deliveries()
@@ -144,6 +157,30 @@ def test_traffic_topic_empty_and_invalid_snapshots(
     assert len(published) == 2
     assert published[0].healthy and not published[0].aircraft
     assert not published[1].healthy and not published[1].aircraft
+
+
+def test_snapshot_stamp_preserves_websocket_receive_age(
+    listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = []
+    monkeypatch.setattr(
+        listener, "_traffic_pub", SimpleNamespace(publish=published.append)
+    )
+    listener._deliveries.put(
+        SnapshotDelivery(
+            sequence=10,
+            connected=True,
+            healthy=True,
+            reason="",
+            received_monotonic_ns=time.monotonic_ns() - 2_000_000_000,
+        )
+    )
+    listener._publish_deliveries()
+    stamp = published[0].header.stamp
+    stamped_ns = stamp.sec * 1_000_000_000 + stamp.nanosec
+    assert (listener.get_clock().now().nanoseconds - stamped_ns) / 1e9 == pytest.approx(
+        2.0, abs=0.1
+    )
 
 
 def test_receive_loop_reconnects_after_socket_loss(

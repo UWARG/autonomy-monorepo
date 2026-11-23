@@ -3,7 +3,6 @@ services:
     build:
       context: ..
       dockerfile: airside/docker/Dockerfile
-      network: host
     image: warg/airside:latest
     network_mode: host
     stop_signal: SIGINT

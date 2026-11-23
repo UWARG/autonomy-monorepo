@@ -128,13 +128,17 @@ heading hysteresis between calls) and `reset()` it when control is interrupted.
 
 ### What it computes
 
-1. **Traffic prediction** — each aircraft whose vertical keep-away band
-   overlaps our current-to-goal altitude band becomes a circle of its
-   horizontal keep-away radius, moved forward by `traffic_age_s` and swept
-   along its heading for `prediction_horizon_s`.
+1. **Traffic prediction** — live mode includes every other aircraft regardless
+   of altitude. Its circle radius is the server keep-away plus
+   `max(5 m, (traffic speed + 1.5 m/s) × (snapshot age + 1.5 s))`, moved
+   forward by snapshot age and swept for 3 s. The lower-level conversion API
+   can still use a vertical band and raw radius with `live_buffer=False`.
 2. **Local planning** — `BendyRuler2D` searches candidate headings for a
    two-segment lookahead path that keeps `clearance_margin_m` from every
    circle, preferring the goal direction and the previous detour.
+   A separate 20 s closest-approach check yields to crossing traffic before
+   entering its route, but only if the hold point remains clear; otherwise it
+   requests pilot takeover.
 3. **Command** — the first lookahead point becomes a horizontal velocity
    capped at `horizontal_speed_mps`; altitude error becomes a vertical velocity
    capped at `vertical_speed_mps`.
@@ -143,7 +147,8 @@ heading hysteresis between calls) and `reset()` it when control is interrupted.
 
 - Every failure is a zero-velocity `NO_PATH` hold with a reason: stale or
   future traffic, invalid or duplicate aircraft, too many predicted circles,
-  invalid position, or no safe path.
+  invalid position, or no safe path. `HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED`
+  means predicted traffic intersects the hold point; the pilot must take over.
 - A returned path has both lookahead segments at or above the clearance margin.
 - Candidate ordering and ties are deterministic.
 

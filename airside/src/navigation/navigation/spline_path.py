@@ -77,7 +77,12 @@ class SplinePath:
             padded = [first, *controls, last]
             for i in range(len(controls) - 1):
                 self._knots.append(len(self.points))
-                samples = max(1, math.ceil(math.dist(controls[i], controls[i + 1]) / _SAMPLE_SPACING_M))
+                samples = max(
+                    1,
+                    math.ceil(
+                        math.dist(controls[i], controls[i + 1]) / _SAMPLE_SPACING_M
+                    ),
+                )
                 self.points.extend(_segment(*padded[i : i + 4], samples))
         self._knots.append(len(self.points))
         self.points.append(controls[-1])
@@ -123,7 +128,9 @@ class SplinePath:
             distance_m = math.dist(position, _lerp(a, b, weight))
             if distance_m < best_distance_m:
                 best_distance_m = distance_m
-                best_arc_m = self.arc_m[i] + weight * (self.arc_m[i + 1] - self.arc_m[i])
+                best_arc_m = self.arc_m[i] + weight * (
+                    self.arc_m[i + 1] - self.arc_m[i]
+                )
         return min(max(best_arc_m, from_arc_m), to_arc_m)
 
 
@@ -134,8 +141,22 @@ def aim_point(
     lookahead_m: float,
     corner_lookahead_m: float,
 ) -> Point:
+    return aim_point_with_progress(
+        path, target_index, position, lookahead_m, corner_lookahead_m
+    )[0]
+
+
+def aim_point_with_progress(
+    path: SplinePath,
+    target_index: int,
+    position: Point,
+    lookahead_m: float,
+    corner_lookahead_m: float,
+    minimum_arc_m: float = 0.0,
+) -> tuple[Point, float]:
     """
-    Where to aim to follow ``path`` toward its waypoint ``target_index``, stopping at the end of the path.
+    Return the aim and its path arc. A controller can pass the previous arc to
+    prevent GPS projection noise from moving the aim backwards on one leg.
     """
 
     def lookahead_for(to_waypoint_m: float) -> float:
@@ -147,8 +168,11 @@ def aim_point(
         to_target_m = math.dist(position, waypoints[0])
         ahead_m = lookahead_for(to_target_m)
         if to_target_m >= ahead_m:
-            return waypoints[0]
-        return path.point_at(target_arc_m + ahead_m - to_target_m)
+            arc_m = target_arc_m
+        else:
+            arc_m = target_arc_m + ahead_m - to_target_m
+        arc_m = max(minimum_arc_m, arc_m)
+        return path.point_at(arc_m), arc_m
 
     search_from_m = path.arc_at_waypoint(max(0, target_index - 2))
     search_to_m = path.arc_at_waypoint(min(len(waypoints) - 1, target_index + 1))
@@ -161,4 +185,5 @@ def aim_point(
         ),
         default=math.inf,
     )
-    return path.point_at(along_m + lookahead_for(next_waypoint_m))
+    arc_m = max(minimum_arc_m, along_m + lookahead_for(next_waypoint_m))
+    return path.point_at(arc_m), arc_m
