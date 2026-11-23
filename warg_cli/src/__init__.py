@@ -1,1 +1,0 @@
-"""WARG autonomy monorepo CLI."""
