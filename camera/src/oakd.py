@@ -12,8 +12,6 @@ from .constants import OAKD_DEFAULT_HEIGHT, OAKD_DEFAULT_WIDTH
 from .frame import CameraFrame
 from .imu import CameraIMU
 
-import depthai as dai
-
 class OakD(AbstractCamera):
 
     def __init__(
@@ -21,12 +19,16 @@ class OakD(AbstractCamera):
         width: int = OAKD_DEFAULT_WIDTH,
         height: int = OAKD_DEFAULT_HEIGHT,
     ) -> None:
+        import depthai as dai
+
         super().__init__(width=width, height=height)
+        self._dai = dai
         self._pipeline = None
         self._rgb_queue = None
         self._depth_queue = None
 
     def initialize_camera(self) -> bool:
+        dai = self._dai
         try:
             self._pipeline = dai.Pipeline()
 
@@ -87,7 +89,7 @@ class OakD(AbstractCamera):
             return None
 
         try:
-            data: dai.IMUData = self._imu_queue.get()
+            data = self._imu_queue.get()
             packet = data.packets[-1]
             accel = packet.acceleroMeter
             gyro = packet.gyroscope
