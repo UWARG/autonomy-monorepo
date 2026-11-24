@@ -59,6 +59,11 @@ def test_time_to_breach_is_infinite_when_stationary():
     assert math.isinf(FENCE.time_to_breach_s(at(0.0, 0.0), (0.0, 0.0, 0.0)))
 
 
+def test_time_to_breach_ignores_slow_drift_and_tangential_noise():
+    assert math.isinf(FENCE.time_to_breach_s(at(450.0, 0.0), (0.05, 0.0, 0.0)))
+    assert math.isinf(FENCE.time_to_breach_s(at(450.0, 0.0), (0.0, 0.2, 0.0)))
+
+
 def test_time_to_breach_is_zero_when_already_outside():
     assert FENCE.time_to_breach_s(at(2000.0, 0.0), (10.0, 0.0, 0.0)) == 0.0
 

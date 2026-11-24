@@ -53,8 +53,11 @@ def fence(reset_blackboard):
 
 
 class _Logger:
-    def warning(self, *args, **kwargs):
-        pass
+    def __init__(self):
+        self.warnings = []
+
+    def warning(self, message, *args, **kwargs):
+        self.warnings.append(message)
 
     def info(self, *args, **kwargs):
         pass
@@ -132,16 +135,17 @@ def _staged_target():
     return reader.get(blackboard_keys.GEOFENCE_TARGET)
 
 
-def test_warn_near_fence_sends_once_per_band_entry(fence):
+def test_warn_near_fence_sends_immediately_on_band_entry(fence):
     node = _Node()
     warn = WarnNearFence()
     warn.setup(node=node)
 
-    _feed(warn, node, *NEAR_EDGE)
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
     assert warn.update() == py_trees.common.Status.FAILURE
     texts = _texts(node)
     assert len(texts) == 1
     assert "from fence" in texts[0]
+    assert "to breach" in texts[0]
 
     warn.update()
     assert len(_texts(node)) == 1
@@ -150,9 +154,68 @@ def test_warn_near_fence_sends_once_per_band_entry(fence):
     warn.update()
     assert len(_texts(node)) == 1
 
-    _feed(warn, node, *NEAR_EDGE)
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
     warn.update()
     assert len(_texts(node)) == 2
+
+
+def test_warning_repeats_to_ground_while_still_near(fence):
+    node = _Node()
+    warn = WarnNearFence()
+    warn.setup(node=node)
+
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(_texts(node)) == 1
+
+    node._clock.time_s = 104.0
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(_texts(node)) == 1
+
+    node._clock.time_s = 105.0
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(_texts(node)) == 2
+    assert _texts(node)[-1] == _texts(node)[0]
+
+    node._clock.time_s = 106.0
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(_texts(node)) == 2
+
+
+def test_warning_reports_not_closing_when_stationary(fence):
+    node = _Node()
+    warn = WarnNearFence()
+    warn.setup(node=node)
+
+    _feed(warn, node, *NEAR_EDGE)
+    assert warn.update() == py_trees.common.Status.FAILURE
+    assert "not closing" in _texts(node)[0]
+
+
+def test_warning_log_follows_changes_without_repeats(fence):
+    node = _Node()
+    warn = WarnNearFence()
+    warn.setup(node=node)
+
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(node._logger.warnings) == 1
+
+    warn.update()
+    assert len(node._logger.warnings) == 1
+
+    _feed(warn, node, *NEAR_EDGE, velocity=(5.0, 0.0, 0.0))
+    warn.update()
+    assert len(node._logger.warnings) == 2
+
+    _feed(warn, node, *HOME)
+    warn.update()
+    _feed(warn, node, *NEAR_EDGE, velocity=(10.0, 0.0, 0.0))
+    warn.update()
+    assert len(node._logger.warnings) == 3
 
 
 def test_warning_never_succeeds_when_breached(fence):

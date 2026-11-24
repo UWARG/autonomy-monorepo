@@ -9,6 +9,8 @@ Warnings are logged and sent to the GCS; the engine never changes flight mode.
 
 from __future__ import annotations
 
+import math
+
 import py_trees
 import rclpy.node
 from airside_interfaces.msg import Coordinate as CoordinateMsg
@@ -33,6 +35,8 @@ _TARGET_TOPIC = "position_controller/target"
 # Position or altitude older than this is treated as unknown; velocity older
 # than this is treated as zero.
 _TELEMETRY_STALE_S = 2.0
+# Repeat the fence warning to the GCS this often while the band is active.
+_GROUND_WARNING_INTERVAL_S = 5.0
 
 
 class FenceTelemetry:
@@ -208,8 +212,8 @@ class WarnNearFence(FenceTelemetry, py_trees.behaviour.Behaviour):
     Warns the pilot and ground while the drone is near the fence.
 
     Always returns FAILURE so the safety selector carries on to the mission:
-    warnings never stop the mission, only breaches do. The STATUSTEXT is sent
-    once per entry into the warning band rather than every tick.
+    warnings never stop the mission, only breaches do. Local logs follow each
+    change, while the STATUSTEXT repeats on a bounded interval while near.
     """
 
     def __init__(self, name: str = "WarnNearFence") -> None:
@@ -217,27 +221,41 @@ class WarnNearFence(FenceTelemetry, py_trees.behaviour.Behaviour):
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         super().setup(**kwargs)
-        self._warned_near = False
+        self._last_detail: str | None = None
+        self._last_ground_warning_s: float | None = None
 
     def update(self) -> py_trees.common.Status:
         fence = self._fence()
-        reading = self._position_and_velocity(self._now_s())
+        now_s = self._now_s()
+        reading = self._position_and_velocity(now_s)
         if fence is None or not self._commanding() or reading is None:
-            self._warned_near = False
+            self._last_detail = None
+            self._last_ground_warning_s = None
             return py_trees.common.Status.FAILURE
 
         position, velocity = reading
         if fence.near(position, velocity):
             clearance_m = fence.clearance_m(position)
-            self._node.get_logger().warning(
-                f"{self.name}: {clearance_m:.0f}m from the fence",
-                throttle_duration_sec=5.0,
+            time_to_breach_s = fence.time_to_breach_s(position, velocity)
+            eta = (
+                "not closing"
+                if math.isinf(time_to_breach_s)
+                else f"{time_to_breach_s:.0f}s to breach"
             )
-            if not self._warned_near:
-                send_to_ground(self._node, f"ENG: {clearance_m:.0f}m from fence")
-                self._warned_near = True
+            detail = f"{clearance_m:.0f}m from fence, {eta}"
+            if detail != self._last_detail:
+                self._node.get_logger().warning(f"{self.name}: {detail}")
+                self._last_detail = detail
+            if (
+                self._last_ground_warning_s is None
+                or now_s - self._last_ground_warning_s
+                >= _GROUND_WARNING_INTERVAL_S
+            ):
+                send_to_ground(self._node, f"ENG: {detail}")
+                self._last_ground_warning_s = now_s
         else:
-            self._warned_near = False
+            self._last_detail = None
+            self._last_ground_warning_s = None
         return py_trees.common.Status.FAILURE
 
 

@@ -29,8 +29,11 @@ RECOVERY_MARGIN_M = 75.0
 # Stay clear this long before handing control back to the mission.
 SAFE_HOLD_S = 2.0
 
-# Below this speed the drone counts as not closing on the fence.
+# Below this speed the drone counts as not closing on the fence. ETAs beyond
+# this horizon are hidden too: slow drift and velocity noise produce numbers
+# in the thousands of seconds that are not actionable.
 _MIN_SPEED_MPS = 0.1
+_MAX_ETA_S = 60.0
 
 
 class Fence:
@@ -69,7 +72,8 @@ class Fence:
         """
         Seconds until the fence is crossed at the current velocity.
 
-        Returns ``0.0`` when already outside and ``math.inf`` when stationary.
+        Returns ``0.0`` when already outside and ``math.inf`` when stationary,
+        too slow, or too far from crossing to give a useful ETA.
         """
         if not self.contains(position):
             return 0.0
@@ -85,7 +89,10 @@ class Fence:
             point.y + north_velocity / speed * self._ray_length_m,
         )
         hit = self._polygon.exterior.intersection(LineString([point, endpoint]))
-        return math.inf if hit.is_empty else point.distance(hit) / speed
+        if hit.is_empty:
+            return math.inf
+        eta_s = point.distance(hit) / speed
+        return eta_s if eta_s <= _MAX_ETA_S else math.inf
 
     def breached(self, position: Coordinate) -> bool:
         """True once the drone is actually outside the fence."""
