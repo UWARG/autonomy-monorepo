@@ -1,11 +1,12 @@
 import pytest
-from shapely.geometry import Polygon
+from shapely.geometry import LineString, MultiLineString, Point, Polygon
 from shapely.ops import unary_union
 
 from orthomosaic.decompose import (
     HORIZONTAL,
     VERTICAL,
     Cell,
+    _count_intervals,
     _decompose,
     _slice_count,
     decompose_polygon,
@@ -118,6 +119,53 @@ def test_slice_count_matches_expectations():
     polygon = Polygon(U_SHAPE)
     assert _slice_count(polygon, HORIZONTAL, 2.0) == 1
     assert _slice_count(polygon, HORIZONTAL, 6.0) == 2
+
+
+SLICE_COUNT_CASES = [
+    # touching collinear fragments describe one interval (issue #235)
+    (MultiLineString([[(1, 1), (0, 1)], [(1, 1), (1.75, 1)]]), 1),
+    # same for a vertical sweep
+    (MultiLineString([[(1, 1), (1, 0)], [(1, 1), (1, 1.75)]]), 1),
+    # overlapping fragments merge into one interval
+    (MultiLineString([[(0, 1), (4, 1)], [(2, 1), (6, 1)]]), 1),
+    # a genuine gap stays two intervals
+    (MultiLineString([[(0, 1), (2, 1)], [(5, 1), (8, 1)]]), 2),
+    # a ~1e-12 gap is genuine and must not be merged
+    (MultiLineString([[(0, 1), (1, 1)], [(1 + 1e-12, 1), (2, 1)]]), 2),
+    # a short but positive segment still counts
+    (LineString([(0, 1), (1e-13, 1)]), 1),
+    # point-only tangencies are ignored
+    (
+        unary_union(
+            [LineString([(0, 1), (2, 1)]), LineString([(3, 1), (5, 1)]), Point(2.5, 1)]
+        ),
+        2,
+    ),
+]
+
+
+@pytest.mark.parametrize("geometry,expected", SLICE_COUNT_CASES)
+def test_slice_count_merges_fragments_keeps_gaps(geometry, expected):
+    assert _count_intervals(geometry) == expected
+
+
+def test_issue_polygon_is_monotone_both_axes():
+    issue = Polygon([(0, 8), (2, 0), (1, 0), (1, 1), (0, 1)])
+    swapped = Polygon([(8, 0), (0, 2), (0, 1), (1, 1), (1, 0)])
+    assert _slice_count(issue, HORIZONTAL, 1.0) == 1
+    assert _slice_count(swapped, VERTICAL, 1.0) == 1
+    assert is_monotone(issue, HORIZONTAL)
+    assert is_monotone(swapped, VERTICAL)
+
+
+def test_issue_polygon_decomposes_both_axes():
+    issue = Polygon([(0, 8), (2, 0), (1, 0), (1, 1), (0, 1)])
+    swapped = Polygon([(8, 0), (0, 2), (0, 1), (1, 1), (1, 0)])
+    for polygon, axis in [(issue, HORIZONTAL), (swapped, VERTICAL)]:
+        cells = decompose_polygon(polygon, axis)
+        assert len(cells) == 1
+        union = unary_union([cell.polygon for cell in cells])
+        assert polygon.symmetric_difference(union).area < 1e-6
 
 
 def test_decompose_vertical_axis_rectangle():

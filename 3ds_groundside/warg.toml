@@ -1,4 +1,4 @@
-name = "3DS_Groundside"
+name = "3ds_groundside"
 description = "Groundside operator tooling for 3DS autonomy."
 
 depends_on = ["utils"]
