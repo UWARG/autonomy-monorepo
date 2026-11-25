@@ -1,6 +1,5 @@
 from setuptools import find_packages, setup
 
-
 package_name = "engine"
 
 
@@ -14,6 +13,7 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
+        (f"share/{package_name}/config", ["config/geofence.yaml"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

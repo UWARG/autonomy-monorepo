@@ -11,7 +11,11 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
+  <depend>engine</depend>
   <depend>mavros_msgs</depend>
+
+  <test_depend>builtin_interfaces</test_depend>
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

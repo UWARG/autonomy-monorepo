@@ -5,6 +5,7 @@ import collections
 import py_trees
 import rclpy.node
 from airside_interfaces.msg import Coordinate as CoordinateMsg
+
 from engine import blackboard_keys
 from engine.constants import SETPOINT_MIN_ALTITUDE_M
 from engine.ground_log import send_to_ground
@@ -48,6 +49,9 @@ class WaitForSetpoint(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             key=blackboard_keys.CURRENT_WAYPOINT, access=py_trees.common.Access.WRITE
         )
+        self.blackboard.register_key(
+            key=blackboard_keys.GEOFENCE, access=py_trees.common.Access.READ
+        )
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
@@ -66,6 +70,17 @@ class WaitForSetpoint(py_trees.behaviour.Behaviour):
         except ValueError as error:
             self._node.get_logger().error(f"{self.name}: rejected setpoint: {error}")
             send_to_ground(self._node, "ENG: setpoint rejected")
+            return
+
+        try:
+            fence = self.blackboard.get(blackboard_keys.GEOFENCE)
+        except KeyError:
+            fence = None
+        if fence is None or not fence.contains(setpoint):
+            self._node.get_logger().error(
+                f"{self.name}: rejected setpoint {setpoint}: outside the geofence"
+            )
+            send_to_ground(self._node, "ENG: setpoint outside fence")
             return
 
         self._pending.append(setpoint)

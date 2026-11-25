@@ -1,0 +1,19 @@
+# Geofence polygon, in order around the boundary. The east-edge notch makes
+# it concave. The fence is 2D, so `alt` is optional and ignored (defaults 0).
+vertices:
+  - lat: 43.438391
+    lon: -80.583781
+  - lat: 43.438391
+    lon: -80.571419
+  - lat: 43.436000
+    lon: -80.571419
+  - lat: 43.436000
+    lon: -80.575500
+  - lat: 43.434500
+    lon: -80.575500
+  - lat: 43.434500
+    lon: -80.571419
+  - lat: 43.429409
+    lon: -80.571419
+  - lat: 43.429409
+    lon: -80.583781

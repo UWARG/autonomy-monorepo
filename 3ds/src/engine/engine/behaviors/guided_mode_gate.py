@@ -9,9 +9,10 @@ import typing
 
 import py_trees
 import rclpy.node
+from mavros_msgs.msg import State
+
 from engine.constants import GUIDED_MODE, LAND_MODE
 from engine.ground_log import send_to_ground
-from mavros_msgs.msg import State
 
 _STATE_TOPIC = "mavros/state"
 
@@ -26,13 +27,27 @@ class PauseUnlessGuided(py_trees.decorators.Decorator):
     The engine never changes flight mode itself: the pilot selects GUIDED to
     hand over control and any other mode to take it back. While paused the
     child is not ticked, so nothing is commanded and its progress is kept;
-    switching back to GUIDED resumes the mission where it left off.
+    switching back to GUIDED resumes the mission where it left off. The same
+    applies when the safety supervisor preempts the mission: it is left
+    running underneath so it continues from the node it was on.
     """
 
     def __init__(
         self, child: py_trees.behaviour.Behaviour, name: str = "PauseUnlessGuided"
     ) -> None:
         super().__init__(name=name, child=child)
+
+    def stop(
+        self, new_status: py_trees.common.Status = py_trees.common.Status.INVALID
+    ) -> None:
+        if new_status == py_trees.common.Status.INVALID:
+            # Preempted by a higher-priority branch (the safety supervisor).
+            # Leave the mission running so it resumes where it left off
+            # instead of restarting from its first node.
+            self.terminate(new_status)
+            self.status = new_status
+            return
+        super().stop(new_status)
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]

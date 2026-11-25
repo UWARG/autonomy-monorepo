@@ -13,11 +13,14 @@ UNICODE_TREE_DEBUG = False
 
 # MAVLink message IDs the engine needs streamed from the FCU.
 MAVLINK_MSG_ID_GLOBAL_POSITION_INT = 33
+MAVLINK_MSG_ID_LOCAL_POSITION_NED = 32
 MAVLINK_MSG_ID_HOME_POSITION = 242
 
 # Per-message stream rates requested from ArduPilot (message ID -> Hz).
 STREAM_RATE_REQUESTS_HZ = {
     MAVLINK_MSG_ID_GLOBAL_POSITION_INT: 10.0,
+    # Local velocity feeds the fence's time-to-breach estimate.
+    MAVLINK_MSG_ID_LOCAL_POSITION_NED: 10.0,
     # Streamed so the launch point can be read after arming; MAVROS's
     # home_position/req_update service does not return.
     MAVLINK_MSG_ID_HOME_POSITION: 1.0,

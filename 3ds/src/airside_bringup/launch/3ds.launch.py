@@ -1,7 +1,12 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration
+from launch.substitutions import (
+    EnvironmentVariable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+)
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -13,6 +18,13 @@ def generate_launch_description() -> LaunchDescription:
                     "FCU_URL", default_value="serial:///dev/serial0:115200"
                 ),
                 description="MAVROS connection URL to ArduPilot",
+            ),
+            DeclareLaunchArgument(
+                "geofence_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("engine"), "config", "geofence.yaml"]
+                ),
+                description="Shared geofence config for the engine and position controller",
             ),
             Node(
                 package="mavros",
@@ -70,12 +82,14 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
+                parameters=[{"geofence_file": LaunchConfiguration("geofence_file")}],
             ),
             Node(
                 package="engine",
                 executable="manager",
                 name="engine_manager",
                 output="both",
+                parameters=[{"geofence_file": LaunchConfiguration("geofence_file")}],
             ),
         ]
     )

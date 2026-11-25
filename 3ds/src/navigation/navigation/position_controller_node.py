@@ -12,7 +12,11 @@ from __future__ import annotations
 import rclpy
 import rclpy.node
 from airside_interfaces.msg import Coordinate
+from engine.fence import Fence
 from mavros_msgs.msg import GlobalPositionTarget
+
+from utils.src.types import Coordinate as GeoCoordinate
+from utils.src.waypoint_utils import parse_geofence_file
 
 
 class PositionController(rclpy.node.Node):
@@ -39,6 +43,18 @@ class PositionController(rclpy.node.Node):
     def __init__(self) -> None:
         super().__init__("position_controller")
 
+        # The launch file passes the same path to the engine. Fail closed if
+        # the fence cannot be loaded, so no target can escape it.
+        self.declare_parameter("geofence_file", "")
+        path = self.get_parameter("geofence_file").get_parameter_value().string_value
+        try:
+            self._fence = Fence(parse_geofence_file(path))
+        except (OSError, ValueError) as error:
+            self.get_logger().error(
+                f"geofence unavailable at '{path}' ({error}) - rejecting all targets"
+            )
+            self._fence = None
+
         self._setpoint_pub = self.create_publisher(
             msg_type=GlobalPositionTarget,
             topic=self.SETPOINT_TOPIC,
@@ -57,6 +73,15 @@ class PositionController(rclpy.node.Node):
         )
 
     def _target_callback(self, target: Coordinate) -> None:
+        if self._fence is None or not self._fence.contains(
+            GeoCoordinate(lat=target.lat, lon=target.lon, alt=target.alt)
+        ):
+            self.get_logger().error(
+                f"Rejected position target outside the geofence: {target}",
+                throttle_duration_sec=5.0,
+            )
+            return
+
         setpoint = GlobalPositionTarget()
         setpoint.header.stamp = self.get_clock().now().to_msg()
         setpoint.coordinate_frame = GlobalPositionTarget.FRAME_GLOBAL_REL_ALT
