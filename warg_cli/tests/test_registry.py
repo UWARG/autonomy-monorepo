@@ -97,6 +97,90 @@ pr = ["missing"]
         Registry(tmp_path)
 
 
+def test_parses_startup_commands(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    write_registry(tmp_path, {"a": "a"})
+    write_manifest(
+        tmp_path,
+        "a",
+        """
+name = "a"
+
+[commands]
+run = "echo run"
+
+[startup]
+commands = ["run", "run"]
+restart = "always"
+""",
+    )
+
+    startup = Registry(tmp_path).get("a").startup
+
+    assert startup.commands == ("run",)
+    assert startup.restart == "always"
+
+
+def test_repeated_list_entries_are_deduplicated(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ROOT_REGISTRY_FILENAME).write_text(
+        'include_paths = [".github", ".github"]\n\n'
+        '[projects.a]\npath = "a"\nextra_paths = ["shared", "shared"]\n\n'
+        '[projects.b]\npath = "b"\n'
+    )
+    write_manifest(tmp_path, "b", 'name = "b"\n')
+    write_manifest(
+        tmp_path,
+        "a",
+        """
+name = "a"
+depends_on = ["b", "b"]
+
+[commands]
+test = "echo test"
+
+[ci]
+pr = ["test", "test"]
+""",
+    )
+
+    registry = Registry(tmp_path)
+
+    assert registry.include_paths == (".github",)
+    assert registry.entries["a"].extra_paths == ("shared",)
+    assert registry.get("a").depends_on == ("b",)
+    assert registry.get("a").ci == {"pr": ("test",)}
+
+
+def test_startup_defaults_to_no_commands(fixture_repo: Path) -> None:
+    startup = Registry(fixture_repo).get("camera").startup
+
+    assert startup.commands == ()
+    assert startup.restart == "on-failure"
+
+
+@pytest.mark.parametrize(
+    ("startup", "message"),
+    [
+        ('commands = ["missing"]', "references missing command 'missing'"),
+        ('commands = "run"', "must be a list of command names"),
+        ('commands = ["run"]\nrestart = "sometimes"', "restart must be one of"),
+        ('command = ["run"]', "unknown \\[startup\\] key\\(s\\): command"),
+    ],
+)
+def test_rejects_invalid_startup(tmp_path: Path, startup: str, message: str) -> None:
+    (tmp_path / ".git").mkdir()
+    write_registry(tmp_path, {"a": "a"})
+    write_manifest(
+        tmp_path,
+        "a",
+        f'name = "a"\n\n[commands]\nrun = "echo run"\n\n[startup]\n{startup}\n',
+    )
+
+    with pytest.raises(ManifestError, match=message):
+        Registry(tmp_path)
+
+
 def write_registry(root: Path, projects: dict[str, str]) -> None:
     lines = []
     for name, path in projects.items():
