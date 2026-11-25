@@ -11,7 +11,7 @@
 
 "sitl-plus":
   - changed-files:
-      - any-glob-to-any-file: "SITL-Plus/**"
+      - any-glob-to-any-file: "sitl-plus/**"
 
 "gnc":
   - changed-files:
