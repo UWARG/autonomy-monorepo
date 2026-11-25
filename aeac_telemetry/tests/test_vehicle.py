@@ -136,3 +136,36 @@ def test_pilot_mode_from_heartbeat() -> None:
     vehicle.handle(heartbeat(custom_mode=LOITER), 10.0)
 
     assert vehicle.packet("WARG-01", 10.0)["mode"] == "armed-pilot"
+
+
+def sys_status(percent: int):
+    # SYS_STATUS just include pin percentage (all other field is 0)
+    return mavlink.MAVLink_sys_status_message(0, 0, 0, 0, 0, 0, percent, 0, 0, 0, 0, 0, 0)
+
+
+def test_battery_updates() -> None:
+    # battery from 87% to 42% => server has to appear 42
+    vehicle = flying_vehicle()
+    vehicle.handle(sys_status(42), 11.0)
+    assert vehicle.packet("WARG-01", 11.5)["batteryPercentage"] == 42.0
+
+
+def test_battery_unknown_keeps_last_value() -> None:
+    # drone shows -1 (don't know) => keep 87, not send -1
+    vehicle = flying_vehicle()
+    vehicle.handle(sys_status(-1), 11.0)
+    assert vehicle.packet("WARG-01", 11.5)["batteryPercentage"] == 87.0
+
+
+def test_battery_before_any_sys_status() -> None:
+    # Don't have any information for battery => send 0
+    vehicle = VehicleState()
+    vehicle.handle(heartbeat(), 10.0)
+    assert vehicle.packet("WARG-01", 10.5)["batteryPercentage"] == 0.0
+
+
+def test_battery_kept_after_sys_status_stops() -> None:
+    # battery don't change for a long time => just keep 87
+    vehicle = flying_vehicle()
+    vehicle.handle(heartbeat(), 30.0)
+    assert vehicle.packet("WARG-01", 30.5)["batteryPercentage"] == 87.0
