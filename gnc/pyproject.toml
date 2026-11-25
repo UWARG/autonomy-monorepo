@@ -5,7 +5,7 @@ description = "WARG autonomy airside Guidance, Navigation, and Control module"
 readme = { file = "README.md", content-type = "text/markdown" }
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ["utils", "shapely>=1.7.0"]
 
 [project.urls]

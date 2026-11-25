@@ -14,7 +14,6 @@ setup(
             [f"resource/{package_name}"],
         ),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/launch", ["launch/engine.launch.py"]),
         (
             f"share/{package_name}/config",
             ["config/waypoints.yaml", "config/landing_pads.yaml"],
@@ -24,7 +23,7 @@ setup(
     zip_safe=True,
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="Behavior tree manager for airside autonomy projects.",
+    description="Behavior-tree mission manager and its support nodes.",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
