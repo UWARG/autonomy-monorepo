@@ -7,8 +7,8 @@
 # The sitl-test service is the pass/fail authority. It exits non-zero if MAVROS
 # never connects or any mission phase times out.
 x-sitl-home: &sitl-home
-  SITL_HOME_LAT: ${SITL_HOME_LAT:--35.363261}
-  SITL_HOME_LON: ${SITL_HOME_LON:-149.165230}
+  SITL_HOME_LAT: ${SITL_HOME_LAT:-43.4339}
+  SITL_HOME_LON: ${SITL_HOME_LON:--80.5776}
 
 services:
   sitl:

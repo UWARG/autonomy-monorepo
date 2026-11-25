@@ -44,19 +44,20 @@ def create_root() -> py_trees.behaviour.Behaviour:
     Root [Sequence]
     ├── ConfigureStreamRates
     ├── LoadGeofence
-    ├── Geofence
-    └── SafetySupervisor [Selector]
-        ├── FenceBreach [Sequence]
-        │   ├── CheckFenceBreach
-        │   └── RecoverIntoGeofence
-        ├── WarnNearFence
-        └── PauseUnlessGuided
-            └── Mission [Sequence]
-                ├── RecordLaunchPoint
-                ├── Takeoff
-                ├── UntilGoHome (setpoints subtree)
-                ├── LandPhase
-                └── MissionComplete [Running]
+    └── SafetyAndGeofence [Parallel SuccessOnOne]
+        ├── Geofence (background upload)
+        └── SafetySupervisor [Selector]
+            ├── FenceBreach [Sequence]
+            │   ├── CheckFenceBreach
+            │   └── RecoverIntoGeofence
+            ├── WarnNearFence
+            └── PauseUnlessGuided
+                └── Mission [Sequence]
+                    ├── RecordLaunchPoint
+                    ├── Takeoff
+                    ├── UntilGoHome (setpoints subtree)
+                    ├── LandPhase
+                    └── MissionComplete [Running]
     ```
     """
 
@@ -82,14 +83,19 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
+    safety_and_geofence = py_trees.composites.Parallel(
+        name="SafetyAndGeofence",
+        policy=py_trees.common.ParallelPolicy.SuccessOnOne(),
+        children=[Geofence(), safety_supervisor],
+    )
+
     return py_trees.composites.Sequence(
         name="Root",
         memory=True,
         children=[
             ConfigureStreamRates(),
             LoadGeofence(),
-            Geofence(),
-            safety_supervisor,
+            safety_and_geofence,
         ],
     )
 

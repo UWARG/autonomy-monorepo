@@ -7,6 +7,7 @@ from airside_interfaces.msg import Coordinate as CoordinateMsg
 from builtin_interfaces.msg import Time
 from engine import blackboard_keys
 from engine.behaviors.commands.wait_for_setpoint import WaitForSetpoint
+from engine.behaviors.geofence import Geofence
 from engine.behaviors.guided_mode_gate import PauseUnlessGuided
 from engine.behaviors.safety_supervisor import (
     CheckFenceBreach,
@@ -350,3 +351,33 @@ def test_safety_preemption_preserves_mission_progress():
     tick(tree)
     assert mission.ticks == 2
     assert gate.status == py_trees.common.Status.RUNNING
+
+
+def test_geofence_upload_does_not_block_mission(fence):
+    class _Client:
+        def __init__(self):
+            self.calls = 0
+
+        def service_is_ready(self):
+            return True
+
+        def call_async(self, request):
+            self.calls += 1
+            return types.SimpleNamespace(
+                done=lambda: True,
+                result=lambda: types.SimpleNamespace(success=False),
+            )
+
+    client = _Client()
+    node = _Node()
+    node.create_client = lambda *args, **kwargs: client
+    geofence = Geofence()
+    geofence.setup(node=node)
+    geofence.initialise()
+
+    for _ in range(3):
+        for _ in geofence.tick():
+            pass
+        assert geofence.status == py_trees.common.Status.RUNNING
+
+    assert client.calls == 1

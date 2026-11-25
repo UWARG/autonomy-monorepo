@@ -66,7 +66,15 @@ class LoadGeofence(py_trees.behaviour.Behaviour):
 
 
 class Geofence(py_trees.behaviour.Behaviour):
-    """Uploads the configured fence polygon to ArduPilot via MAVROS."""
+    """
+    Uploads the configured fence polygon to ArduPilot via MAVROS in the
+    background.
+
+    The upload can take many seconds while MAVROS finishes its parameter
+    fetch, so this behaviour never returns SUCCESS or FAILURE: it always runs
+    alongside the mission and only reports the outcome in the log. The ROS
+    supervisor remains the source of truth for fence enforcement.
+    """
 
     def __init__(self, name: str = "Geofence") -> None:
         super().__init__(name=name)
@@ -119,32 +127,40 @@ class Geofence(py_trees.behaviour.Behaviour):
         Called each time this behavior transitions from IDLE to RUNNING.
         """
         self.upload_future = None
+        self._upload_reported = False
 
     def update(self) -> py_trees.common.Status:
         """
-        Called on every tick while RUNNING.
+        Called on every tick while RUNNING. Never blocks the mission: the
+        upload runs asynchronously and its outcome is only logged once.
         """
-        try:
-            fence = self.blackboard.get(blackboard_keys.GEOFENCE)
-        except KeyError:
-            self._node.get_logger().error(f"{self.name}: no geofence loaded")
-            return py_trees.common.Status.FAILURE
+        if not self._upload_reported:
+            try:
+                fence = self.blackboard.get(blackboard_keys.GEOFENCE)
+            except KeyError:
+                self._node.get_logger().error(f"{self.name}: no geofence loaded")
+                self._upload_reported = True
+                return py_trees.common.Status.RUNNING
 
-        if not self.push_client.service_is_ready():
-            return py_trees.common.Status.RUNNING
+            if not self.push_client.service_is_ready():
+                return py_trees.common.Status.RUNNING
 
-        if self.upload_future is None:
-            self.upload_future = self.upload_geofence(
-                [(vertex.lat, vertex.lon) for vertex in fence.vertices]
-            )
-            return py_trees.common.Status.RUNNING
+            if self.upload_future is None:
+                self.upload_future = self.upload_geofence(
+                    [(vertex.lat, vertex.lon) for vertex in fence.vertices]
+                )
+                return py_trees.common.Status.RUNNING
 
-        if not self.upload_future.done():
-            return py_trees.common.Status.RUNNING
+            if self.upload_future.done():
+                response = self.upload_future.result()
+                if response and response.success:
+                    self._node.get_logger().info(
+                        f"{self.name}: uploaded {len(fence.vertices)} fence vertices"
+                    )
+                else:
+                    self._node.get_logger().error(
+                        f"{self.name}: failed to upload geofence waypoints"
+                    )
+                self._upload_reported = True
 
-        response = self.upload_future.result()
-        if response and response.success:
-            return py_trees.common.Status.SUCCESS
-
-        self._node.get_logger().error("Failed to upload geofence waypoints")
-        return py_trees.common.Status.FAILURE
+        return py_trees.common.Status.RUNNING
