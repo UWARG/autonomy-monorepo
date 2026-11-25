@@ -80,6 +80,7 @@ services:
       - -p
       - no:cacheprovider
       - --ignore=src/engine/test/sitl_mission_test.py
-      - src/engine/test/test_setpoints.py
+      - src/engine/test
+      - src/navigation/test
       - src/camera/test/test_photo_log.py
     restart: "no"
