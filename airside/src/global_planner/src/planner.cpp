@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 #include <octomap_msgs/conversions.h>
 #include "planner.hpp"
 
@@ -32,10 +33,11 @@ namespace GlobalPlanner{
 
         octomap_sub_ = this->create_subscription<octomap_msgs::msg::Octomap>("/rtabmap/octomap_binary", reliable_qos, std::bind(&PlannerNode::octomapCallback, this, std::placeholders::_1));
         goal_sub_ = this->create_subscription<airside_interfaces::msg::Waypoint>("/position_controller/goal", reliable_qos, std::bind(&PlannerNode::goalCallback, this, std::placeholders::_1));
-        pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/mavros/local_position/pose", besteffort_qos, std::bind(&PlannerNode::poseCallback, this, std::placeholders::_1));
+        gps_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>("/mavros/global_position/global", besteffort_qos, std::bind(&PlannerNode::gpsCallback, this, std::placeholders::_1));
+        rel_alt_sub_ = this->create_subscription<std_msgs::msg::Float64>("/mavros/global_position/rel_alt", besteffort_qos, std::bind(&PlannerNode::relAltCallback, this, std::placeholders::_1));
         state_sub_ = this->create_subscription<mavros_msgs::msg::State>("/mavros/state", reliable_qos, std::bind(&PlannerNode::stateCallback, this, std::placeholders::_1));
 
-        setpoint_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/mavros/setpoint_position/local", reliable_qos);
+        setpoint_pub_ = this->create_publisher<mavros_msgs::msg::GlobalPositionTarget>("/mavros/setpoint_raw/global", reliable_qos);
 
         auto transient_qos = rclcpp::QoS(1).reliable().transient_local();
         path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/global_planner/path", transient_qos);
@@ -48,9 +50,44 @@ namespace GlobalPlanner{
         RCLCPP_INFO(this->get_logger(), "GlobalPlanner node initialized.");
     }
 
-    void PlannerNode::poseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr msg){
-        current_pose_ = *msg;
-        has_pose_ = true;
+    void PlannerNode::gpsCallback(const sensor_msgs::msg::NavSatFix::SharedPtr msg){
+        if(msg->status.status < sensor_msgs::msg::NavSatStatus::STATUS_FIX || !std::isfinite(msg->latitude) || !std::isfinite(msg->longitude) || !std::isfinite(msg->altitude)){
+            has_gps_ = false;
+            return;
+        }
+
+        current_gps_ = *msg;
+        has_gps_ = true;
+
+        if(!has_valid_origin_ && has_rel_alt_){
+            origin_lat_deg_ = msg->latitude;
+            origin_lon_deg_ = msg->longitude;
+            origin_rel_alt_m_ = current_rel_alt_m_;
+            has_valid_origin_ = true;
+            RCLCPP_INFO(this->get_logger(), "GPS planning origin set: lat=%.7f lon=%.7f rel_alt=%.2f", origin_lat_deg_, origin_lon_deg_, origin_rel_alt_m_);
+            if(has_goal_ && has_map_)
+                planPath();
+        }
+    }
+
+    void PlannerNode::relAltCallback(const std_msgs::msg::Float64::SharedPtr msg){
+        if(!std::isfinite(msg->data)){
+            has_rel_alt_ = false;
+            return;
+        }
+
+        current_rel_alt_m_ = msg->data;
+        has_rel_alt_ = true;
+
+        if(!has_valid_origin_ && has_gps_){
+            origin_lat_deg_ = current_gps_.latitude;
+            origin_lon_deg_ = current_gps_.longitude;
+            origin_rel_alt_m_ = current_rel_alt_m_;
+            has_valid_origin_ = true;
+            RCLCPP_INFO(this->get_logger(), "GPS planning origin set: lat=%.7f lon=%.7f rel_alt=%.2f", origin_lat_deg_, origin_lon_deg_, origin_rel_alt_m_);
+            if(has_goal_ && has_map_)
+                planPath();
+        }
     }
 
     void PlannerNode::stateCallback(const mavros_msgs::msg::State::SharedPtr msg){
@@ -58,12 +95,22 @@ namespace GlobalPlanner{
     }
 
     void PlannerNode::goalCallback(const airside_interfaces::msg::Waypoint::SharedPtr msg){
-        goal_local_ = octomap::point3d(static_cast<float>(msg->pose.position.x), static_cast<float>(msg->pose.position.y), static_cast<float>(msg->pose.position.z));
+        goal_lat_deg_ = msg->pose.position.x;
+        goal_lon_deg_ = msg->pose.position.y;
+        goal_rel_alt_m_ = msg->pose.position.z;
+
+        if(!std::isfinite(goal_lat_deg_) || !std::isfinite(goal_lon_deg_) ||
+           !std::isfinite(goal_rel_alt_m_) ||
+           goal_lat_deg_ < -90.0 || goal_lat_deg_ > 90.0 ||
+           goal_lon_deg_ < -180.0 || goal_lon_deg_ > 180.0){RCLCPP_WARN(this->get_logger(), "Rejected invalid GPS goal.");
+            return;
+        }
+
         has_goal_ = true;
 
-        RCLCPP_INFO(this->get_logger(), "New goal received: (%.2f, %.2f, %.2f)", goal_local_.x(), goal_local_.y(), goal_local_.z());
+        RCLCPP_INFO(this->get_logger(), "New GPS goal received: lat=%.7f lon=%.7f rel_alt=%.2f", goal_lat_deg_, goal_lon_deg_, goal_rel_alt_m_);
 
-        if(has_pose_ && has_map_){
+        if(has_gps_ && has_rel_alt_ && has_valid_origin_ && has_map_){
             planPath();
         }
     }
@@ -90,12 +137,13 @@ namespace GlobalPlanner{
             planPath();
         }
 
-        if(has_goal_ && has_pose_ && current_path_.empty())
+        if(has_goal_ && has_gps_ && has_rel_alt_ && has_valid_origin_ && current_path_.empty())
             planPath();
     }
 
     void PlannerNode::planPath(){
         const octomap::point3d start = currentPosAsPoint();
+        goal_local_ = gpsToLocal(goal_lat_deg_, goal_lon_deg_, goal_rel_alt_m_);
 
         RCLCPP_INFO(this->get_logger(),
             "Planning from (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)", start.x(), start.y(), start.z(), goal_local_.x(), goal_local_.y(), goal_local_.z());
@@ -117,10 +165,15 @@ namespace GlobalPlanner{
     }
 
     void PlannerNode::setpointTimerCallback(){
-        if(!has_pose_)
+        if(!has_gps_ || !has_rel_alt_ || !has_valid_origin_)
             return;
 
         const octomap::point3d current_pt = currentPosAsPoint();
+
+        if(!mavros_state_.armed || mavros_state_.mode != "GUIDED"){
+            publishSetpoint(current_pt);
+            return;
+        }
 
         if(current_path_.empty()){
             publishSetpoint(current_pt);
@@ -145,7 +198,7 @@ namespace GlobalPlanner{
     }
 
     void PlannerNode::replanTimerCallback(){
-        if(current_path_.empty() || !has_pose_ || !has_map_)
+        if(current_path_.empty() || !has_gps_ || !has_rel_alt_ || !has_valid_origin_ || !has_map_)
             return;
 
         const double elapsed = (this->now() - last_plan_time_).seconds();
@@ -184,13 +237,26 @@ namespace GlobalPlanner{
     }
 
     void PlannerNode::publishSetpoint(const octomap::point3d & target){
-        geometry_msgs::msg::PoseStamped sp;
-        sp.header.stamp= this->now();
-        sp.header.frame_id = "map";
-        sp.pose.position.x = target.x();
-        sp.pose.position.y = target.y();
-        sp.pose.position.z = target.z();
-        sp.pose.orientation.w = 1.0;
+        double lat_deg = 0.0;
+        double lon_deg = 0.0;
+        double rel_alt_m = 0.0;
+        localToGps(target, lat_deg, lon_deg, rel_alt_m);
+
+        mavros_msgs::msg::GlobalPositionTarget sp;
+        sp.header.stamp = this->now();
+        sp.coordinate_frame = mavros_msgs::msg::GlobalPositionTarget::FRAME_GLOBAL_REL_ALT;
+        sp.type_mask =
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_VX |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_VY |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_VZ |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_AFX |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_AFY |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_AFZ |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_YAW |
+            mavros_msgs::msg::GlobalPositionTarget::IGNORE_YAW_RATE;
+        sp.latitude = lat_deg;
+        sp.longitude = lon_deg;
+        sp.altitude = rel_alt_m;
         setpoint_pub_->publish(sp);
     }
 
@@ -211,7 +277,57 @@ namespace GlobalPlanner{
     }
 
     octomap::point3d PlannerNode::currentPosAsPoint() const{
-        return octomap::point3d(static_cast<float>(current_pose_.pose.position.x), static_cast<float>(current_pose_.pose.position.y), static_cast<float>(current_pose_.pose.position.z));
+        constexpr double earth_radius_m = 6371008.8;
+        constexpr double deg_to_rad = M_PI / 180.0;
+
+        const double mean_lat_deg = (origin_lat_deg_ + current_gps_.latitude) * 0.5;
+        const double east_m = (current_gps_.longitude - origin_lon_deg_) * deg_to_rad * std::cos(mean_lat_deg * deg_to_rad) * earth_radius_m;
+        const double north_m = (current_gps_.latitude - origin_lat_deg_) * deg_to_rad * earth_radius_m;
+        const double up_m = current_rel_alt_m_ - origin_rel_alt_m_;
+
+        return octomap::point3d(static_cast<float>(east_m), static_cast<float>(north_m), static_cast<float>(up_m));
+    }
+
+    octomap::point3d PlannerNode::gpsToLocal(
+        double lat_deg,
+        double lon_deg,
+        double rel_alt_m
+    ) const {
+        constexpr double earth_radius_m = 6371008.8;
+        constexpr double deg_to_rad = M_PI / 180.0;
+
+        const double mean_lat_deg = (origin_lat_deg_ + lat_deg) * 0.5;
+        const double east_m =
+            (lon_deg - origin_lon_deg_) * deg_to_rad *
+            std::cos(mean_lat_deg * deg_to_rad) * earth_radius_m;
+        const double north_m =
+            (lat_deg - origin_lat_deg_) * deg_to_rad * earth_radius_m;
+        const double up_m = rel_alt_m - origin_rel_alt_m_;
+
+        return octomap::point3d(
+            static_cast<float>(east_m),
+            static_cast<float>(north_m),
+            static_cast<float>(up_m));
+    }
+
+    void PlannerNode::localToGps(
+        const octomap::point3d & local,
+        double & lat_deg,
+        double & lon_deg,
+        double & rel_alt_m
+    ) const {
+        constexpr double earth_radius_m = 6371008.8;
+        constexpr double rad_to_deg = 180.0 / M_PI;
+
+        lat_deg = origin_lat_deg_ +
+            (static_cast<double>(local.y()) / earth_radius_m) * rad_to_deg;
+        const double mean_lat_deg =
+            (origin_lat_deg_ + lat_deg) * 0.5;
+        lon_deg = origin_lon_deg_ +
+            (static_cast<double>(local.x()) /
+             (std::cos(mean_lat_deg * M_PI / 180.0) * earth_radius_m)) *
+            rad_to_deg;
+        rel_alt_m = origin_rel_alt_m_ + static_cast<double>(local.z());
     }
 }
 

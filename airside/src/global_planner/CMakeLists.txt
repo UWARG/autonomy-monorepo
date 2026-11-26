@@ -13,6 +13,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(octomap_msgs REQUIRED)
 find_package(mavros_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(octomap REQUIRED)
 
@@ -31,6 +32,7 @@ ament_target_dependencies(global_planner_lib
   nav_msgs
   octomap_msgs
   mavros_msgs
+  sensor_msgs
   std_msgs
   airside_interfaces
   octomap
@@ -50,6 +52,7 @@ ament_target_dependencies(global_planner_node
   nav_msgs
   octomap_msgs
   mavros_msgs
+  sensor_msgs
   std_msgs
   airside_interfaces
   octomap
@@ -95,6 +98,7 @@ ament_export_dependencies(
   nav_msgs
   octomap_msgs
   mavros_msgs
+  sensor_msgs
   std_msgs
   octomap
 )
