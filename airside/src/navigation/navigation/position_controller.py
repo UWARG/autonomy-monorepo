@@ -9,7 +9,8 @@ import time
 
 import rclpy
 import rclpy.node
-from airside_interfaces.msg import PositionTarget
+from airside_interfaces.msg import Coordinate as CoordinateMsg
+from airside_interfaces.msg import PositionTarget, WaypointAdjustment
 from airside_interfaces.msg import TrafficSnapshot
 from mavros_msgs.msg import GlobalPositionTarget, State, StatusText
 from obstacle_avoidance import (
@@ -22,6 +23,7 @@ from obstacle_avoidance import (
     live_traffic_buffer_m,
 )
 from obstacle_avoidance.boundary import FlightBoundary
+from obstacle_avoidance.waypoint_relocation import outward_replacement
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from std_msgs.msg import Float64, String
@@ -55,6 +57,7 @@ class PositionController(rclpy.node.Node):
     REL_ALT_TOPIC = "mavros/global_position/rel_alt"
     POSITION_SETPOINT_TOPIC = "mavros/setpoint_raw/global"
     AVOIDANCE_STATUS_TOPIC = "position_controller/avoidance_status"
+    WAYPOINT_ADJUSTMENT_TOPIC = "position_controller/waypoint_adjustment"
     PILOT_ALERT_TOPIC = "mavros/statustext/send"
     GUIDED_MODE = "GUIDED"
     CONTROL_RATE_HZ = 10.0
@@ -93,6 +96,10 @@ class PositionController(rclpy.node.Node):
         self._target: Coordinate | None = None
         self._path: list[Coordinate] = []
         self._target_index = 0
+        self._leg_id = 0
+        self._route_index = 0
+        self._route_vertices: tuple[Coordinate, ...] = ()
+        self._last_adjustment_attempt_sequence = 0
         self._spline: SplinePath | None = None
         self._spline_key: tuple | None = None
         self._aim_arc_m = 0.0
@@ -137,6 +144,9 @@ class PositionController(rclpy.node.Node):
         self._status_pub = self.create_publisher(
             String, self.AVOIDANCE_STATUS_TOPIC, 10
         )
+        self._adjustment_pub = self.create_publisher(
+            WaypointAdjustment, self.WAYPOINT_ADJUSTMENT_TOPIC, 10
+        )
         self._pilot_alert_pub = self.create_publisher(
             StatusText, self.PILOT_ALERT_TOPIC, 10
         )
@@ -165,8 +175,15 @@ class PositionController(rclpy.node.Node):
 
     def _target_callback(self, msg: PositionTarget) -> None:
         target = Coordinate(msg.target.lat, msg.target.lon, msg.target.alt)
-        if target != self._target:
+        if target != self._target or msg.leg_id != self._leg_id:
             self._reset_progress()
+        if msg.leg_id != self._leg_id:
+            self._last_adjustment_attempt_sequence = 0
+        self._leg_id = msg.leg_id
+        self._route_index = msg.route_index
+        self._route_vertices = tuple(
+            Coordinate(point.lat, point.lon, point.alt) for point in msg.route_vertices
+        )
         self._target = target
         self._path = [Coordinate(point.lat, point.lon, point.alt) for point in msg.path]
         self._target_index = (
@@ -368,6 +385,14 @@ class PositionController(rclpy.node.Node):
             )
         if plan.status is not PlanStatus.PATH_FOUND or plan.next_waypoint is None:
             reason = plan.reason or "NO_PATH"
+            substituted = (
+                0 <= self._route_index < len(self._route_vertices)
+                and self._target != self._route_vertices[self._route_index]
+            )
+            if reason == "WAYPOINT_IN_TRAFFIC_BUFFER" or (
+                substituted and reason in {"BLOCKED", "AIM_IN_TRAFFIC_BUFFER"}
+            ):
+                self._propose_replacement(position, traffic_age_s)
             if self._tried_headings_rad and reason == "BLOCKED":
                 reason = "STUCK_NO_SAFE_ALTERNATE"
             return self._hold(position, reason, now_s)
@@ -390,6 +415,51 @@ class PositionController(rclpy.node.Node):
         self._hold_reason = None
         self._report_status(now_s, "PATH_FOUND", plan.minimum_clearance_m)
         return next_setpoint
+
+    def _propose_replacement(self, position: Coordinate, traffic_age_s: float) -> None:
+        if (
+            self._boundary is None
+            or self._leg_id == 0
+            or self._traffic_sequence == 0
+            or self._traffic_sequence <= self._last_adjustment_attempt_sequence
+            or not 0 <= self._route_index < len(self._route_vertices)
+        ):
+            return
+        self._last_adjustment_attempt_sequence = self._traffic_sequence
+        original = self._route_vertices[self._route_index]
+        current = self._target
+        if current is None:
+            return
+        current_e, current_n = east_north_coordinate_offset_m(
+            original.lat, original.lon, current.lat, current.lon
+        )
+        shift_m = math.hypot(current_e, current_n)
+        replacement = outward_replacement(
+            position=position,
+            original=original,
+            route=self._route_vertices,
+            route_index=self._route_index,
+            traffic=self._traffic_aircraft,
+            age_s=traffic_age_s,
+            boundary=self._boundary,
+            avoider=self._avoider,
+            min_shift_m=shift_m,
+        )
+        if replacement is None:
+            return
+        self._adjustment_pub.publish(
+            WaypointAdjustment(
+                leg_id=self._leg_id,
+                route_index=self._route_index,
+                original=CoordinateMsg(
+                    lat=original.lat, lon=original.lon, alt=original.alt
+                ),
+                replacement=CoordinateMsg(
+                    lat=replacement.lat, lon=replacement.lon, alt=replacement.alt
+                ),
+                traffic_sequence=self._traffic_sequence,
+            )
+        )
 
     def _aim_point(self, position: Coordinate) -> Coordinate:
         """

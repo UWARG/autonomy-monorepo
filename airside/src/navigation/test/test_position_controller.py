@@ -3,6 +3,7 @@
 import json
 import math
 import time
+from unittest.mock import Mock
 
 import pytest
 import rclpy
@@ -189,6 +190,42 @@ def test_blocked_required_waypoint_holds_without_skipping(controller) -> None:
 
     assert controller._next_setpoint(NOW) == HERE
     assert controller._hold_reason == "WAYPOINT_IN_TRAFFIC_BUFFER"
+
+
+def test_blocked_lap_waypoint_proposes_one_outward_replacement(controller) -> None:
+    route = [
+        enu_to_coordinate(HERE, east, north, 10.0)
+        for east, north in ((10, 10), (10, -10), (-10, -10), (-10, 10))
+    ]
+    original = route[0]
+    controller._target_callback(
+        PositionTarget(
+            target=CoordinateMsg(lat=original.lat, lon=original.lon, alt=10.0),
+            path=[CoordinateMsg(lat=original.lat, lon=original.lon, alt=10.0)],
+            target_index=0,
+            leg_id=7,
+            route_index=0,
+            route_vertices=[
+                CoordinateMsg(lat=p.lat, lon=p.lon, alt=p.alt) for p in route
+            ],
+        )
+    )
+    controller._target_received_s = NOW
+    controller._traffic_aircraft = (
+        TrafficAircraft(2, original.lat, original.lon, 10.0, 0.0, 0.0, 5.0, 5.0),
+    )
+    controller._traffic_sequence = 11
+    controller._adjustment_pub = Mock()
+
+    assert controller._next_setpoint(NOW) == HERE
+    proposal = controller._adjustment_pub.publish.call_args.args[0]
+    assert proposal.leg_id == 7
+    assert proposal.route_index == 0
+    assert proposal.traffic_sequence == 11
+    assert proposal.replacement.lat > original.lat
+    assert proposal.replacement.lon > original.lon
+    controller._next_setpoint(NOW + 0.1)
+    assert controller._adjustment_pub.publish.call_count == 1
 
 
 def test_blocked_optional_lookahead_replans_to_required_waypoint(controller) -> None:

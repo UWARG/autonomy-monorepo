@@ -5,9 +5,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay}"
 case "$scenario" in
-    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay) ;;
+    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
@@ -19,7 +19,7 @@ sitl_param_file=sitl_speed_1p5.parm
 if [[ "$scenario" == stall ]]; then sitl_param_file=sitl_stall_speed.parm; fi
 if [[ "$scenario" == engine-triangle ]]; then
     route_path="$repo_root/airside/src/engine/config/waypoints.yaml"
-elif [[ "$scenario" == engine-eight ]]; then
+elif [[ "$scenario" == engine-eight || "$scenario" == engine-replace ]]; then
     route_path="$script_dir/routes/cornfield-eight.yaml"
 fi
 if [[ "$scenario" == engine-* ]]; then
@@ -184,6 +184,7 @@ sleep 3
         fi
         setsid ros2 bag record -o /artifacts/rosbag \
             /position_controller/target /position_controller/avoidance_status \
+            /position_controller/waypoint_adjustment \
             /engine/waypoints \
             /aeac/traffic /position_controller/obstacle \
             /mavros/state /mavros/local_position/pose \
@@ -203,7 +204,8 @@ sleep 3
                 --summary /artifacts/summary.json
         elif [[ "$SCENARIO" == engine-* ]]; then
             timeout 650 python3 /repo/airside/experiments/obstacle_avoidance/sitl_engine_moving.py \
-                --route "$ROUTE_FILE" --summary /artifacts/summary.json
+                --route "$ROUTE_FILE" --scenario "$SCENARIO" \
+                --summary /artifacts/summary.json
         else
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_moving_readiness.py \
                 --scenario "$SCENARIO" --summary /artifacts/summary.json

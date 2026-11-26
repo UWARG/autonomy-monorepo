@@ -74,6 +74,16 @@ class FlightBoundary:
         except ValueError:
             return False
 
+    def allows_point_with_margin(self, point: Coordinate, margin_m: float) -> bool:
+        """Keep the entire waypoint acceptance disc inside the inset fence."""
+
+        if not math.isfinite(margin_m) or margin_m < 0:
+            return False
+        try:
+            return self.inner.buffer(-margin_m).covers(Point(self._local(point)))
+        except ValueError:
+            return False
+
     def allows_segment(self, start: Coordinate, target: Coordinate) -> bool:
         try:
             return self.inner.covers(

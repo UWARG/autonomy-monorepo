@@ -10,6 +10,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Coordinate.msg"
   "msg/MissionStatus.msg"
   "msg/PositionTarget.msg"
+  "msg/WaypointAdjustment.msg"
   "msg/WaypointList.msg"
   "srv/CaptureImage.srv"
   "msg/TrafficAircraft.msg"

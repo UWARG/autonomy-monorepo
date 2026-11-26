@@ -1,6 +1,31 @@
 # Moving traffic results
 
-Status on 2026-11-22: **draft; not cleared for live props-on flight.**
+Status on 2026-11-24: **draft; not cleared for live props-on flight.**
+
+## Blocked lap waypoint (2026-11-24)
+
+The controller now proposes a live-traffic replacement up to 20 m outward
+from the original route vertex. The mission manager validates the route and
+flight boundary, then requires arrival within 3 m; a missing safe point still
+holds and alerts. Three independent full-route mock listener/controller SITL
+runs passed. Replacement arrival distances were 2.835/2.793/2.729 m;
+minimum margins beyond server keep-away were 3.220/5.407/4.667 m;
+peak speeds were 1.556/1.568/1.554 m/s. Each had one MAVROS setpoint
+publisher and a rosbag in ignored `artifacts/engine-replace-4M3JFvNO/`,
+`artifacts/engine-replace-DiStsQxs/` and `artifacts/engine-replace-1s9GgTzl/`.
+The latest image passed 173 GNC, 88 ROS and 7 capture/replay tests. A direct
+moving regression reached its goal with 5.774 m extra margin; a blocked route
+held and alerted. The separate #181 static campaign passed clear, pilot
+takeover and static 3/3 (5/5 total); evidence is in ignored
+`artifacts/pr181-static-20261124/`. The field boundary and same-route real
+traffic replay remain unverified, so these mock results do not clear props-on
+flight.
+
+A new 294 s receive-only AEAC capture contained 295 traffic snapshots
+(0.47-1.22 s between updates): one moving index and one stationary index.
+The full-route matcher returned `NO_MOVING_ROUTE_MATCH` for the current
+`waypoints.yaml`. No real-track SITL trial was counted; the captured traffic
+cannot validate this route. No SITL telemetry was sent to the server.
 
 ## Boundary and stuck-path update (2026-11-22)
 
@@ -13,8 +38,9 @@ movement without 1.5 m net progress, the planner excludes the last heading
 and tries a clearance-checked alternate; if none exists it holds and alerts.
 Lateral movement no longer clears a failed heading; only 1.5 m progress toward
 the required waypoint or a new waypoint does.
-A blocked optional aim replans to the current required waypoint. A required
-waypoint inside the traffic buffer is never skipped: it holds and alerts.
+A blocked optional aim replans to the current required waypoint. Before the
+2026-11-24 replacement update, a required waypoint inside the traffic buffer
+held and alerted without skipping.
 
 The rebuilt image passed 169 GNC tests and 85/85 ROS tests. One final-image
 mock eight-waypoint SITL lap passed through the real listener and controller:

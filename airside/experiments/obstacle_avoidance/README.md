@@ -31,9 +31,13 @@ the controller excludes the last heading and tries another clearance-checked
 candidate. It never shrinks the traffic buffer. If there is no safe alternate,
 it holds and alerts. A failed heading stays excluded until the required
 waypoint is 1.5 m closer or the mission advances. If the optional look-ahead
-aim is blocked, it replans toward the required waypoint. If that waypoint is
-inside the traffic buffer, it holds, replans on new snapshots and alerts;
-it never skips the waypoint.
+aim is blocked, it replans toward the required waypoint. If a lap waypoint is
+inside a live traffic buffer, the controller proposes a point along the route
+centroid's outward ray, at most 20 m from the original. The mission manager
+accepts it only outside the route polygon and inside the inset flight fence;
+the drone must reach it within 3 m before the next leg. The chosen point stays
+fixed unless fresh traffic makes it unsafe. Without a safe replacement it
+holds and alerts; it never silently skips a leg.
 
 The planner uses 2 m/s for conservative relative-motion calculations. SITL
 sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first
@@ -71,6 +75,7 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh dropout
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh blocked
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh pilot
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh stall
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-replace
 ```
 
 Ignored `artifacts/<scenario>-*/` directories contain the summary, logs and
