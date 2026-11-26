@@ -24,8 +24,9 @@ from .footprint import (
     ground_sample_distance,
     spacings,
 )
-from .models import CameraSpec, ScanPlan, ScanRequest
+from .models import CameraSpec, DroneSpec, ScanPlan, ScanRequest
 from .pathing import plan_orthomosaic_path
+from .swarm import plan_swarm_orthomosaic
 from .sweep import (
     SweepParams,
     SweepResult,
@@ -38,6 +39,7 @@ from .sweep import (
 __all__ = [
     "CameraSpec",
     "Cell",
+    "DroneSpec",
     "HORIZONTAL",
     "ScanPlan",
     "ScanRequest",
@@ -58,6 +60,7 @@ __all__ = [
     "order_cells",
     "path_length",
     "plan_orthomosaic_path",
+    "plan_swarm_orthomosaic",
     "rotate_point",
     "rotate_points",
     "rotate_polygon",
