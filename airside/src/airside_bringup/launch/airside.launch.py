@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
 from launch.conditions import IfCondition
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import (
+    EnvironmentVariable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+)
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -27,6 +31,7 @@ _RECORDED_TOPICS = [
     "/mavros/statustext/recv",
     "/mavros/statustext/send",
     "/aeac/traffic",
+    "/aeac/telemetry_diagnostics",
     "/position_controller/target",
     "/position_controller/avoidance_status",
     "/heartbeat",
@@ -67,8 +72,20 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "use_engine",
-                default_value="true",
+                default_value=EnvironmentVariable("USE_ENGINE", default_value="true"),
                 description="Start the mission manager (false for isolated SITL tests)",
+            ),
+            DeclareLaunchArgument(
+                "use_aeac_telemetry",
+                default_value=EnvironmentVariable(
+                    "USE_AEAC_TELEMETRY", default_value="false"
+                ),
+                description="Send real-aircraft telemetry to AEAC (default false)",
+            ),
+            DeclareLaunchArgument(
+                "use_traffic_listener",
+                default_value="true",
+                description="Start the live AEAC traffic listener (false for captured replay)",
             ),
             DeclareLaunchArgument(
                 "waypoints_file",
@@ -79,11 +96,17 @@ def generate_launch_description() -> LaunchDescription:
             ),
             ExecuteProcess(
                 cmd=[
-                    "ros2", "bag", "record",
-                    "--storage", "mcap",
-                    "--storage-preset-profile", "zstd_fast",
-                    "--max-bag-duration", str(_BAG_SPLIT_SECONDS),
-                    "--output", f"{_BAG_DIR}/{bag_name}",
+                    "ros2",
+                    "bag",
+                    "record",
+                    "--storage",
+                    "mcap",
+                    "--storage-preset-profile",
+                    "zstd_fast",
+                    "--max-bag-duration",
+                    str(_BAG_SPLIT_SECONDS),
+                    "--output",
+                    f"{_BAG_DIR}/{bag_name}",
                     *_RECORDED_TOPICS,
                 ],
                 name="bag_recorder",
@@ -173,6 +196,16 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
+                condition=IfCondition(LaunchConfiguration("use_traffic_listener")),
+            ),
+            Node(
+                package="comms",
+                executable="telemetry_sender",
+                name="aeac_telemetry_sender",
+                output="both",
+                respawn=True,
+                respawn_delay=2.0,
+                condition=IfCondition(LaunchConfiguration("use_aeac_telemetry")),
             ),
             Node(
                 package="comms",

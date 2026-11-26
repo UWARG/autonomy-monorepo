@@ -11,6 +11,10 @@
 
   <depend>rclpy</depend>
   <depend>airside_interfaces</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>mavros_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>py_trees_ros_interfaces</depend>
   <exec_depend>engine</exec_depend>
 

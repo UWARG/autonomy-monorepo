@@ -5,6 +5,10 @@ the #181 synthetic static-obstacle test. The data flow is:
 
 `AEAC -> comms/traffic_listener -> /aeac/traffic -> position_controller -> GNC`
 
+An independent `comms/telemetry_sender` can report this vehicle's WGS84 GPS
+and MAVROS relative altitude at 1 Hz. It is **off by default**; the receive-only
+capture and all SITL tests never enable it.
+
 The controller is the only MAVROS position-setpoint publisher. Live traffic
 keeps the server radius. A moving aircraft has both a 3 s straight-line sweep
 and a heading-independent reachability disc around its last observed position:
@@ -147,6 +151,23 @@ The runner starts at the mission start, commands the complete closed route,
 preserves all captured aircraft and source timing, and does not loop or invent
 data. A blocked run remains a failure to complete the route even when hold and
 pilot alert work correctly.
+`routes/wrestrc-triangle.yaml` has the commented triangle's three vertices in
+mission-manager order; `--route` can use it without changing
+the active mission. This direct-target replay does not exercise the mission
+manager's waypoint-replacement handshake.
+
+For the full mission-manager handshake, use `engine-replay` with the test-only
+route. The live listener is disabled so it cannot overwrite the capture:
+
+```bash
+bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-replay \
+  airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
+  <confirmed-index> --start-s 0 \
+  --route airside/experiments/obstacle_avoidance/routes/wrestrc-triangle.yaml
+```
+
+This uses the real controller and mission manager, but sends no telemetry to
+the server. A hold or blocked waypoint is not a completed lap.
 
 ## Flight gate
 
@@ -155,5 +176,26 @@ all three final-image real-track replays pass on that route, and an authorized
 props-off check confirms both WebSockets, the own-aircraft index, WGS84/AGL,
 approximately 1 Hz send/receive, and end-to-end
 delay. Do not send SITL telemetry to the real server.
+
+For that authorized check only, use a real vehicle with props removed and no
+other Airside stack running. In ignored `airside/.env`, set the confirmed
+`AEAC_UAV_ID`, `AEAC_OWN_AIRCRAFT_INDEX`, approved
+`FLIGHT_BOUNDARY_WGS84`, `USE_ENGINE=false`, and
+`USE_AEAC_TELEMETRY=true`. From the repository root, run the local check:
+
+```bash
+docker run --rm --env-file airside/.env -v "$PWD":/repo:ro -w /repo \
+  --entrypoint python3 warg/airside:latest \
+  airside/experiments/obstacle_avoidance/check_field_config.py \
+  --route airside/src/engine/config/waypoints.yaml --mode props-off
+```
+
+This checks settings and geometry only; it does not connect or send. Then,
+from `airside/`, run `docker compose up --build`.
+Check `/aeac/traffic`, `/aeac/telemetry_diagnostics` and their timestamps;
+the telemetry diagnostic must report recent ACKs and roughly 1 s send
+intervals. Stop the stack after the check, and restore
+`USE_AEAC_TELEMETRY=false` before any SITL run. Never expose the token in logs
+or a PR. A missing setting or failed check means no props-on test.
 
 See [RESULTS.md](RESULTS.md) for current evidence and open gates.

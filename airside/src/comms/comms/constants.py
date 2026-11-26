@@ -2,6 +2,7 @@
 
 # Environment variable holding the team's connection token.
 CONNECTION_TOKEN_ENV = "AEAC_CONNECTION_TOKEN"
+UAV_ID_ENV = "AEAC_UAV_ID"
 
 # Optional AEAC traffic index of this aircraft, removed from the traffic feed.
 OWN_AIRCRAFT_INDEX_ENV = "AEAC_OWN_AIRCRAFT_INDEX"
@@ -22,4 +23,10 @@ RECONNECT_DELAY_S = 2.0
 
 # How often (Hz) traffic received from the server is handed on to ROS.
 PUBLISH_POLL_HZ = 10.0
+
+# Poll faster than 1 Hz, but never send a timer catch-up packet too soon.
+TELEMETRY_SEND_HZ = 1.0
+TELEMETRY_POLL_HZ = 10.0
+MIN_TELEMETRY_INTERVAL_S = 0.9
+TELEMETRY_INPUT_FRESHNESS_S = 2.5
 

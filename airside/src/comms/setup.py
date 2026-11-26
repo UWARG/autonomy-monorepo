@@ -20,11 +20,12 @@ setup(
     tests_require=["pytest"],
     maintainer="WARG Autonomy Subteam",
     maintainer_email="uwarg@uwaterloo.ca",
-    description="AEAC traffic listener and behaviour tree status reporter.",
+    description="AEAC traffic listener, telemetry sender and status reporter.",
     license="MIT",
     entry_points={
         "console_scripts": [
             "traffic_listener = comms.traffic_listener_node:main",
+            "telemetry_sender = comms.telemetry_sender_node:main",
             "behaviour_tree_reporter = comms.behaviour_tree_reporter:main",
         ],
     },

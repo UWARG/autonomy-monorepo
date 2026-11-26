@@ -101,7 +101,8 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
     Reports whether the lap that just finished was completed (back at the
     first waypoint) or cut short, and how long it took.
 
-    Always returns SUCCESS.
+    Returns RUNNING if a leg failed, so a blocked lap cannot be reported as
+    complete or advance to the next mission phase.
     """
 
     def __init__(self, name: str = "RecordLapEnd") -> None:
@@ -125,6 +126,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
         self._completed_laps = 0
+        self._aborted_alerted = False
 
     def update(self) -> py_trees.common.Status:
         try:
@@ -136,22 +138,27 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             self._node.get_logger().warning(
                 f"{self.name}: lap bookkeeping keys missing, skipping lap report"
             )
-            return py_trees.common.Status.SUCCESS
+            if not self._aborted_alerted:
+                send_to_ground(self._node, "ENG: lap state invalid, pilot take over")
+                self._aborted_alerted = True
+            return py_trees.common.Status.RUNNING
 
         now_s = self._node.get_clock().now().nanoseconds / 1e9
         lap_time_s = now_s - lap_start_s
 
         if not closed:
-            # The waypoint being flown to when the lap was cut short.
-            waypoint = (index - 1) % len(waypoints) + 1
-            self._node.get_logger().info(
-                f"{self.name}: lap aborted at waypoint {waypoint}/{len(waypoints)} "
-                f"after {lap_time_s:.1f}s"
-            )
-            send_to_ground(
-                self._node, f"ENG: lap aborted at wp {waypoint}/{len(waypoints)}"
-            )
-            return py_trees.common.Status.SUCCESS
+            if not self._aborted_alerted:
+                # The waypoint being flown to when the lap was cut short.
+                waypoint = (index - 1) % len(waypoints) + 1
+                self._node.get_logger().error(
+                    f"{self.name}: lap blocked at waypoint {waypoint}/{len(waypoints)} "
+                    f"after {lap_time_s:.1f}s"
+                )
+                send_to_ground(
+                    self._node, f"ENG: lap blocked at wp {waypoint}, pilot take over"
+                )
+                self._aborted_alerted = True
+            return py_trees.common.Status.RUNNING
 
         self._completed_laps += 1
         self.blackboard.set(blackboard_keys.LATEST_LAP_START_TIME_SEC, now_s)

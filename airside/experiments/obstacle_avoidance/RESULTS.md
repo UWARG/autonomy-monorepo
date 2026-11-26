@@ -1,6 +1,6 @@
 # Moving traffic results
 
-Status on 2026-11-24: **draft; not cleared for live props-on flight.**
+Status on 2026-11-25: **draft; not cleared for live props-on flight.**
 
 ## Blocked lap waypoint (2026-11-24)
 
@@ -26,6 +26,43 @@ A new 294 s receive-only AEAC capture contained 295 traffic snapshots
 The full-route matcher returned `NO_MOVING_ROUTE_MATCH` for the current
 `waypoints.yaml`. No real-track SITL trial was counted; the captured traffic
 cannot validate this route. No SITL telemetry was sent to the server.
+
+On 2026-11-25, a second receive-only capture had 298 snapshots and again did
+not match the active Cornfield route. Its moving track matched the separately
+configured WRESTRC test triangle, but included a 7.27 s update gap. A
+diagnostic replay of the prior capture on that triangle did not complete its
+first waypoint: the controller held and alerted because the start was inside
+its expanded traffic reachability area (33.1 m maximum expanded radius).
+The closest observed separation stayed 17.75 m beyond the server radius,
+with one setpoint publisher and a rosbag in ignored
+`artifacts/replay-1BiNeGoe/`. This is a safe hold, **not** successful route
+avoidance or a flight-test pass. Aircraft indices differed between captures;
+our actual index is still unconfirmed. Telemetry sending has not been enabled.
+The test triangle is not the active mission route, and the direct-target replay
+does not exercise mission-manager waypoint replacement.
+
+Three full mission-manager replays on that triangle all ended at 0/3 waypoints.
+The diagnostic start times were 0/80/160 s; raw keep-away margins were
+14.382/14.378/14.377 m. Each kept one setpoint publisher, held and alerted,
+with a rosbag in ignored `artifacts/engine-replay-vCg8Rxx3/`,
+`artifacts/engine-replay-gedI59Y1/`, and `artifacts/engine-replay-MYOpjgZw/`.
+The captured stream had a 7.27 s gap, and the 160 s window ran out of source
+frames before the test ended. The start remained inside the expanded traffic
+reachability area; no replacement was proposed. The manager now reports a
+delayed waypoint without falsely claiming a completed lap. These are safe-hold
+diagnostics, **not** route-completion passes. Index 0 was diagnostic, not a
+confirmed own index.
+
+An opt-in real-aircraft telemetry sender was added without enabling it in
+SITL or on the server. The final image built, passed 96 ROS, 173 GNC and 9
+capture/config/replay tests,
+and a fresh listener-to-controller moving SITL regression passed with one
+setpoint publisher and 5.902 m extra margin. Its rosbag and summary are in
+ignored `artifacts/listener-moving-v08fTjHG/`. Authorized props-off two-socket
+testing is still required.
+The local no-network config check currently reports missing UAV ID, confirmed
+own index and approved boundary; telemetry is intentionally disabled and the
+mission manager has not been disabled for props-off. It prints no token.
 
 ## Boundary and stuck-path update (2026-11-22)
 

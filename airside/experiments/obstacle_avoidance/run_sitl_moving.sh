@@ -5,9 +5,9 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/../../.." && pwd)"
-scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay}"
+scenario="${1:?usage: run_sitl_moving.sh clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|engine-replay|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay}"
 case "$scenario" in
-    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay) ;;
+    clear|moving|listener-moving|listener-dropout|listener-triangle15|listener-triangle20|engine-triangle|engine-eight|engine-replace|engine-replay|multi|turn|sharp_turn|triangle15|triangle20|dropout|blocked|pilot|stall|replay) ;;
     *) echo "unknown scenario: $scenario" >&2; exit 2 ;;
 esac
 capture_in_container=""
@@ -22,7 +22,7 @@ if [[ "$scenario" == engine-triangle ]]; then
 elif [[ "$scenario" == engine-eight || "$scenario" == engine-replace ]]; then
     route_path="$script_dir/routes/cornfield-eight.yaml"
 fi
-if [[ "$scenario" == engine-* ]]; then
+if [[ "$scenario" == engine-* && "$scenario" != engine-replay ]]; then
     route_in_container="/repo/${route_path#"$repo_root/"}"
     home_lat="$(awk '/^[[:space:]]*- lat:/ { print $3; exit }' "$route_path")"
     home_lon="$(awk '/^[[:space:]]*lon:/ { print $2; exit }' "$route_path")"
@@ -32,9 +32,9 @@ if [[ "$scenario" == engine-* ]]; then
     }
     sitl_home="$home_lat,$home_lon,300,0"
 fi
-if [[ "$scenario" == replay ]]; then
+if [[ "$scenario" == replay || "$scenario" == engine-replay ]]; then
     [[ -n "${2:-}" && -n "${3:-}" ]] || {
-        echo "usage: run_sitl_moving.sh replay <capture.jsonl> <confirmed-own-index> --start-s <seconds> [--route route.yaml]" >&2
+        echo "usage: run_sitl_moving.sh replay|engine-replay <capture.jsonl> <diagnostic-own-index> --start-s <seconds> [--route route.yaml]" >&2
         exit 2
     }
     own_index="$3"
@@ -81,7 +81,7 @@ fi
 # SITL-only polygon around the known test origin. It is not an approved
 # physical-flight boundary; the live launch must receive a site-approved one.
 if [[ -z "$sitl_home" ]]; then
-    if [[ "$scenario" == replay ]]; then
+    if [[ "$scenario" == replay || "$scenario" == engine-replay ]]; then
         home_lat="$(awk '/^[[:space:]]*- lat:/ { print $3; exit }' "$route_path")"
         home_lon="$(awk '/^[[:space:]]*lon:/ { print $2; exit }' "$route_path")"
     else
@@ -162,11 +162,14 @@ sleep 3
         if [[ "$SCENARIO" == listener-* || "$SCENARIO" == engine-* ]]; then
             use_engine=false
             if [[ "$SCENARIO" == engine-* ]]; then use_engine=true; fi
+            use_traffic_listener=true
+            if [[ "$SCENARIO" == engine-replay ]]; then use_traffic_listener=false; fi
             route_args=()
             if [[ -n "$ROUTE_FILE" ]]; then route_args=(waypoints_file:="$ROUTE_FILE"); fi
             ros2 launch airside_bringup airside.launch.py \
                 use_camera:=false \
                 use_engine:="$use_engine" \
+                use_traffic_listener:="$use_traffic_listener" \
                 lap_count:=1 "${route_args[@]}" \
                 fcu_url:=tcp://127.0.0.1:5760 \
                 > /artifacts/launch.log 2>&1 &
@@ -192,7 +195,13 @@ sleep 3
             /mavros/setpoint_raw/global /mavros/statustext/send \
             > /artifacts/rosbag.log 2>&1 &
         bag_pid=$!
-        if [[ "$SCENARIO" == replay ]]; then
+        if [[ "$SCENARIO" == engine-replay ]]; then
+            timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_engine_replay.py \
+                --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
+                --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
+                --replay-start-s "$REPLAY_START_S" \
+                --summary /artifacts/summary.json
+        elif [[ "$SCENARIO" == replay ]]; then
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_server_replay.py \
                 --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
                 --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \

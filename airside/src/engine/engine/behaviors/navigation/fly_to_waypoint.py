@@ -12,6 +12,7 @@ from engine.constants import (
     WAYPOINT_NAV_TIMEOUT_S,
     WAYPOINT_PASS_RADIUS_M,
 )
+from engine.ground_log import send_to_ground
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
 from airside_interfaces.msg import Coordinate, PositionTarget, WaypointAdjustment
 from mavros_msgs.msg import State
@@ -34,9 +35,9 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     Flies the drone to ``current_waypoint`` by publishing it as a position target
     for the ``position_controller`` node.
 
-    Returns RUNNING while traveling, SUCCESS once within ``acceptance_radius_m``
-    of the waypoint, and FAILURE if the waypoint is not reached within
-    ``WAYPOINT_NAV_TIMEOUT_S``.
+    Returns RUNNING while traveling and SUCCESS on arrival. A delayed waypoint
+    remains active for re-planning and alerts the pilot; it is never counted as
+    a completed lap solely because a timer expired.
 
     With ``fly_through``, ``waypoint_path`` is sent along for smooth pathing.
     """
@@ -78,6 +79,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         # Where the drone was when the leg started, for the abeam check.
         self._leg_start: NavSatFix | None = None
         self._start_time_s = 0.0
+        self._timeout_alerted = False
         self._original_waypoint: Coordinate | None = None
         self._replacement_active = False
         self._last_adjustment_sequence = 0
@@ -206,6 +208,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
 
         self._leg_start = self._latest_fix
         self._start_time_s = self._now_s()
+        self._timeout_alerted = False
         self._node.get_logger().info(f"{self.name}: flying to {waypoint}")
 
     def update(self) -> py_trees.common.Status:
@@ -213,11 +216,15 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             self._node.get_logger().error(f"{self.name}: no waypoint to fly to")
             return py_trees.common.Status.FAILURE
 
-        if self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S:
+        if (
+            self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S
+            and not self._timeout_alerted
+        ):
             self._node.get_logger().error(
                 f"{self.name}: waypoint not reached within {WAYPOINT_NAV_TIMEOUT_S}s"
             )
-            return py_trees.common.Status.FAILURE
+            send_to_ground(self._node, "ENG: waypoint delayed, pilot take over")
+            self._timeout_alerted = True
 
         if (
             self._latest_state is None
