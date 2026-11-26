@@ -6,11 +6,13 @@ the #181 synthetic static-obstacle test. The data flow is:
 `AEAC -> comms/traffic_listener -> /aeac/traffic -> position_controller -> GNC`
 
 The controller is the only MAVROS position-setpoint publisher. Live traffic
-keeps the server radius and adds 3 m for stationary traffic or 5.75 m for
-moving traffic. Moving positions are age-compensated and swept for 3 s. A
-snapshot older than 1.5 s causes a hold. No path causes hold, replan on each
-new snapshot, and a pilot alert. Holding is not called safe when traffic is
-predicted to enter the hold point.
+keeps the server radius and adds 5.75 m for moving traffic; stationary traffic
+gets no extra buffer. Moving positions are age-compensated and swept for 3 s.
+Each candidate leg also gets a constant-velocity closest-approach check over
+its estimated travel time, capped at 20 s. Conflicting candidates are
+discarded; if dynamic conflicts eliminate all candidates, the controller
+yields only when the hold point is predicted safe. Geometric blockage still
+causes a no-path hold. A snapshot older than 1.5 s causes a hold.
 
 The planner uses 2 m/s for conservative relative-motion calculations. SITL
 sets the FCU to 1.5 m/s and accepts a measured peak up to 1.7 m/s. The first

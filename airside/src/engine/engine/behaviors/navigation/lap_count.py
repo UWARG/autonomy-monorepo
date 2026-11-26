@@ -48,7 +48,8 @@ class AnotherLapRemaining(py_trees.behaviour.Behaviour):
     """
     Succeed and consume one lap if any laps remain, fail otherwise.
 
-    Laps cut short by a waypoint timeout still count towards the total.
+    A lap is consumed when it starts; it must close at the first waypoint
+    before another lap can start.
     """
 
     def __init__(self, name: str = "AnotherLapRemaining") -> None:
@@ -78,4 +79,34 @@ class AnotherLapRemaining(py_trees.behaviour.Behaviour):
         self._node.get_logger().info(
             f"{self.name}: starting lap, {laps_remaining - 1} left after this"
         )
+        return py_trees.common.Status.SUCCESS
+
+
+class AllLapsComplete(py_trees.behaviour.Behaviour):
+    """Succeed only when no laps remain to be flown."""
+
+    def __init__(self, name: str = "AllLapsComplete") -> None:
+        super().__init__(name=name)
+
+        self.blackboard = self.attach_blackboard_client(name=self.name)
+        self.blackboard.register_key(
+            key=blackboard_keys.LAPS_REMAINING,
+            access=py_trees.common.Access.READ,
+        )
+
+    def setup(self, **kwargs: rclpy.node.Node) -> None:
+        self._node = kwargs["node"]
+
+    def update(self) -> py_trees.common.Status:
+        try:
+            laps_remaining = self.blackboard.get(blackboard_keys.LAPS_REMAINING)
+        except KeyError:
+            self._node.get_logger().error(
+                f"{self.name}: lap count missing from the blackboard"
+            )
+            return py_trees.common.Status.FAILURE
+
+        if laps_remaining > 0:
+            return py_trees.common.Status.FAILURE
+
         return py_trees.common.Status.SUCCESS

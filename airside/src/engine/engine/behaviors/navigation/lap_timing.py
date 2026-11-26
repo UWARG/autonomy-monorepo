@@ -99,9 +99,10 @@ class RecordWaypointReached(py_trees.behaviour.Behaviour):
 class RecordLapEnd(py_trees.behaviour.Behaviour):
     """
     Reports whether the lap that just finished was completed (back at the
-    first waypoint) or cut short, and how long it took.
+    first waypoint) or cut short, and how long it took. Returns FAILURE if the
+    lap was cut short or bookkeeping is unavailable.
 
-    Always returns SUCCESS.
+    Returns SUCCESS only when the closing waypoint was reached.
     """
 
     def __init__(self, name: str = "RecordLapEnd") -> None:
@@ -133,10 +134,10 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             index = self.blackboard.get(blackboard_keys.WAYPOINT_INDEX)
             closed = self.blackboard.get(blackboard_keys.LAP_CLOSED)
         except KeyError:
-            self._node.get_logger().warning(
-                f"{self.name}: lap bookkeeping keys missing, skipping lap report"
+            self._node.get_logger().error(
+                f"{self.name}: lap bookkeeping keys missing, cannot confirm lap completion"
             )
-            return py_trees.common.Status.SUCCESS
+            return py_trees.common.Status.FAILURE
 
         now_s = self._node.get_clock().now().nanoseconds / 1e9
         lap_time_s = now_s - lap_start_s
@@ -151,7 +152,7 @@ class RecordLapEnd(py_trees.behaviour.Behaviour):
             send_to_ground(
                 self._node, f"ENG: lap aborted at wp {waypoint}/{len(waypoints)}"
             )
-            return py_trees.common.Status.SUCCESS
+            return py_trees.common.Status.FAILURE
 
         self._completed_laps += 1
         self.blackboard.set(blackboard_keys.LATEST_LAP_START_TIME_SEC, now_s)

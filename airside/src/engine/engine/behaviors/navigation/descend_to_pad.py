@@ -7,8 +7,8 @@ import rclpy.node
 from engine import blackboard_keys
 from engine.constants import (
     GUIDED_MODE,
+    LANDING_PAD_NAV_TIMEOUT_S,
     WAYPOINT_ACCEPTANCE_RADIUS_M,
-    WAYPOINT_NAV_TIMEOUT_S,
 )
 from engine.ground_log import send_to_ground
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
@@ -35,7 +35,7 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
     Reads ``target_landing_pad``. First publishes position targets to the
     ``position_controller`` node to fly to the pad's global coordinate,
     returning RUNNING while traveling and FAILURE if the pad is not reached
-    within ``WAYPOINT_NAV_TIMEOUT_S``. Once within
+    within ``LANDING_PAD_NAV_TIMEOUT_S``. Once within
     ``WAYPOINT_ACCEPTANCE_RADIUS_M`` of the pad, calls the MAVROS land service
     and returns SUCCESS once the descent is accepted. The drone's touchdown is
     confirmed separately by ``TouchingGround``. Returns FAILURE if the land
@@ -141,9 +141,9 @@ class DescendToLandingPad(py_trees.behaviour.Behaviour):
     def _fly_to_pad(self) -> py_trees.common.Status:
         """Publish position targets until the pad is reached."""
 
-        if self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S:
+        if self._now_s() - self._start_time_s > LANDING_PAD_NAV_TIMEOUT_S:
             self._node.get_logger().error(
-                f"{self.name}: pad not reached within {WAYPOINT_NAV_TIMEOUT_S}s"
+                f"{self.name}: pad not reached within {LANDING_PAD_NAV_TIMEOUT_S}s"
             )
             return py_trees.common.Status.FAILURE
 

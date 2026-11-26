@@ -8,7 +8,6 @@ from engine import blackboard_keys
 from engine.constants import (
     GUIDED_MODE,
     WAYPOINT_ACCEPTANCE_RADIUS_M,
-    WAYPOINT_NAV_TIMEOUT_S,
     WAYPOINT_PASS_RADIUS_M,
 )
 from utils.src.waypoint_utils import east_north_coordinate_offset_m
@@ -31,8 +30,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     for the ``position_controller`` node.
 
     Returns RUNNING while traveling, SUCCESS once within ``acceptance_radius_m``
-    of the waypoint, and FAILURE if the waypoint is not reached within
-    ``WAYPOINT_NAV_TIMEOUT_S``.
+    of the waypoint. Waypoint navigation has no time limit.
 
     With ``fly_through``, ``waypoint_path`` is sent along for smooth pathing.
     """
@@ -65,7 +63,6 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         self._target: PositionTarget | None = None
         # Where the drone was when the leg started, for the abeam check.
         self._leg_start: NavSatFix | None = None
-        self._start_time_s = 0.0
 
         self._target_pub = self._node.create_publisher(
             msg_type=PositionTarget,
@@ -101,9 +98,6 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
     def _state_callback(self, msg: State) -> None:
         self._latest_state = msg
 
-    def _now_s(self) -> float:
-        return self._node.get_clock().now().nanoseconds / 1e9
-
     def initialise(self) -> None:
         try:
             waypoint = self.blackboard.get(blackboard_keys.CURRENT_WAYPOINT)
@@ -125,18 +119,11 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             self._target.target_index = target_index
 
         self._leg_start = self._latest_fix
-        self._start_time_s = self._now_s()
         self._node.get_logger().info(f"{self.name}: flying to {waypoint}")
 
     def update(self) -> py_trees.common.Status:
         if self._target is None:
             self._node.get_logger().error(f"{self.name}: no waypoint to fly to")
-            return py_trees.common.Status.FAILURE
-
-        if self._now_s() - self._start_time_s > WAYPOINT_NAV_TIMEOUT_S:
-            self._node.get_logger().error(
-                f"{self.name}: waypoint not reached within {WAYPOINT_NAV_TIMEOUT_S}s"
-            )
             return py_trees.common.Status.FAILURE
 
         if (
@@ -177,7 +164,7 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.SUCCESS
 
-        if self._fly_through and self._passed_abeam(east_m, north_m):
+        if self._fly_through and self._passed_abeam(east_m, north_m, up_m):
             self._node.get_logger().info(
                 f"{self.name}: passed abeam of waypoint ({distance:.2f}m away)"
             )
@@ -189,14 +176,18 @@ class FlyToWaypoint(py_trees.behaviour.Behaviour):
         )
         return py_trees.common.Status.RUNNING
 
-    def _passed_abeam(self, east_m: float, north_m: float) -> bool:
+    def _passed_abeam(self, east_m: float, north_m: float, up_m: float) -> bool:
         """
         Whether the drone, ``(east_m, north_m)`` short of the waypoint, has
         crossed the line through it perpendicular to the leg, close enough to
         count.
         """
 
-        if self._leg_start is None or math.hypot(east_m, north_m) > WAYPOINT_PASS_RADIUS_M:
+        if (
+            self._leg_start is None
+            or math.hypot(east_m, north_m) > WAYPOINT_PASS_RADIUS_M
+            or abs(up_m) > self._acceptance_radius_m
+        ):
             return False
         waypoint = self._target.target
         leg_east_m, leg_north_m = east_north_coordinate_offset_m(

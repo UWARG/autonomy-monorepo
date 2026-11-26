@@ -48,8 +48,8 @@ LAP_WAYPOINT_ACCEPTANCE_RADIUS_M = 3.0
 # within this horizontal distance (meters).
 WAYPOINT_PASS_RADIUS_M = 6.0
 
-# Give up on a waypoint if not reached within this many seconds.
-WAYPOINT_NAV_TIMEOUT_S = 120.0
+# Give up on a landing pad if not reached within this many seconds.
+LANDING_PAD_NAV_TIMEOUT_S = 120.0
 
 # Master switch for the RC switch behaviors.
 RC_SWITCHES_ENABLED = True

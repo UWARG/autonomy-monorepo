@@ -6,7 +6,11 @@ import py_trees
 
 from engine.behaviors.navigation.fly_to_waypoint import FlyToWaypoint
 from engine.constants import LAP_WAYPOINT_ACCEPTANCE_RADIUS_M
-from engine.behaviors.navigation.lap_count import AnotherLapRemaining, SetLapCount
+from engine.behaviors.navigation.lap_count import (
+    AllLapsComplete,
+    AnotherLapRemaining,
+    SetLapCount,
+)
 from engine.behaviors.navigation.lap_timing import (
     RecordLapEnd,
     RecordWaypointReached,
@@ -50,13 +54,17 @@ def create_lapping_subtree() -> py_trees.behaviour.Behaviour:
         ],
     )
 
-    lap_until_done = py_trees.decorators.FailureIsSuccess(
+    lap_until_done = py_trees.composites.Selector(
         name="LapUntilDone",
-        child=py_trees.decorators.Repeat(
-            name="RepeatLap",
-            child=single_lap,
-            num_success=-1,
-        ),
+        memory=True,
+        children=[
+            py_trees.decorators.Repeat(
+                name="RepeatLap",
+                child=single_lap,
+                num_success=-1,
+            ),
+            AllLapsComplete(),
+        ],
     )
 
     return py_trees.composites.Sequence(

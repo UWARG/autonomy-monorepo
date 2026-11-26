@@ -103,7 +103,16 @@ from obstacle_avoidance import (
     AvoidanceConfig, AvoidanceRequest, ObstacleAvoider, TrafficAircraft,
 )
 
-avoider = ObstacleAvoider(AvoidanceConfig(horizontal_speed_mps=2.0))
+avoider = ObstacleAvoider(AvoidanceConfig(
+    horizontal_speed_mps=2.0,
+    # Optional allowed flight area, as ordered GPS polygon vertices.
+    flight_boundary=(
+        Coordinate(43.0, -80.0, 0.0),
+        Coordinate(43.0, -79.999, 0.0),
+        Coordinate(43.001, -79.999, 0.0),
+        Coordinate(43.001, -80.0, 0.0),
+    ),
+))
 
 plan = avoider.plan(AvoidanceRequest(
     position=Coordinate(lat, lon, rel_alt_m),   # where we are now
@@ -129,27 +138,41 @@ heading hysteresis between calls) and `reset()` it when control is interrupted.
 ### What it computes
 
 1. **Traffic prediction** — live mode includes every other aircraft regardless
-   of altitude. Its circle radius is the server keep-away plus
-   `max(5 m, (traffic speed + 1.5 m/s) × (snapshot age + 1.5 s))`, moved
-   forward by snapshot age and swept for 3 s. The lower-level conversion API
-   can still use a vertical band and raw radius with `live_buffer=False`.
-2. **Local planning** — `BendyRuler2D` searches candidate headings for a
-   two-segment lookahead path that keeps `clearance_margin_m` from every
-   circle, preferring the goal direction and the previous detour.
-   A separate 20 s closest-approach check yields to crossing traffic before
-   entering its route, but only if the hold point remains clear; otherwise it
-   requests pilot takeover.
-3. **Command** — the first lookahead point becomes a horizontal velocity
-   capped at `horizontal_speed_mps`; altitude error becomes a vertical velocity
-   capped at `vertical_speed_mps`.
+   of altitude. Its circle radius is the server keep-away plus 5.75 m for
+   moving traffic, or no additional buffer for stationary traffic. Positions
+   are advanced by the supplied snapshot age and swept for 3 s. The lower-level
+   conversion API can still use a vertical band and raw radius with
+   `live_buffer=False`.
+2. **Local planning** — `BendyRuler2D` searches candidate headings for one
+   lookahead leg, up to 16 m, and checks its geometric clearance against the
+   predicted circles. If configured, a GPS flight-boundary polygon filters
+   candidate segments before route scoring. Paths starting outside the
+   boundary may move closer to it or safely re-enter, but may not cross through
+   it and end back outside. Each geometrically feasible candidate is also checked
+   for closest approach against traffic moving at constant velocity during the
+   leg's estimated travel time (capped at 20 s). Conflicting candidates are
+   rejected before selection. If dynamic conflicts eliminate all candidates,
+   the avoider checks whether holding is safe; it yields if so and requests
+   pilot takeover otherwise. Geometric blockage still produces a no-path hold.
+   If the current position is already inside an aircraft's expanded keep-away,
+   an egress mode allows only candidates that immediately increase separation
+   from every current conflict and remain clear of other aircraft. If no such
+   candidate exists, the avoider holds and requests pilot takeover.
+3. **Command** — the first lookahead point is returned as the next waypoint;
+   the velocity fields are capped at `horizontal_speed_mps` and
+   `vertical_speed_mps`.
 
 ### Safety contract
 
 - Every failure is a zero-velocity `NO_PATH` hold with a reason: stale or
   future traffic, invalid or duplicate aircraft, too many predicted circles,
-  invalid position, or no safe path. `HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED`
-  means predicted traffic intersects the hold point; the pilot must take over.
-- A returned path has both lookahead segments at or above the clearance margin.
+  invalid position, or no safe path. `EGRESSING_CONFLICT` means a safe
+  separation-increasing recovery leg is being flown. If no such leg exists,
+  `HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED` means the modeled hold point is
+  unsafe; the pilot must take over.
+- A returned leg meets the geometric clearance margin and the modeled
+  constant-velocity closest-approach check. This depends on the supplied
+  traffic age and does not model acceleration or other flight dynamics.
 - Candidate ordering and ties are deterministic.
 
 The lower-level planner (`BendyRuler2D`, `PlanRequest`, `ObstacleSnapshot`,
@@ -163,6 +186,6 @@ ArduPilot BendyRuler is a behavioral reference only, no GPL source is copied.
 |---|---|
 | `models.py` | `TrafficAircraft`, `AvoidanceRequest`, `AvoidancePlan` and planner value objects |
 | `traffic.py` | traffic aircraft → predicted ENU exclusion circles |
-| `planner.py` | `BendyRuler2D` two-segment lookahead search |
+| `planner.py` | `BendyRuler2D` single-leg lookahead search |
 | `clearance.py`, `geometry.py` | clearance queries and 2D geometry |
 | `avoidance.py` | orchestration: `ObstacleAvoider.plan` |

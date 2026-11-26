@@ -29,12 +29,20 @@ def request(
     )
 
 
-def test_clear_space_selects_direct_two_segment_path() -> None:
+def test_clear_space_selects_direct_16m_first_leg() -> None:
     result = BendyRuler2D().plan(request())
     assert result.status is PlanStatus.PATH_FOUND
-    assert result.waypoint == Point2D(8.0, 0.0)
-    assert result.second_waypoint == Point2D(16.0, 0.0)
+    assert result.waypoint == Point2D(16.0, 0.0)
+    assert result.second_waypoint == result.waypoint
     assert result.heading_rad == 0.0
+
+
+def test_default_candidates_cover_full_circle_without_duplicate_opposite_heading() -> None:
+    headings = BendyRuler2D().candidate_headings(goal_heading=0.0)
+
+    assert len(headings) == 24
+    assert any(math.isclose(abs(value), math.pi) for value in headings)
+    assert len({round(value, 12) for value in headings}) == len(headings)
 
 
 def test_stale_and_future_maps_fail_closed() -> None:
@@ -57,6 +65,19 @@ def test_fully_blocked_start_returns_no_path() -> None:
     result = BendyRuler2D().plan(request((CircleObstacle(Point2D(0.0, 0.0), 2.0),)))
     assert result.status is PlanStatus.NO_PATH
     assert result.reason is NoPathReason.BLOCKED
+
+
+def test_obstacle_beyond_16m_does_not_create_a_second_leg() -> None:
+    obstacle = CircleObstacle(Point2D(20.0, 0.0), 1.0)
+    plan_request = request((obstacle,))
+
+    result = BendyRuler2D().plan(plan_request)
+
+    assert result.status is PlanStatus.PATH_FOUND
+    assert result.waypoint == Point2D(16.0, 0.0)
+    assert result.second_waypoint == result.waypoint
+    field = CircularObstacleField((obstacle,))
+    assert field.segment_clearance(plan_request.start, result.waypoint) >= 1.0
 
 
 def test_near_goal_does_not_report_success_inside_keep_away() -> None:
@@ -82,7 +103,9 @@ def test_symmetric_detour_is_deterministically_counter_clockwise() -> None:
 
 
 def test_hysteresis_retains_a_safe_previous_detour() -> None:
-    planner = BendyRuler2D(PlannerConfig(hysteresis_cost_m=2.0))
+    planner = BendyRuler2D(
+        PlannerConfig(first_lookahead_m=8.0, hysteresis_cost_m=2.0)
+    )
     first = planner.plan(request((CircleObstacle(Point2D(5.0, 0.0), 1.5),)))
     second = planner.plan(request((CircleObstacle(Point2D(5.0, 0.1), 1.5),)))
     assert first.status is PlanStatus.PATH_FOUND
@@ -94,7 +117,23 @@ def test_hysteresis_retains_a_safe_previous_detour() -> None:
     )
 
 
-def test_property_every_returned_segment_meets_clearance() -> None:
+def test_hysteresis_does_not_keep_a_dynamically_unsafe_heading() -> None:
+    planner = BendyRuler2D()
+    direct = planner.plan(request())
+
+    detour = planner.plan(
+        request(),
+        dynamic_segment_is_safe=lambda start, end: not math.isclose(
+            end.y - start.y, 0.0, abs_tol=1e-12
+        ),
+    )
+
+    assert direct.heading_rad == 0.0
+    assert detour.status is PlanStatus.PATH_FOUND
+    assert detour.heading_rad is not None and detour.heading_rad != 0.0
+
+
+def test_property_every_returned_first_segment_meets_clearance() -> None:
     """Seeded generative check over varied obstacle fields."""
     rng = random.Random(96)
     config = PlannerConfig(clearance_margin_m=0.8)
@@ -115,10 +154,6 @@ def test_property_every_returned_segment_meets_clearance() -> None:
         field = CircularObstacleField(obstacles)
         assert (
             field.segment_clearance(plan_request.start, result.waypoint) + 1e-9
-            >= config.clearance_margin_m
-        )
-        assert (
-            field.segment_clearance(result.waypoint, result.second_waypoint) + 1e-9
             >= config.clearance_margin_m
         )
 

@@ -79,6 +79,14 @@ class PositionController(rclpy.node.Node):
         super().__init__("position_controller")
         self._avoider = ObstacleAvoider(
             AvoidanceConfig(
+                flight_boundary=(
+                Coordinate(43.434066, -80.577145, 0.0),
+                Coordinate(43.434358, -80.578878, 0.0),
+                Coordinate(43.434072, -80.579202, 0.0),
+                Coordinate(43.43363, -80.577126, 0.0),
+                Coordinate(43.43372, -80.576515, 0.0),
+                Coordinate(43.433872, -80.576651, 0.0),
+            ),
                 planner=PlannerConfig(
                     first_lookahead_m=self.PATH_LOOKAHEAD_M,
                     map_freshness_s=1.5,
@@ -246,7 +254,9 @@ class PositionController(rclpy.node.Node):
         self._hold_at = None
         self._blocked_since_s = None
         self._hold_reason = None
-        self._report_status(now_s, "PATH_FOUND", plan.minimum_clearance_m)
+        self._report_status(
+            now_s, plan.reason or "PATH_FOUND", plan.minimum_clearance_m
+        )
         return aim if plan.goal_reached else plan.next_waypoint
 
     def _aim_point(self, position: Coordinate) -> Coordinate:

@@ -137,12 +137,14 @@ keeps aiming at the next waypoint while closing on it until within `CORNER_LOOKA
 
 It fails closed. Missing, stale (over 1.5 s), unhealthy or disconnected
 traffic, an unconfirmed own-aircraft index, a stale GPS fix or altitude, or no
-safe path holds the drone at the position where the hold began. A persistent
-blocked route or traffic predicted to cross that hold point sends a MAVLink
-pilot-takeover warning; holding is not itself collision avoidance. The
-controller replans when fresh snapshots arrive. Nothing is published unless the drone is armed
-in GUIDED. If the engine stops sending targets for 1.5 s, it holds once where
-the drone is and then stops publishing.
+safe path normally holds the drone at the position where the hold began. If
+already inside an expanded traffic keep-away, the avoider first tries a
+separation-increasing egress that does not enter another aircraft's keep-away;
+if none is available, it holds and requests pilot takeover. Holding is not
+itself collision avoidance. The controller replans when fresh snapshots
+arrive. Nothing is published unless the drone is armed in GUIDED. If the
+engine stops sending targets for 1.5 s, it holds once where the drone is and
+then stops publishing.
 
 | Topic | Type | Direction | Purpose |
 |---|---|---|---|

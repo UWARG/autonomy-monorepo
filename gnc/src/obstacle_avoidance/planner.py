@@ -1,8 +1,9 @@
-"""Deterministic two-segment local search for planar obstacle avoidance."""
+"""Deterministic single-segment local search for planar obstacle avoidance."""
 
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .clearance import CircularObstacleField, ClearanceField
@@ -12,11 +13,11 @@ from .models import NoPathReason, PlanRequest, PlanResult, PlanStatus, Point2D
 
 @dataclass(frozen=True, slots=True)
 class PlannerConfig:
-    first_lookahead_m: float = 8.0
+    first_lookahead_m: float = 16.0
     second_lookahead_m: float = 8.0
     clearance_margin_m: float = 1.0
     candidate_step_deg: float = 15.0
-    maximum_detour_deg: float = 120.0
+    maximum_detour_deg: float = 180.0
     map_freshness_s: float = 0.5
     goal_tolerance_m: float = 0.25
     heading_cost_m_per_rad: float = 0.35
@@ -70,6 +71,9 @@ class BendyRuler2D:
         self,
         request: PlanRequest,
         clearance_field: ClearanceField | None = None,
+        *,
+        dynamic_segment_is_safe: Callable[[Point2D, Point2D], bool] | None = None,
+        flight_boundary_is_safe: Callable[[Point2D, Point2D], bool] | None = None,
     ) -> PlanResult:
         age_s = request.now_s - request.obstacles.timestamp_s
         if age_s < 0.0 or age_s > self.config.map_freshness_s:
@@ -88,6 +92,14 @@ class BendyRuler2D:
             clearance_m = nearby.point_clearance(request.goal)
             if clearance_m < self.config.clearance_margin_m:
                 return PlanResult.no_path(NoPathReason.BLOCKED)
+            if dynamic_segment_is_safe is not None and not dynamic_segment_is_safe(
+                request.start, request.goal
+            ):
+                return PlanResult.no_path(NoPathReason.BLOCKED)
+            if flight_boundary_is_safe is not None and not flight_boundary_is_safe(
+                request.start, request.goal
+            ):
+                return PlanResult.no_path(NoPathReason.BLOCKED)
             return PlanResult(
                 status=PlanStatus.PATH_FOUND,
                 waypoint=request.goal,
@@ -100,7 +112,13 @@ class BendyRuler2D:
             request.obstacles
         )
         goal_heading = heading(request.start, request.goal)
-        candidates = self._feasible_candidates(request, field, goal_heading)
+        candidates = self._feasible_candidates(
+            request,
+            field,
+            goal_heading,
+            dynamic_segment_is_safe,
+            flight_boundary_is_safe,
+        )
         if not candidates:
             self.reset()
             return PlanResult.no_path(NoPathReason.BLOCKED)
@@ -109,7 +127,7 @@ class BendyRuler2D:
         direct = next((c for c in candidates if c.order == 0), None)
         if direct is not None:
             # With the direct line clear, fly it. Hysteresis only arbitrates
-            # between detours: near the goal every candidate's second leg ends
+            # between detours: near the goal every candidate ends
             # on the goal, so costs tie within the hysteresis band and a stale
             # detour heading would otherwise be kept, circling the goal.
             selected = direct
@@ -120,6 +138,8 @@ class BendyRuler2D:
                 goal_heading=goal_heading,
                 candidates=candidates,
                 best=best,
+                dynamic_segment_is_safe=dynamic_segment_is_safe,
+                flight_boundary_is_safe=flight_boundary_is_safe,
             )
         self._previous_heading_rad = selected.heading_rad
         return PlanResult(
@@ -135,31 +155,41 @@ class BendyRuler2D:
         request: PlanRequest,
         field: ClearanceField,
         goal_heading: float,
+        dynamic_segment_is_safe: Callable[[Point2D, Point2D], bool] | None,
+        flight_boundary_is_safe: Callable[[Point2D, Point2D], bool] | None,
     ) -> list[_Candidate]:
         candidates: list[_Candidate] = []
-        for order, candidate_heading in enumerate(
-            self._candidate_headings(goal_heading)
-        ):
+        for order, candidate_heading in enumerate(self.candidate_headings(goal_heading)):
             candidate = self._evaluate(
                 request,
                 field,
                 goal_heading,
                 candidate_heading,
                 order,
+                dynamic_segment_is_safe,
+                flight_boundary_is_safe,
             )
             if candidate is not None:
                 candidates.append(candidate)
         return candidates
 
-    def _candidate_headings(self, goal_heading: float) -> tuple[float, ...]:
+    def candidate_headings(self, goal_heading: float) -> tuple[float, ...]:
+        """Return deterministic candidate headings around ``goal_heading``."""
+
         count = int(self.config.maximum_detour_deg // self.config.candidate_step_deg)
         headings = [goal_heading]
         for index in range(1, count + 1):
             offset = math.radians(index * self.config.candidate_step_deg)
             # Prefer counter-clockwise on symmetric ties.
-            headings.extend(
-                (wrap_angle(goal_heading + offset), wrap_angle(goal_heading - offset))
-            )
+            for candidate in (
+                wrap_angle(goal_heading + offset),
+                wrap_angle(goal_heading - offset),
+            ):
+                if not any(
+                    angular_distance(candidate, existing) <= 1e-12
+                    for existing in headings
+                ):
+                    headings.append(candidate)
         return tuple(headings)
 
     def _evaluate(
@@ -169,43 +199,53 @@ class BendyRuler2D:
         goal_heading: float,
         candidate_heading: float,
         order: int,
+        dynamic_segment_is_safe: Callable[[Point2D, Point2D], bool] | None,
+        flight_boundary_is_safe: Callable[[Point2D, Point2D], bool] | None,
     ) -> _Candidate | None:
         first_distance = min(
             self.config.first_lookahead_m,
             distance(request.start, request.goal),
         )
         first = project(request.start, candidate_heading, first_distance)
+        if flight_boundary_is_safe is not None and not flight_boundary_is_safe(
+            request.start, first
+        ):
+            return None
         first_clearance = field.segment_clearance(request.start, first)
         if first_clearance < self.config.clearance_margin_m:
             return None
-
-        remaining = distance(first, request.goal)
-        if remaining <= self.config.goal_tolerance_m:
-            second = request.goal
-            second_clearance = field.point_clearance(second)
-        else:
-            second = project(
-                first,
-                heading(first, request.goal),
-                min(self.config.second_lookahead_m, remaining),
-            )
-            second_clearance = field.segment_clearance(first, second)
-        clearance = min(first_clearance, second_clearance)
-        if clearance < self.config.clearance_margin_m:
+        if dynamic_segment_is_safe is not None and not dynamic_segment_is_safe(
+            request.start, first
+        ):
             return None
+
+        # Optional second-leg lookahead, retained for possible reactivation:
+        # remaining = distance(first, request.goal)
+        # if remaining <= self.config.goal_tolerance_m:
+        #     second = request.goal
+        #     second_clearance = field.point_clearance(second)
+        # else:
+        #     second = project(
+        #         first,
+        #         heading(first, request.goal),
+        #         min(self.config.second_lookahead_m, remaining),
+        #     )
+        #     second_clearance = field.segment_clearance(first, second)
+        second = first
+        clearance = first_clearance
+        #if clearance < self.config.clearance_margin_m:
+            #return None
 
         capped_clearance = min(clearance, self.config.clearance_reward_cap_m)
         cost = (
-            distance(second, request.goal)
-            + self.config.heading_cost_m_per_rad
-            * angular_distance(candidate_heading, goal_heading)
+            distance(first, request.goal)
             - self.config.clearance_reward_weight * capped_clearance
         )
         return _Candidate(
             first=first,
             second=second,
             heading_rad=candidate_heading,
-            clearance_m=clearance,
+            clearance_m=first_clearance,
             cost=cost,
             order=order,
         )
@@ -221,6 +261,8 @@ class BendyRuler2D:
         goal_heading: float,
         candidates: list[_Candidate],
         best: _Candidate,
+        dynamic_segment_is_safe: Callable[[Point2D, Point2D], bool] | None,
+        flight_boundary_is_safe: Callable[[Point2D, Point2D], bool] | None,
     ) -> _Candidate:
         if self._previous_heading_rad is None:
             return best
@@ -238,6 +280,8 @@ class BendyRuler2D:
             goal_heading,
             self._previous_heading_rad,
             previous.order,
+            dynamic_segment_is_safe,
+            flight_boundary_is_safe,
         )
         if exact_previous is not None:
             previous = exact_previous

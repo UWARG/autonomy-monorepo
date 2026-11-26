@@ -21,9 +21,18 @@ def live_traffic_buffer_m(
         raise ValueError("INVALID_TRAFFIC_BUFFER_INPUT")
     # Motion is already age-compensated and swept over the prediction horizon
     # below. Adding speed * time here would count that displacement twice.
-    # Stationary traffic needs only the measured 3 m qualification margin;
-    # moving traffic retains the larger mock-validated uncertainty margin.
-    return 3.0 if speed_mps <= 0.1 else 5.75
+    # Stationary traffic adds no buffer; moving traffic retains the larger
+    # mock-validated uncertainty margin.
+    if speed_mps <= 0.1:
+        return 0.0
+    elif speed_mps<=5.1:
+        return 5.75
+    elif speed_mps<10.1:
+        return 10.75
+    elif speed_mps<=15.1:
+        return 15.75
+    else:
+        return 20.75
 
 
 def _valid_aircraft(aircraft: TrafficAircraft) -> bool:
