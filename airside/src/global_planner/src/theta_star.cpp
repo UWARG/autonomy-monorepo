@@ -1,4 +1,4 @@
-#include "include/global_planner/theta_star.hpp"
+#include "theta_star.hpp"
 
 #include <cmath>
 #include <chrono>

@@ -2,7 +2,7 @@
 #include <cmath>
 #include <algorithm>
 #include <octomap_msgs/conversions.h>
-#include "global_planner/planner.hpp"
+#include "planner.hpp"
 
 namespace GlobalPlanner{
     PlannerNode::PlannerNode(const rclcpp::NodeOptions & options): rclcpp::Node("global_planner", options){

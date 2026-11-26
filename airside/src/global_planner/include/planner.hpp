@@ -7,7 +7,7 @@
 #include <octomap_msgs/msg/octomap.hpp>
 #include <mavros_msgs/msg/state.hpp>
 #include <airside_interfaces/msg/waypoint.hpp>
-#include "global_planner/theta_star.hpp"
+#include "theta_star.hpp"
 
 namespace GlobalPlanner {
 

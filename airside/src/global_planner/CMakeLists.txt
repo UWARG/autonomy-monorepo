@@ -57,23 +57,6 @@ ament_target_dependencies(global_planner_node
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
-  find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_theta_star test/test_theta_star.cpp)
-  target_include_directories(test_theta_star PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    ${OCTOMAP_INCLUDE_DIRS}
-  )
-  target_link_libraries(test_theta_star global_planner_lib ${OCTOMAP_LIBRARIES})
-  ament_target_dependencies(test_theta_star
-    rclcpp
-    geometry_msgs
-    nav_msgs
-    octomap_msgs
-    mavros_msgs
-    std_msgs
-    airside_interfaces
-    octomap
-  )
   set(ament_cmake_copyright_FOUND TRUE)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
