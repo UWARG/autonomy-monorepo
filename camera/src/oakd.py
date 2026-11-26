@@ -50,7 +50,7 @@ class OakD(AbstractCamera):
 
             # IMU
             imu = self._pipeline.create(dai.node.IMU)
-            imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW, dai.IMUSensor.MAGNETOMETER_RAW], 100)
+            imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW], 100)
             imu.setBatchReportThreshold(1)
             imu.setMaxBatchReports(10)
             self._imu_queue = imu.out.createOutputQueue(maxSize=4, blocking=False)
@@ -93,7 +93,6 @@ class OakD(AbstractCamera):
             packet = data.packets[-1]
             accel = packet.acceleroMeter
             gyro = packet.gyroscope
-            mag = packet.magneticField
 
             return CameraIMU(
                 accel_x=accel.x,
@@ -101,10 +100,7 @@ class OakD(AbstractCamera):
                 accel_z=accel.z,
                 gyro_x=gyro.x,
                 gyro_y=gyro.y,
-                gyro_z=gyro.z,
-                mag_x=mag.x,
-                mag_y=mag.y,
-                mag_z=mag.z
+                gyro_z=gyro.z
             )
 
         except Exception as e:

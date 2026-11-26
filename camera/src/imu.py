@@ -8,7 +8,7 @@ import time
 
 @dataclass
 class CameraIMU:
-    """Data Class for a single IMU sample (accelerometer + gyroscope + magnetometer)"""
+    """Data Class for a single IMU sample (accelerometer + gyroscope)"""
 
     accel_x: float
     accel_y: float
@@ -17,9 +17,5 @@ class CameraIMU:
     gyro_x: float
     gyro_y: float
     gyro_z: float
-
-    mag_x: float
-    mag_y: float
-    mag_z: float
 
     timestamp: float = field(default_factory=time.time)
