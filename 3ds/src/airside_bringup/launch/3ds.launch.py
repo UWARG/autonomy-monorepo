@@ -2,6 +2,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -13,6 +14,13 @@ def generate_launch_description() -> LaunchDescription:
                     "FCU_URL", default_value="serial:///dev/serial0:115200"
                 ),
                 description="MAVROS connection URL to ArduPilot",
+            ),
+            DeclareLaunchArgument(
+                "rosbridge_address",
+                default_value=EnvironmentVariable(
+                    "ROSBRIDGE_ADDRESS", default_value="127.0.0.1"
+                ),
+                description="Address on which the 3DS rosbridge server listens",
             ),
             Node(
                 package="mavros",
@@ -45,7 +53,18 @@ def generate_launch_description() -> LaunchDescription:
                 output="both",
                 respawn=True,
                 respawn_delay=2.0,
-                parameters=[{"port": 9090}],
+                parameters=[
+                    {
+                        "address": LaunchConfiguration("rosbridge_address"),
+                        "port": 9090,
+                        "topics_pub_glob": ParameterValue(
+                            "['/mission/setpoint', '/mission/go_home']", value_type=str
+                        ),
+                        "topics_sub_glob": ParameterValue("['/heartbeat']", value_type=str),
+                        "services_glob": ParameterValue("[]", value_type=str),
+                        "actions_glob": ParameterValue("[]", value_type=str),
+                    }
+                ],
             ),
             Node(
                 package="rosapi",

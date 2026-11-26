@@ -84,7 +84,7 @@ ros2 topic pub --once /mission/setpoint airside_interfaces/msg/Coordinate "{lat:
 ros2 topic pub --once /mission/go_home std_msgs/msg/Empty
 ```
 
-Both topics are also reachable over rosbridge on port 9090.
+Both topics are available through the [dedicated 3DS Wi-Fi link](#dedicated-3ds-wi-fi-link).
 
 ### Setpoint tester
 
@@ -218,6 +218,71 @@ fallback commented in `compose.yaml` if needed.
 `compose.sitl-test.yaml` uses Docker's internal Compose network instead. The
 SITL, 3DS and test services discover each other by service name, so the
 automated SITL test does not require host networking.
+
+### Dedicated 3DS Wi-Fi link
+
+These steps assume two Linux hosts managed by NetworkManager. Attach both
+antennas to each AWUS036ACM and use `lsusb -d 0e8d:7612` and `iw dev` to
+identify the USB adapter. On the ground host, confirm that its physical radio
+lists `AP` under supported interface modes in `iw list`. Replace the example
+interface variables with the ALFA interfaces shown by `iw dev`. Use a local
+Wi-Fi channel supported for AP operation at the test site. The commands
+create persistent profiles with static addresses and no default gateway.
+
+On the ground host:
+
+```bash
+GROUND_WIFI=wlan1
+sudo nmcli connection add type wifi ifname "$GROUND_WIFI" \
+  con-name 3ds-ground ssid WARG-3DS wifi.mode ap \
+  wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn \
+  ipv4.method manual ipv4.addresses 10.42.3.1/24 \
+  ipv4.never-default yes ipv6.method disabled
+sudo nmcli --ask connection up 3ds-ground
+```
+
+On the airside host:
+
+```bash
+AIR_WIFI=wlan1
+sudo nmcli connection add type wifi ifname "$AIR_WIFI" \
+  con-name 3ds-air ssid WARG-3DS wifi.mode infrastructure \
+  wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn \
+  ipv4.method manual ipv4.addresses 10.42.3.2/24 \
+  ipv4.never-default yes ipv6.method disabled
+sudo nmcli --ask connection up 3ds-air
+```
+
+Use the same WPA2 passphrase on both hosts. If NetworkManager prompts again
+after reboot, save the secret in the system profile with `sudo nmtui`.
+Check association with `iw dev "$AIR_WIFI" link` and check from ground that
+`ip route get 10.42.3.2` uses the ALFA interface and `ping -c 3 10.42.3.2`
+gets replies.
+
+Run from `3ds/` on airside:
+
+```bash
+ROSBRIDGE_ADDRESS=10.42.3.2 ROS_LOCALHOST_ONLY=1 docker compose up -d --build
+```
+
+This example uses local DDS discovery because the required ROS nodes share
+the airside host. If the deployment requires remote DDS peers, configure
+their network access explicitly. Use the airside firewall to allow TCP 9090
+on the ALFA interface from `10.42.3.1` only. The bridge uses the private WPA2
+network for access. Its ROS topic allowlist permits publishing only to the two
+mission topics and subscribing only to the heartbeat. Check that your installed
+Humble rosbridge supports the configured directional and service/action globs
+before exposing the listener. The default bind address is `127.0.0.1`, which
+also works for same-host SITL. To test over the adapters with a simulated
+FCU, set the same `ROSBRIDGE_ADDRESS` on
+`docker compose -f compose.sitl.yaml up -d --build` and configure
+`SITL_HOST` to point at the simulator.
+
+On ground, run `uv run python -m rosbridge_link status --watch` from
+`3ds_groundside/`. Disconnect and reconnect the ALFA and confirm the CLI
+reports offline and then online. In SITL, use `--url ws://127.0.0.1:9090` and
+check each CLI command with an airside `ros2 topic echo` on its mission topic.
+For hardware-only link checks, use the heartbeat with the aircraft disarmed.
 
 ### Logs
 
