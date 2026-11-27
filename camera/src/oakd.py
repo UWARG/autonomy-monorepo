@@ -50,7 +50,7 @@ class OakD(AbstractCamera):
 
             # IMU
             imu = self._pipeline.create(dai.node.IMU)
-            imu.enableIMUSensor([dai.IMUSensor.ACCELEROMETER_RAW, dai.IMUSensor.GYROSCOPE_RAW], 100)
+            imu.enableIMUSensor([dai.IMUSensor.LINEAR_ACCELERATION, dai.IMUSensor.GYROSCOPE_RAW], 100)
             imu.setBatchReportThreshold(1)
             imu.setMaxBatchReports(10)
             self._imu_queue = imu.out.createOutputQueue(maxSize=4, blocking=False)
