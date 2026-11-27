@@ -97,6 +97,7 @@ function TopicPicker({
 
 export default function SessionWidget() {
   const { recorder, player } = useSyncExternalStore(subscribeSession, getSessionSnapshot);
+  const recorderBusy = recorder.starting || recorder.recording || recorder.stopping;
   const [topics, setTopics] = useState<SessionTopic[]>([]);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(RECORDED_TOPICS));
@@ -181,7 +182,7 @@ export default function SessionWidget() {
           <TopicPicker
             topics={topics}
             selected={selected}
-            disabled={recorder.recording}
+            disabled={recorderBusy}
             onToggle={onToggle}
           />
 
@@ -196,7 +197,7 @@ export default function SessionWidget() {
               type="checkbox"
               className="accent-accent"
               checked={streamToFile && canStreamToFile()}
-              disabled={!canStreamToFile() || recorder.recording}
+              disabled={!canStreamToFile() || recorderBusy}
               onChange={(event) => setStreamToFile(event.target.checked)}
             />
             {canStreamToFile()
@@ -217,10 +218,14 @@ export default function SessionWidget() {
               <button
                 type="button"
                 onClick={onStart}
-                disabled={selectedTopics.length === 0 || player.playing}
+                disabled={recorderBusy || selectedTopics.length === 0 || player.playing}
                 className="flex-1 rounded-md border border-edge bg-card/60 py-2 text-[13px] font-semibold text-ink-2 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                Start recording
+                {recorder.starting
+                  ? 'Starting recording…'
+                  : recorder.stopping
+                    ? 'Stopping recording…'
+                    : 'Start recording'}
               </button>
             )}
             {lastRecording?.blob && (
@@ -272,7 +277,7 @@ export default function SessionWidget() {
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
-              disabled={recorder.recording}
+              disabled={recorderBusy}
               className="text-[11px] text-ink-3 hover:text-ink-2 disabled:opacity-40"
             >
               open session…
@@ -312,7 +317,7 @@ export default function SessionWidget() {
           <div className="mt-3 flex items-center gap-3">
             <button
               type="button"
-              disabled={!replayable || recorder.recording}
+              disabled={!replayable || recorderBusy}
               onClick={() => (player.playing ? pausePlayback() : playSession())}
               className="flex-1 rounded-md border border-edge bg-accent-dim py-2 text-[13px] font-semibold text-accent disabled:cursor-not-allowed disabled:opacity-40"
             >

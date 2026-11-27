@@ -69,7 +69,9 @@ interface SessionSink {
 }
 
 export interface RecorderSnapshot {
+  starting: boolean;
   recording: boolean;
+  stopping: boolean;
   startedAt: number | null;
   /** Milliseconds since `startedAt`; frozen at the last write once stopped. */
   elapsedMs: number;
@@ -174,7 +176,9 @@ async function fileSink(fileName: string, onError: (err: unknown) => void): Prom
 // Store
 
 const EMPTY_RECORDER: RecorderSnapshot = {
+  starting: false,
   recording: false,
+  stopping: false,
   startedAt: null,
   elapsedMs: 0,
   frames: 0,
@@ -237,6 +241,8 @@ let recStartedAt: number | null = null;
 let recFrames = 0;
 let recBytes = 0;
 let recError: string | null = null;
+let recStarting = false;
+let recStopping = false;
 let recSink: SessionSink | null = null;
 let recSubs: ROSLIB.Topic[] = [];
 let recFileName = '';
@@ -249,7 +255,9 @@ function pushRecorder(force = false): void {
   lastRecEmit = now;
   emit({
     recorder: {
+      starting: recStarting,
       recording: recSink != null,
+      stopping: recStopping,
       startedAt: recStartedAt,
       elapsedMs:
         recSink != null && recStartedAt != null ? now - recStartedAt : snapshot.recorder.elapsedMs,
@@ -272,83 +280,99 @@ export async function startRecording(
   topics: SessionTopic[],
   opts: { toFile?: boolean } = {},
 ): Promise<void> {
+  if (recStarting || recSink || recStopping) return;
   if (snapshot.player.playing) {
     recError = 'Stop replay before recording.';
     pushRecorder(true);
     return;
   }
-  if (recSink) return;
   if (topics.length === 0) {
     recError = 'No topics selected.';
     pushRecorder(true);
     return;
   }
 
-  const startedAt = Date.now();
-  recFileName = sessionFileName(startedAt);
-  const onSinkError = (err: unknown) => {
-    recError = `Session file write failed: ${String(err)}`;
+  let sink: SessionSink | null = null;
+  const subs: ROSLIB.Topic[] = [];
+  recStarting = true;
+  try {
     pushRecorder(true);
-  };
+    const startedAt = Date.now();
+    recFileName = sessionFileName(startedAt);
+    let headerWriteError: Error | null = null;
+    const onSinkError = (err: unknown) => {
+      headerWriteError = new Error(String(err));
+      recError = `Session file write failed: ${String(err)}`;
+      pushRecorder(true);
+    };
 
-  let sink: SessionSink;
-  let notice: string | null = null;
-  if (opts.toFile ?? true) {
-    if (canStreamToFile()) {
-      try {
-        sink = await fileSink(recFileName, onSinkError);
-      } catch {
-        // Picker dismissed or blocked — keep the capture, buffer it in memory.
+    let notice: string | null = null;
+    if (opts.toFile ?? true) {
+      if (canStreamToFile()) {
+        try {
+          sink = await fileSink(recFileName, onSinkError);
+        } catch {
+          // Picker dismissed or blocked — keep the capture, buffer it in memory.
+          sink = memorySink();
+          notice = 'File picker dismissed — recording to memory; you can download it on stop.';
+        }
+      } else {
         sink = memorySink();
-        notice = 'File picker dismissed — recording to memory; you can download it on stop.';
+        notice = 'This browser cannot stream to a file — recording to memory.';
       }
     } else {
       sink = memorySink();
-      notice = 'This browser cannot stream to a file — recording to memory.';
     }
-  } else {
-    sink = memorySink();
-  }
 
-  const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
-  const headerLine = JSON.stringify(header);
-  try {
+    const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
+    const headerLine = JSON.stringify(header);
     await sink.write(headerLine);
+    // The file sink reports write errors via its callback instead of rejecting.
+    if (headerWriteError) throw headerWriteError;
+
+    for (const { name, type } of topics) {
+      const topic = new ROSLIB.Topic({ ros, name, messageType: type });
+      subs.push(topic);
+      topic.subscribe((msg) => onFrame(name, msg, startedAt));
+    }
+
+    recStartedAt = startedAt;
+    recFrames = 0;
+    // The header line and its newline are already in the file the sink is writing.
+    recBytes = utf8Length(headerLine) + 1;
+    recSink = sink;
+    recSubs = subs;
+    recError = notice;
+    recLast = null;
+    emit({
+      recorder: {
+        starting: recStarting,
+        recording: true,
+        stopping: recStopping,
+        startedAt,
+        elapsedMs: 0,
+        frames: 0,
+        bytes: 0,
+        sinkKind: sink.kind,
+        topics,
+        lastRecording: null,
+        error: recError,
+      },
+    });
   } catch (err) {
-    await sink.abort();
-    recError = `Could not write session header: ${String(err)}`;
+    recError = `Could not start recording: ${String(err)}`;
+    for (const topic of subs) {
+      try {
+        topic.unsubscribe();
+      } catch {
+        // A failed subscribe may leave ROSLIB only partially initialized.
+      }
+    }
+    await sink?.abort();
+  } finally {
+    recStarting = false;
     pushRecorder(true);
-    return;
   }
-
-  const subs: ROSLIB.Topic[] = [];
-  for (const { name, type } of topics) {
-    const topic = new ROSLIB.Topic({ ros, name, messageType: type });
-    topic.subscribe((msg) => onFrame(name, msg, startedAt));
-    subs.push(topic);
-  }
-
-  recStartedAt = startedAt;
-  recFrames = 0;
-  // The header line and its newline are already in the file the sink is writing.
-  recBytes = utf8Length(headerLine) + 1;
-  recSink = sink;
-  recSubs = subs;
-  recError = notice;
-  recLast = null;
-  emit({
-    recorder: {
-      recording: true,
-      startedAt,
-      elapsedMs: 0,
-      frames: 0,
-      bytes: 0,
-      sinkKind: sink.kind,
-      topics,
-      lastRecording: null,
-      error: recError,
-    },
-  });
 }
 
 function onFrame(topicName: string, msg: unknown, startedAt: number): void {
@@ -383,28 +407,40 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
 export async function stopRecording(reason?: string): Promise<Recording | null> {
   const sink = recSink;
   if (!sink) return null;
-  recSink = null;
-  for (const topic of recSubs) topic.unsubscribe();
-  recSubs = [];
-  if (reason) recError = reason;
-  // Capture final counts before awaiting file finalization, which may outlive this recording.
-  const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
-  pushRecorder(true);
-
-  let blob: Blob | null = null;
+  recStopping = true;
   try {
-    blob = await sink.close();
-  } catch (err) {
-    // Report finalization failures only if no newer capture is active.
-    if (recSink == null) recError = `Could not finalize session file: ${String(err)}`;
-  }
-  const recording: Recording = { blob, ...finished };
-  // Do not overwrite a recording that started while this file was closing.
-  if (recSink == null) {
-    recLast = recording;
+    recSink = null;
+    for (const topic of recSubs) {
+      try {
+        topic.unsubscribe();
+      } catch (err) {
+        recError = `Could not unsubscribe from ${topic.name}: ${String(err)}`;
+      }
+    }
+    recSubs = [];
+    if (reason) recError = reason;
+    // Capture final counts before awaiting file finalization, which may outlive this recording.
+    const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
+    pushRecorder(true);
+
+    let blob: Blob | null = null;
+    try {
+      blob = await sink.close();
+    } catch (err) {
+      // Report finalization failures only if no newer capture is active.
+      if (recSink == null) recError = `Could not finalize session file: ${String(err)}`;
+    }
+    const recording: Recording = { blob, ...finished };
+    // Do not overwrite a recording that started while this file was closing.
+    if (recSink == null) {
+      recLast = recording;
+      pushRecorder(true);
+    }
+    return recording;
+  } finally {
+    recStopping = false;
     pushRecorder(true);
   }
-  return recording;
 }
 
 // Player
@@ -440,7 +476,7 @@ function pushPlayer(force = false): void {
 }
 
 export async function loadSessionFile(file: File): Promise<void> {
-  if (recSink) {
+  if (recStarting || recSink || recStopping) {
     emit({ player: { ...snapshot.player, error: 'Stop recording before loading a session.' } });
     return;
   }
@@ -506,7 +542,7 @@ function parseSession(text: string): {
 
 export function playSession(): void {
   if (playerTimer != null || playerFrames.length === 0) return;
-  if (recSink) {
+  if (recStarting || recSink || recStopping) {
     emit({ player: { ...snapshot.player, error: 'Stop recording before replaying.' } });
     return;
   }
