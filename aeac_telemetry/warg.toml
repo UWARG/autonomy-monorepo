@@ -1,0 +1,13 @@
+name = "aeac_telemetry"
+description = "Sends our drone's telemetry from a MAVLink stream to the AEAC competition server"
+
+depends_on = []
+
+[commands]
+setup = "uv sync"
+run = "uv run aeac-telemetry"
+test = "uv run pytest"
+lint = "uv run ruff check ."
+
+[ci]
+pr = ["lint", "test"]
