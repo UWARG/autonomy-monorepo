@@ -90,6 +90,11 @@ if [[ -z "$sitl_home" ]]; then
     fi
     sitl_home="$home_lat,$home_lon,300,0"
 fi
+if [[ "$scenario" == engine-triangle || "${route_path:-}" == "$script_dir/routes/wrestrc-triangle.yaml" || "${route_path:-}" == "$repo_root/airside/src/engine/config/waypoints.yaml" ]]; then
+    home_lat=43.4338803
+    home_lon=-80.5775947
+    sitl_home="$home_lat,$home_lon,330,0"
+fi
 flight_boundary="$(awk -v lat="$home_lat" -v lon="$home_lon" 'BEGIN {
     printf "[[%.7f,%.7f],[%.7f,%.7f],[%.7f,%.7f],[%.7f,%.7f]]", \
         lat-0.004,lon-0.006,lat-0.004,lon+0.006, \
@@ -150,6 +155,7 @@ sleep 3
     -e ROUTE_FILE="$route_in_container" \
     -e OWN_AIRCRAFT_INDEX="$own_index" \
     -e REPLAY_START_S="$replay_start_s" \
+    -e EXPECTED_SITL_HOME="$sitl_home" \
     -e AEAC_CONNECTION_TOKEN=local-test-token \
     -e AEAC_OWN_AIRCRAFT_INDEX=1 \
     -e AEAC_WEBSOCKET_URL=ws://127.0.0.1:18765 \
@@ -227,6 +233,10 @@ sleep 3
         done
         kill -TERM -- -$bag_pid >/dev/null 2>&1 || true
         wait "$bag_pid" >/dev/null 2>&1 || true
+        if grep -q "more than one type associated" /artifacts/rosbag.log; then
+            echo "rosbag found conflicting topic types; inspect summary target_publishers" >&2
+            result=1
+        fi
         if [[ ! -s /artifacts/rosbag/metadata.yaml ]]; then
             echo "rosbag metadata missing" >&2
             result=1

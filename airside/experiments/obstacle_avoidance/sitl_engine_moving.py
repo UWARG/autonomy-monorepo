@@ -105,13 +105,24 @@ class EngineScenario(Scenario):
             return
         if self.home_wgs84 is None or self.first_leg_target is not None:
             return
+        leg_start = (
+            self.target_sequence[-2]
+            if len(self.target_sequence) > 1
+            else self.home_wgs84
+        )
+        start_east, start_north = east_north_coordinate_offset_m(
+            *self.home_wgs84, *leg_start
+        )
         east_m, north_m = east_north_coordinate_offset_m(*self.home_wgs84, *point)
-        length_m = math.hypot(east_m, north_m)
-        if length_m < 5.0:
-            return  # The first route waypoint is at the SITL home position.
-        along_east, along_north = east_m / length_m, north_m / length_m
+        leg_east, leg_north = east_m - start_east, north_m - start_north
+        length_m = math.hypot(leg_east, leg_north)
+        center_east = start_east + leg_east / 2.0
+        center_north = start_north + leg_north / 2.0
+        if length_m < 30.0 or math.hypot(center_east, center_north) < 20.0:
+            return  # Keep the mock crossing clear of the takeoff point.
+        along_east, along_north = leg_east / length_m, leg_north / length_m
         self.first_leg_target = point
-        self.crossing_center = (east_m / 2.0, north_m / 2.0)
+        self.crossing_center = (center_east, center_north)
         self.crossing_direction = (-along_north, along_east)
         self.crossing_started_s = time.monotonic()
 
@@ -137,7 +148,10 @@ class EngineScenario(Scenario):
         assert self.crossing_center is not None
         assert self.crossing_direction is not None
         elapsed_s = max(0.0, now_s - self.crossing_started_s)
-        lateral_m = -12.0 + 1.2 * elapsed_s
+        # The WRESTRC leg is much longer than the old fixture. Time its mock
+        # crossing near the vehicle's arrival at the leg midpoint.
+        start_lateral_m = -35.0 if self.scenario_name == "engine-triangle" else -12.0
+        lateral_m = start_lateral_m + 1.2 * elapsed_s
         direction_east, direction_north = self.crossing_direction
         east_m = self.crossing_center[0] + direction_east * lateral_m
         north_m = self.crossing_center[1] + direction_north * lateral_m
@@ -188,6 +202,12 @@ class EngineScenario(Scenario):
             "listener_indices": sorted(self.listener_indices),
             "configured_speed_mps": self.configured_speed_mps,
             "setpoint_publishers": self.setpoint_publishers,
+            "target_publishers": [
+                (item.node_name, item.node_namespace, item.topic_type)
+                for item in self.get_publishers_info_by_topic(
+                    "/position_controller/target"
+                )
+            ],
             "setpoint_count": self.setpoint_count,
             "max_observed_speed_mps": round(self.max_observed_speed_mps, 3),
             "min_raw_clearance_m": None
@@ -218,8 +238,14 @@ class EngineScenario(Scenario):
         )
         assert self.fix is not None
         self.home_wgs84 = (self.fix.latitude, self.fix.longitude)
-        if not self._same_point(self.home_wgs84, self.route[0]):
-            raise RuntimeError("SITL home is not at the first route waypoint")
+        expected_home = os.environ.get("EXPECTED_SITL_HOME", "")
+        expected_origin = (
+            tuple(float(value) for value in expected_home.split(",")[:2])
+            if expected_home
+            else self.route[0]
+        )
+        if not self._same_point(self.home_wgs84, expected_origin):
+            raise RuntimeError("SITL GPS does not match the configured home")
         self.wait_for(
             "sole setpoint publisher",
             lambda: bool(
@@ -253,6 +279,12 @@ class EngineScenario(Scenario):
             lambda: self.first_leg_target is not None,
             90.0,
         )
+        target_types = {
+            item.topic_type
+            for item in self.get_publishers_info_by_topic("/position_controller/target")
+        }
+        if target_types != {"airside_interfaces/msg/PositionTarget"}:
+            raise RuntimeError(f"conflicting target topic types: {sorted(target_types)}")
         self.wait_for(
             "listener moving aircraft",
             lambda: 2 in self.listener_indices,
@@ -317,6 +349,11 @@ class EngineScenario(Scenario):
             raise RuntimeError(
                 f"raw keep-away margin below 3 m: {self.min_raw_clearance_m:.2f}"
             )
+        if self.scenario_name == "engine-triangle" and (
+            "YIELD_CROSSING" not in self.status_reasons
+            or self.min_raw_clearance_m > 12.0
+        ):
+            raise RuntimeError("mock crossing did not challenge the flown route")
         if self.max_observed_speed_mps > 1.7:
             raise RuntimeError(
                 f"observed speed exceeded 1.7 m/s: {self.max_observed_speed_mps:.2f}"

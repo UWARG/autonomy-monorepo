@@ -80,6 +80,12 @@ class ReplayScenario(Scenario):
         self.setpoint_publishers: list[tuple[str, str]] = []
         self.create_timer(0.05, self.publish_traffic)
 
+    def set_home_origin(self, home: tuple[float, float]) -> None:
+        """Keep replayed WGS84 targets fixed when SITL home differs from waypoint 0."""
+        self.home_wgs84 = home
+        self.origin = home
+        self.route_local = tuple(east_north(home, point) for point in self.route)
+
     def _pose(self, msg: PoseStamped) -> None:
         super()._pose(msg)
         if not self.target_enabled:
@@ -224,7 +230,7 @@ class ReplayScenario(Scenario):
             )
         self.configured_speed_mps = self.check_speed_parameter()
         assert self.fix is not None
-        self.home_wgs84 = (self.fix.latitude, self.fix.longitude)
+        self.set_home_origin((self.fix.latitude, self.fix.longitude))
         self.set_mode("GUIDED")
         self.arm()
         response = self.call(

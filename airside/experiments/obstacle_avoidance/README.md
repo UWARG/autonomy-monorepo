@@ -100,19 +100,29 @@ listener.
 
 `engine-triangle` and `engine-eight` additionally start the real mission
 manager with one lap and use its waypoint targets and spline path. The runner
-places SITL at the route's first waypoint and generates a moving 1 Hz crossing
-on its first travel leg. After syncing #232, the active route is the eight-point
-Cornfield route; `engine-eight` uses an equivalent test fixture. The summary
+uses home `43.4338803,-80.5775947,330,0` for the active WRESTRC triangle;
+other routes use their first waypoint. A mock aircraft crosses a full travel
+leg at 1 Hz after takeoff. `engine-eight` uses a separate Cornfield fixture. The summary
 records target order, path lengths, traffic, clearance,
-speed, hold reasons and setpoint publishers. These local tests still do not
-reproduce an unidentified merged copy or qualify real server traffic.
+speed, hold reasons and setpoint publishers. The mock own-aircraft index is a
+test fixture and does not identify the real UAV.
 
-If a merged copy fails, save its commit SHA, launch command, controller log,
-and rosbag. Check that exactly one node publishes
-`/mavros/setpoint_raw/global` and that the launched listener publishes the
-topic the controller subscribes to. This branch uses `/aeac/traffic`; another
-implementation may use `/position_controller/obstacle`. A passing test on
-this branch does not identify the cause of a different copy's failure.
+If rosbag reports multiple types for `/position_controller/target`, inspect
+`summary.json`'s `target_publishers` and the failing stack's ROS graph. This
+branch uses only `airside_interfaces/msg/PositionTarget` on that topic. Stop
+older Airside stacks sharing the ROS domain, rebuild the image, and rerun.
+Save the failing commit, launch command and rosbag log if the type still
+differs. Only `position_controller` may publish MAVROS position setpoints.
+While the failing stack is running, inspect its topic endpoints from `airside/`:
+
+```bash
+docker compose -f compose.sitl.yaml exec airside bash -lc \
+  'source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && \
+   ros2 topic info -v /position_controller/target'
+```
+
+Send the output, including each publisher's node name and type, with the
+failing commit SHA. Do not send the `.env` or token.
 
 ## Receive-only AEAC capture
 
@@ -150,10 +160,9 @@ bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh replay \
 The runner starts at the mission start, commands the complete closed route,
 preserves all captured aircraft and source timing, and does not loop or invent
 data. A blocked run remains a failure to complete the route even when hold and
-pilot alert work correctly.
-`routes/wrestrc-triangle.yaml` has the commented triangle's three vertices in
-mission-manager order; `--route` can use it without changing
-the active mission. This direct-target replay does not exercise the mission
+pilot alert work correctly. The active `waypoints.yaml` and test copy
+`routes/wrestrc-triangle.yaml` use the same WRESTRC vertices. The mission
+manager orders them clockwise from home. This direct-target replay does not exercise the mission
 manager's waypoint-replacement handshake.
 
 For the full mission-manager handshake, use `engine-replay` with the test-only

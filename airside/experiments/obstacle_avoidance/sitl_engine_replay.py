@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -133,14 +134,20 @@ class EngineReplayScenario(ReplayScenario):
             120.0,
         )
         assert self.fix is not None
-        self.home_wgs84 = (self.fix.latitude, self.fix.longitude)
+        self.set_home_origin((self.fix.latitude, self.fix.longitude))
+        expected_home = os.environ.get("EXPECTED_SITL_HOME", "")
+        expected_origin = (
+            tuple(float(value) for value in expected_home.split(",")[:2])
+            if expected_home
+            else self.route[0]
+        )
         if (
             math.hypot(
-                *east_north_coordinate_offset_m(*self.home_wgs84, *self.route[0])
+                *east_north_coordinate_offset_m(*self.home_wgs84, *expected_origin)
             )
             > 0.5
         ):
-            raise RuntimeError("SITL home is not at the first route waypoint")
+            raise RuntimeError("SITL GPS does not match the configured home")
         self.wait_for(
             "sole setpoint publisher",
             lambda: bool(
