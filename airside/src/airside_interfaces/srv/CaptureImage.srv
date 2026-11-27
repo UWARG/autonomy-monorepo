@@ -1,0 +1,10 @@
+# Request one bundle of the latest image, GPS location and IMU.
+---
+# False when no camera frame is available yet. GPS/IMU are optional: when
+# missing, location/imu are zeroed and message names what was missing.
+bool success
+string message
+std_msgs/Header header
+sensor_msgs/CompressedImage image
+Coordinate location
+sensor_msgs/Imu imu
