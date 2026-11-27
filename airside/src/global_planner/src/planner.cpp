@@ -7,15 +7,15 @@
 
 namespace GlobalPlanner{
     PlannerNode::PlannerNode(const rclcpp::NodeOptions & options): rclcpp::Node("global_planner", options){
-        this->declare_parameter("step_size", rclcpp::ParameterValue{});
-        this->declare_parameter("safety_margin", rclcpp::ParameterValue{});
-        this->declare_parameter("min_altitude", rclcpp::ParameterValue{});
-        this->declare_parameter("max_altitude", rclcpp::ParameterValue{});
-        this->declare_parameter("max_planning_time", rclcpp::ParameterValue{});
-        this->declare_parameter("lookahead_dist", rclcpp::ParameterValue{});
-        this->declare_parameter("acceptance_radius", rclcpp::ParameterValue{});
-        this->declare_parameter("replan_cooldown", rclcpp::ParameterValue{});
-        this->declare_parameter("setpoint_rate", rclcpp::ParameterValue{});
+        this->declare_parameter("step_size", 0.5);
+        this->declare_parameter("safety_margin", 0.5);
+        this->declare_parameter("min_altitude", 1.0);
+        this->declare_parameter("max_altitude", 30.0);
+        this->declare_parameter("max_planning_time", 5.0);
+        this->declare_parameter("lookahead_dist", 1.0);
+        this->declare_parameter("acceptance_radius", 0.5);
+        this->declare_parameter("replan_cooldown", 2.0);
+        this->declare_parameter("setpoint_rate", 10.0);
 
         planner_config_.step_size = this->get_parameter("step_size").as_double();
         planner_config_.safety_margin = this->get_parameter("safety_margin").as_double();

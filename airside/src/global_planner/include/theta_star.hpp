@@ -30,7 +30,8 @@ namespace GlobalPlanner{
             double max_planning_time = 5.0;
         };
 
-        explicit ThetaStar(Config config = Config());
+        ThetaStar() = default;
+        explicit ThetaStar(Config config);
         std::vector<octomap::point3d> plan(const octomap::point3d& start, const octomap::point3d& goal, const octomap::OcTree& map);
         bool lineOfSight(const octomap::point3d& a, const octomap::point3d& b, const octomap::OcTree& map) const;
 

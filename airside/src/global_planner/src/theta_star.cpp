@@ -73,7 +73,7 @@ namespace GlobalPlanner{
         const octomap::point3d max_pt(point.x() + margin_f, point.y() + margin_f, point.z() + margin_f);
         const double margin_sq = margin * margin;
 
-        for(octomap::OcTree::leaf_bbx_iterator it = map.begin_leaf_bbx(min_pt, max_pt), end = map.end_leaf_bbx(); it != end; ++it){
+        for(octomap::OcTree::leaf_bbx_iterator it = map.begin_leafs_bbx(min_pt, max_pt), end = map.end_leafs_bbx(); it != end; ++it){
             if(!map.isNodeOccupied(*it)){
                 continue;
             }
@@ -157,7 +157,8 @@ namespace GlobalPlanner{
     }
 
     std::vector<octomap::point3d> ThetaStar::plan(const octomap::point3d& start, const octomap::point3d& goal, const octomap::OcTree& map){
-        if(!isFree(start, map) || !isFreeSafe(goal, config_.safety_margin, map))
+        if(start.z() > config_.max_altitude || goal.z() > config_.max_altitude ||
+            !isFree(start, map) || !isFreeSafe(goal, config_.safety_margin, map))
             return{};
 
         std::vector<PathNode> nodes;
@@ -222,7 +223,8 @@ namespace GlobalPlanner{
             }
 
             for(const auto& neighbor : getNeighbors(curr_pos)){
-                if(!isFreeSafe(neighbor, config_.safety_margin, map)){
+                if(!isFreeSafe(neighbor, config_.safety_margin, map) ||
+                    !lineOfSight(curr_pos, neighbor, map)){
                     continue;
                 }
 
