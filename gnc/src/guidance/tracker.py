@@ -5,7 +5,8 @@ from __future__ import annotations
 import math
 
 from .gimbal import (
-    body_angles,
+    earth_angles,
+    earth_to_body,
     is_settled,
     limit_yaw_change,
     look_angles,
@@ -67,17 +68,31 @@ class GuidanceTracker:
         self._last_acceleration: Vec3 = (0.0, 0.0, 0.0)
         self._last_yaw = 0.0
 
-    def reset(self, position_m: Vec3, velocity_mps: Vec3 = (0.0, 0.0, 0.0)) -> None:
+    def reset(
+        self,
+        position_m: Vec3,
+        velocity_mps: Vec3 = (0.0, 0.0, 0.0),
+        aircraft_yaw_rad: float | None = None,
+    ) -> None:
         """Place the tracker at the reference sample nearest ``position_m``."""
         _check_vec("position_m", position_m)
         _check_vec("velocity_mps", velocity_mps)
+        if aircraft_yaw_rad is not None and not math.isfinite(aircraft_yaw_rad):
+            raise ValueError("aircraft_yaw_rad must be finite")
+
         self._index = self._nearest_index(
             position_m, 0, len(self._reference.position_m) - 1
         )
         self._capture_index = 0
         self._settled_time_s = 0.0
         self._last_acceleration = (0.0, 0.0, 0.0)
-        self._last_yaw = _heading(velocity_mps, 0.0)
+        if aircraft_yaw_rad is not None:
+            self._last_yaw = wrap_angle(aircraft_yaw_rad)
+        elif _norm(velocity_mps) >= _YAW_SPEED_EPS:
+            self._last_yaw = _heading(velocity_mps, 0.0)
+        else:
+            # A hover reset must not silently assume north.
+            self._last_yaw = self._reference_yaw(self._index)
 
     def mark_captured(self, index: int | None = None) -> bool:
         """Advance past the current capture after its photo is taken."""
@@ -97,8 +112,13 @@ class GuidanceTracker:
         gimbal_state: GimbalState,
         dt_s: float,
         aircraft_yaw_rate_radps: float = 0.0,
+        aircraft_yaw_rad: float | None = None,
     ) -> TrackerCommand:
-        """Return the guidance command for one control step."""
+        """Return the guidance command for one control step.
+
+        ``aircraft_yaw_rad`` should be the measured airframe heading. When it is
+        omitted, the last commanded heading is used for compatibility.
+        """
         _check_vec("position_m", position_m)
         _check_vec("velocity_mps", velocity_mps)
         _check_gimbal_state(gimbal_state)
@@ -106,6 +126,13 @@ class GuidanceTracker:
             raise ValueError("dt_s must be positive and finite")
         if not math.isfinite(aircraft_yaw_rate_radps):
             raise ValueError("aircraft_yaw_rate_radps must be finite")
+        if aircraft_yaw_rad is not None and not math.isfinite(aircraft_yaw_rad):
+            raise ValueError("aircraft_yaw_rad must be finite")
+        measured_aircraft_yaw = (
+            self._last_yaw
+            if aircraft_yaw_rad is None
+            else wrap_angle(aircraft_yaw_rad)
+        )
 
         self._update_index(position_m, dt_s)
         index = self._index
@@ -119,6 +146,7 @@ class GuidanceTracker:
             and reference.time_s[index]
             >= reference.duration_s - self._config.completion_margin_s
         ):
+            hold_yaw = wrap_angle(gimbal_state.yaw_rad + measured_aircraft_yaw)
             return self._command(
                 index,
                 position_m,
@@ -127,7 +155,12 @@ class GuidanceTracker:
                 gimbal_state,
                 self._last_yaw,
                 TrackerStatus.COMPLETE,
+                hold_yaw,
+                gimbal_state.pitch_rad,
+                gimbal_state.roll_rad,
                 dt_s=dt_s,
+                aircraft_yaw_rad=measured_aircraft_yaw,
+                aircraft_yaw_rate_radps=aircraft_yaw_rate_radps,
             )
 
         acceleration = _add(
@@ -153,14 +186,27 @@ class GuidanceTracker:
                 self._limits.max_jerk_mps3 * dt_s,
             )
             velocity = _add(velocity_mps, _scale(acceleration, dt_s))
+            # Velocity and acceleration are hard limits; jerk is secondary when
+            # the limits conflict.
+            velocity = _limit_norm(velocity, self._limits.max_velocity_mps)
+            acceleration = _limit_norm(
+                _scale(_sub(velocity, velocity_mps), 1.0 / dt_s),
+                self._limits.max_acceleration_mps2,
+            )
         self._last_acceleration = acceleration
 
         target = reference.aim_targets_m[index]
+        if self._capture_index < len(reference.captures):
+            pending = reference.captures[self._capture_index]
+            if index >= pending.sample_index:
+                # Keep the camera on a pending capture until it is taken or missed.
+                target = pending.look_at_m
+
         desired_aircraft_yaw = _heading(velocity, self._last_yaw)
         if target is not None:
             world_yaw, world_pitch = look_angles(position_m, target)
             desired_aircraft_yaw = yaw_for_limits(
-                world_yaw, desired_aircraft_yaw, self._gimbal
+                world_yaw, measured_aircraft_yaw, self._gimbal
             )
 
         aircraft_yaw = limit_yaw_change(
@@ -171,13 +217,23 @@ class GuidanceTracker:
         self._last_yaw = aircraft_yaw
 
         if target is not None:
-            desired_yaw, desired_pitch, desired_roll = body_angles(
-                world_yaw, world_pitch, aircraft_yaw, self._gimbal
+            desired_yaw, desired_pitch, desired_roll = earth_angles(
+                world_yaw, world_pitch, self._gimbal
+            )
+            # Commands are earth-frame; ArduPilot reports body-frame gimbal state.
+            desired_body_yaw, desired_body_pitch, desired_body_roll = earth_to_body(
+                desired_yaw,
+                desired_pitch,
+                desired_roll,
+                measured_aircraft_yaw,
             )
         else:
-            desired_yaw = gimbal_state.yaw_rad
+            desired_yaw = wrap_angle(gimbal_state.yaw_rad + measured_aircraft_yaw)
             desired_pitch = gimbal_state.pitch_rad
             desired_roll = gimbal_state.roll_rad
+            desired_body_yaw = gimbal_state.yaw_rad
+            desired_body_pitch = gimbal_state.pitch_rad
+            desired_body_roll = gimbal_state.roll_rad
 
         status = TrackerStatus.TRACKING
         capture_ready = False
@@ -188,9 +244,9 @@ class GuidanceTracker:
             speed = _norm(velocity_mps)
             settled = is_settled(
                 gimbal_state,
-                desired_yaw,
-                desired_pitch,
-                desired_roll,
+                desired_body_yaw,
+                desired_body_pitch,
+                desired_body_roll,
                 self._gimbal,
                 aircraft_yaw_rate_radps,
             )
@@ -231,6 +287,8 @@ class GuidanceTracker:
             capture_ready,
             capture_index,
             dt_s=dt_s,
+            aircraft_yaw_rad=measured_aircraft_yaw,
+            aircraft_yaw_rate_radps=aircraft_yaw_rate_radps,
         )
 
     def _command(
@@ -242,24 +300,22 @@ class GuidanceTracker:
         gimbal_state: GimbalState,
         aircraft_yaw: float,
         status: TrackerStatus,
-        desired_yaw: float | None = None,
-        desired_pitch: float | None = None,
-        desired_roll: float | None = None,
+        desired_yaw: float,
+        desired_pitch: float,
+        desired_roll: float,
         capture_ready: bool = False,
         capture_index: int = -1,
         dt_s: float | None = None,
+        aircraft_yaw_rad: float = 0.0,
+        aircraft_yaw_rate_radps: float = 0.0,
     ) -> TrackerCommand:
-        if desired_yaw is None:
-            desired_yaw = gimbal_state.yaw_rad
-        if desired_pitch is None:
-            desired_pitch = gimbal_state.pitch_rad
-        if desired_roll is None:
-            desired_roll = gimbal_state.roll_rad
-
         rate_dt = dt_s if dt_s is not None else self._reference_period
+        # Measured yaw is body-frame; add aircraft yaw to compare in earth frame.
+        measured_earth_yaw = wrap_angle(gimbal_state.yaw_rad + aircraft_yaw_rad)
+        world_yaw_rate = gimbal_state.yaw_rate_radps + aircraft_yaw_rate_radps
         yaw_rate = rate_command(
-            wrap_angle(desired_yaw - gimbal_state.yaw_rad),
-            gimbal_state.yaw_rate_radps,
+            wrap_angle(desired_yaw - measured_earth_yaw),
+            world_yaw_rate,
             self._gimbal.max_yaw_rate_radps,
             self._gimbal.max_yaw_acceleration_radps2,
             rate_dt,
@@ -299,6 +355,17 @@ class GuidanceTracker:
             position_error_m=_dist(position_m, self._reference.position_m[index]),
             status=status,
         )
+
+    def _reference_yaw(self, index: int) -> float:
+        reference = self._reference
+        for offset in range(50):
+            for candidate in (index + offset, index - offset):
+                if 0 <= candidate < len(reference.velocity_mps):
+                    if _norm(reference.velocity_mps[candidate]) >= _YAW_SPEED_EPS:
+                        return _heading(reference.velocity_mps[candidate], 0.0)
+        before = reference.position_m[max(0, index - 1)]
+        after = reference.position_m[min(len(reference.position_m) - 1, index + 1)]
+        return _heading(_sub(after, before), 0.0)
 
     def _update_index(self, position_m: Vec3, dt_s: float) -> None:
         samples = self._reference.position_m

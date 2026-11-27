@@ -130,14 +130,21 @@ command = tracker.step(
     gimbal_state=GimbalState(),
     dt_s=0.05,
     aircraft_yaw_rate_radps=0.0,
+    aircraft_yaw_rad=0.0,
 )
 ```
 
 ### Conventions
 
-- Positions and look-at points are local ENU metres: `(east, north, up)`.
-- The airframe is assumed level. Gimbal yaw is relative to aircraft yaw; pitch is
-  relative to the horizon, and roll is commanded level.
+- Positions, velocities, and look-at points are local ENU metres:
+  `(east, north, up)`. ArduPilot guided mode uses NED, so the integration layer must
+  map `north`, `east`, and `-up` into `vx`, `vy`, and `vz`.
+- Gimbal commands are earth-frame: yaw is `0` at north and positive clockwise, pitch
+  is relative to the horizon, and roll is commanded level. ArduPilot reports gimbal
+  status in body-frame coordinates, so `GimbalState` is body-frame.
+- Gimbal yaw limits are relative to the airframe. The tracker uses measured aircraft
+  yaw to decide whether a target is reachable and to convert the desired earth-frame
+  angles to body-frame for the settle check. The airframe is assumed level.
 - `capture=True` requires `look_at_m`. `CAPTURE_READY` is reported only after the
   measured gimbal has remained inside the settle tolerances for `settle_time_s`.
 - `GuidanceLimits.max_deviation_m` optionally rejects a reference that bulges too far
@@ -147,8 +154,9 @@ command = tracker.step(
 - A viewpoint's `capture_speed_mps` must not exceed `max_velocity_mps`.
 - `TrackerConfig.max_aircraft_yaw_rate_radps` limits how quickly the commanded
   aircraft yaw can change.
-- `aircraft_yaw_rate_radps` is added to the measured gimbal yaw rate when checking
-  whether the camera has settled.
+- `aircraft_yaw_rad` is the measured airframe heading. `aircraft_yaw_rate_radps` is
+  added to the measured body-frame gimbal yaw rate when checking whether the camera
+  has settled.
 
 ### Capture lifecycle
 
@@ -162,8 +170,8 @@ and advances to the next capture. `COMPLETE` is reported near the final viewpoin
 - The module is numeric only. It does not publish ROS messages, call MAVROS, or
   control a camera.
 - The gimbal is modelled as a three-axis yaw/pitch/roll mount. Roll is commanded
-  level. The airframe is assumed level, and only aircraft yaw rate is compensated in
-  the settle check; roll and pitch rates are not modelled.
+  level. Converting earth-frame commands to the body-frame settle check assumes a
+  level airframe; aircraft roll and pitch rates are not modelled.
 - No obstacle avoidance, geofence, wind, or vehicle dynamics are modelled.
 - Start and end speeds are zero, so a capture at the first or last viewpoint occurs
   at rest.

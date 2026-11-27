@@ -83,7 +83,11 @@ class GuidanceLimits:
 
 @dataclass(frozen=True)
 class GimbalModel:
-    """Three-axis gimbal limits and settling tolerances."""
+    """Three-axis gimbal limits and settling tolerances.
+
+    Yaw limits are relative to the airframe. Pitch and roll limits are relative
+    to the horizon/level orientation.
+    """
 
     yaw_min_rad: float = -math.pi
     yaw_max_rad: float = math.pi
@@ -144,7 +148,11 @@ class GimbalModel:
 
 @dataclass(frozen=True)
 class GimbalState:
-    """Measured gimbal angles and rates."""
+    """Measured body-frame gimbal angles and rates.
+
+    Matches the body-frame attitude reported by ArduPilot's
+    ``GIMBAL_DEVICE_ATTITUDE_STATUS``.
+    """
 
     yaw_rad: float = 0.0
     pitch_rad: float = 0.0
@@ -212,7 +220,12 @@ class TrackerConfig:
 
 @dataclass(frozen=True)
 class TrackerCommand:
-    """Raw guidance output for one control step."""
+    """Raw guidance output for one control step.
+
+    Aircraft yaw is earth-frame. Gimbal yaw, pitch, roll, and their rates are
+    earth-frame commands; the caller converts them to ArduPilot gimbal-manager
+    messages.
+    """
 
     reference_position_m: Vec3
     velocity_mps: Vec3

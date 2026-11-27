@@ -27,22 +27,37 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def body_angles(
+def earth_angles(
     world_yaw: float,
     world_pitch: float,
-    aircraft_yaw: float,
     model: GimbalModel,
 ) -> tuple[float, float, float]:
-    """Convert a world look target to body-frame yaw, pitch, and roll.
+    """Convert a world look target to earth-frame gimbal command angles.
 
-    The camera is commanded level in roll; the airframe is assumed level.
+    Yaw and roll are earth-relative; pitch is relative to the horizon. The
+    camera is commanded level in roll, and the airframe is assumed level.
     """
-    yaw = clamp(
-        wrap_angle(world_yaw - aircraft_yaw), model.yaw_min_rad, model.yaw_max_rad
-    )
+    yaw = wrap_angle(world_yaw)
     pitch = clamp(world_pitch, model.pitch_min_rad, model.pitch_max_rad)
     roll = clamp(0.0, model.roll_min_rad, model.roll_max_rad)
     return yaw, pitch, roll
+
+
+def earth_to_body(
+    earth_yaw: float,
+    earth_pitch: float,
+    earth_roll: float,
+    aircraft_yaw: float,
+) -> tuple[float, float, float]:
+    """Convert earth-frame gimbal angles to body-frame angles.
+
+    This assumes a level airframe, so only yaw changes between frames.
+    """
+    return (
+        wrap_angle(earth_yaw - aircraft_yaw),
+        earth_pitch,
+        earth_roll,
+    )
 
 
 def yaw_for_limits(
@@ -65,10 +80,12 @@ def is_settled(
     model: GimbalModel,
     aircraft_yaw_rate_radps: float = 0.0,
 ) -> bool:
-    """True when the measured camera is within the settle tolerances.
+    """True when the measured body-frame camera is within settle tolerances.
 
-    ``aircraft_yaw_rate_radps`` is added to the measured gimbal yaw rate because
-    the camera's world-frame yaw rate includes the airframe's yaw motion.
+    ``desired_yaw``, ``desired_pitch``, and ``desired_roll`` must already be in
+    body-frame coordinates. ``aircraft_yaw_rate_radps`` is added to the measured
+    gimbal yaw rate because the camera's world-frame yaw rate includes the
+    airframe's yaw motion.
     """
     if abs(wrap_angle(desired_yaw - measured.yaw_rad)) > model.settle_tolerance_rad:
         return False

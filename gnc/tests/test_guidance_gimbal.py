@@ -4,7 +4,8 @@ import pytest
 
 from guidance import GimbalModel, GimbalState
 from guidance.gimbal import (
-    body_angles,
+    earth_angles,
+    earth_to_body,
     is_settled,
     look_angles,
     rate_command,
@@ -30,10 +31,17 @@ def test_wrap_angle_handles_branch_cut():
     assert wrap_angle(-math.pi - 0.1) == pytest.approx(math.pi - 0.1)
 
 
-def test_body_angles_subtract_aircraft_yaw():
+def test_earth_angles_are_absolute():
     model = GimbalModel()
-    yaw, pitch, roll = body_angles(0.0, 0.0, math.pi / 2.0, model)
-    assert yaw == pytest.approx(-math.pi / 2.0)
+    yaw, pitch, roll = earth_angles(math.pi / 2.0, 0.0, model)
+    assert yaw == pytest.approx(math.pi / 2.0)
+    assert pitch == pytest.approx(0.0)
+    assert roll == pytest.approx(0.0)
+
+
+def test_earth_to_body_uses_aircraft_yaw():
+    body_yaw, pitch, roll = earth_to_body(0.0, 0.0, 0.0, math.pi / 2.0)
+    assert body_yaw == pytest.approx(-math.pi / 2.0)
     assert pitch == pytest.approx(0.0)
     assert roll == pytest.approx(0.0)
 

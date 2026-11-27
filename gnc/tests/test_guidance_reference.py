@@ -124,3 +124,19 @@ def test_reference_without_captures_is_valid():
     )
     assert reference.captures == []
     assert reference.duration_s > 0.0
+
+
+def test_capture_indices_follow_viewpoint_order_on_loops():
+    reference = build_reference(
+        [
+            Viewpoint((0.0, 0.0, 10.0)),
+            Viewpoint((20.0, 0.0, 10.0), capture=True, look_at_m=(20.0, 0.0, 0.0)),
+            Viewpoint((20.0, 20.0, 10.0)),
+            Viewpoint((0.0, 20.0, 10.0)),
+            Viewpoint((20.0, 0.0, 10.0), capture=True, look_at_m=(20.0, 0.0, 0.0)),
+            Viewpoint((20.0, -20.0, 10.0)),
+        ],
+        GuidanceLimits(sample_period_s=0.05),
+    )
+    first, second = reference.captures
+    assert second.sample_index > first.sample_index

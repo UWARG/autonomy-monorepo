@@ -41,15 +41,13 @@ def build_reference(
             f"limit is {limits.max_deviation_m:.3f} m"
         )
 
-    capture_path_indices = [
-        _nearest_index(path_points, viewpoint.position_m)
-        for viewpoint in viewpoints
-        if viewpoint.capture
-    ]
+    capture_viewpoints = [viewpoint for viewpoint in viewpoints if viewpoint.capture]
+    capture_path_indices = _ordered_indices(
+        path_points, [viewpoint.position_m for viewpoint in capture_viewpoints]
+    )
     capture_speeds = [
         viewpoint.capture_speed_mps or limits.capture_speed_mps
-        for viewpoint in viewpoints
-        if viewpoint.capture
+        for viewpoint in capture_viewpoints
     ]
     speeds = _speed_profile(
         curvature,
@@ -367,11 +365,14 @@ def _aim_targets(
     if not targets:
         return [None] * len(positions)
 
-    target_indices = [
-        _nearest_index(positions, viewpoint.position_m)
-        for viewpoint in viewpoints
-        if viewpoint.look_at_m is not None
-    ]
+    target_indices = _ordered_indices(
+        positions,
+        [
+            viewpoint.position_m
+            for viewpoint in viewpoints
+            if viewpoint.look_at_m is not None
+        ],
+    )
     result: list[Vec3 | None] = []
     target = 0
     for index in range(len(positions)):
@@ -384,20 +385,24 @@ def _aim_targets(
 def _capture_points(
     viewpoints: list[Viewpoint], positions: list[Vec3], limits: GuidanceLimits
 ) -> list[CapturePoint]:
-    captures = []
-    for index, viewpoint in enumerate(viewpoints):
-        if not viewpoint.capture:
-            continue
-        captures.append(
-            CapturePoint(
-                index=index,
-                sample_index=_nearest_index(positions, viewpoint.position_m),
-                position_m=viewpoint.position_m,
-                look_at_m=viewpoint.look_at_m,
-                speed_mps=viewpoint.capture_speed_mps or limits.capture_speed_mps,
-            )
+    entries = [
+        (index, viewpoint)
+        for index, viewpoint in enumerate(viewpoints)
+        if viewpoint.capture
+    ]
+    sample_indices = _ordered_indices(
+        positions, [viewpoint.position_m for _, viewpoint in entries]
+    )
+    return [
+        CapturePoint(
+            index=index,
+            sample_index=sample_index,
+            position_m=viewpoint.position_m,
+            look_at_m=viewpoint.look_at_m,
+            speed_mps=viewpoint.capture_speed_mps or limits.capture_speed_mps,
         )
-    return captures
+        for (index, viewpoint), sample_index in zip(entries, sample_indices)
+    ]
 
 
 def _max_deviation(points: list[Vec3], polyline: list[Vec3]) -> float:
@@ -410,11 +415,20 @@ def _max_deviation(points: list[Vec3], polyline: list[Vec3]) -> float:
     )
 
 
-def _nearest_index(points: list[Vec3], target: Vec3) -> int:
-    return min(
-        range(len(points)),
-        key=lambda index: _distance_squared(points[index], target),
-    )
+def _ordered_indices(points: list[Vec3], targets: list[Vec3]) -> list[int]:
+    """Map ordered targets to path samples without jumping to an earlier pass."""
+    indices = []
+    cursor = 0
+    for target in targets:
+        if cursor >= len(points):
+            cursor = len(points) - 1
+        index = min(
+            range(cursor, len(points)),
+            key=lambda candidate: _distance_squared(points[candidate], target),
+        )
+        indices.append(index)
+        cursor = index + 1
+    return indices
 
 
 def _point_segment_distance(point: Vec3, start: Vec3, end: Vec3) -> float:
