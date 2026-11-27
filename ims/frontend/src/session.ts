@@ -141,7 +141,7 @@ function memorySink(): SessionSink {
 
 // Stream to a file without buffering the session in memory.
 // Call from a click handler because the picker requires user activation.
-async function fileSink(fileName: string, onError: (err: unknown) => void): Promise<SessionSink> {
+async function fileSink(fileName: string): Promise<SessionSink> {
   const pick = (window as unknown as PickerWindow).showSaveFilePicker;
   if (!pick) throw new Error('File System Access API unavailable');
   const handle = await pick({
@@ -151,14 +151,12 @@ async function fileSink(fileName: string, onError: (err: unknown) => void): Prom
     ],
   });
   const writable = await handle.createWritable();
-  // Serialize writes to preserve line order and handle failures without blocking later writes.
+  // Serialize writes; a failure rejects subsequent writes without sending them to disk.
   let chain: Promise<void> = Promise.resolve();
   return {
     kind: 'file',
     write: (line) => {
-      chain = chain
-        .then(() => writable.write(`${line}\n`))
-        .catch((err) => onError(err));
+      chain = chain.then(() => writable.write(`${line}\n`));
       return chain;
     },
     close: async () => {
@@ -167,7 +165,7 @@ async function fileSink(fileName: string, onError: (err: unknown) => void): Prom
       return null;
     },
     abort: async () => {
-      await chain;
+      await chain.catch(() => undefined);
       await writable.abort?.().catch(() => undefined);
     },
   };
@@ -299,18 +297,11 @@ export async function startRecording(
     pushRecorder(true);
     const startedAt = Date.now();
     recFileName = sessionFileName(startedAt);
-    let headerWriteError: Error | null = null;
-    const onSinkError = (err: unknown) => {
-      headerWriteError = new Error(String(err));
-      recError = `Session file write failed: ${String(err)}`;
-      pushRecorder(true);
-    };
-
     let notice: string | null = null;
     if (opts.toFile ?? true) {
       if (canStreamToFile()) {
         try {
-          sink = await fileSink(recFileName, onSinkError);
+          sink = await fileSink(recFileName);
         } catch {
           // Picker dismissed or blocked — keep the capture, buffer it in memory.
           sink = memorySink();
@@ -327,8 +318,6 @@ export async function startRecording(
     const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
     const headerLine = JSON.stringify(header);
     await sink.write(headerLine);
-    // The file sink reports write errors via its callback instead of rejecting.
-    if (headerWriteError) throw headerWriteError;
 
     for (const { name, type } of topics) {
       const topic = new ROSLIB.Topic({ ros, name, messageType: type });
@@ -394,12 +383,21 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
     );
     return;
   }
-  recFrames += 1;
-  recBytes += bytes;
-  void sink.write(line).catch((err) => {
-    recError = `Session file write failed: ${String(err)}`;
-    pushRecorder(true);
-  });
+  if (sink.kind === 'memory') {
+    recFrames += 1;
+    recBytes += bytes;
+  }
+  void sink.write(line)
+    .then(() => {
+      if (sink.kind === 'file') {
+        recFrames += 1;
+        recBytes += bytes;
+        pushRecorder();
+      }
+    })
+    .catch((err) => {
+      if (recSink === sink) void stopRecording(`Session file write failed: ${String(err)}`);
+    });
   pushRecorder();
 }
 
@@ -414,22 +412,23 @@ export async function stopRecording(reason?: string): Promise<Recording | null> 
       try {
         topic.unsubscribe();
       } catch (err) {
-        recError = `Could not unsubscribe from ${topic.name}: ${String(err)}`;
+        recError ??= `Could not unsubscribe from ${topic.name}: ${String(err)}`;
       }
     }
     recSubs = [];
     if (reason) recError = reason;
-    // Capture final counts before awaiting file finalization, which may outlive this recording.
-    const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
     pushRecorder(true);
 
     let blob: Blob | null = null;
     try {
       blob = await sink.close();
     } catch (err) {
-      // Report finalization failures only if no newer capture is active.
-      if (recSink == null) recError = `Could not finalize session file: ${String(err)}`;
+      recError ??= `Could not finalize session file: ${String(err)}`;
+      await sink.abort();
+      return null;
     }
+    // File counters are final only after all pending writes have completed.
+    const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
     const recording: Recording = { blob, ...finished };
     // Do not overwrite a recording that started while this file was closing.
     if (recSink == null) {
