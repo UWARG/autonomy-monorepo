@@ -136,23 +136,36 @@ def aim_point(
 ) -> Point:
     """
     Where to aim to follow ``path`` toward its waypoint ``target_index``, stopping at the end of the path.
+
+    The drone is never placed on the path beyond the target, so it cannot be
+    steered onto the next leg before reaching the target, even when that leg
+    runs close by (a sharp corner). Only within ``corner_lookahead_m`` of the
+    target does the aim run past it, to round the corner.
     """
 
     def lookahead_for(to_waypoint_m: float) -> float:
         return min(lookahead_m, max(corner_lookahead_m, to_waypoint_m))
 
     waypoints = path.waypoints
+    target = waypoints[target_index]
     target_arc_m = path.arc_at_waypoint(target_index)
-    if target_index == 0:
-        to_target_m = math.dist(position, waypoints[0])
+
+    def aim_through_target() -> Point:
+        to_target_m = math.dist(position, target)
         ahead_m = lookahead_for(to_target_m)
         if to_target_m >= ahead_m:
-            return waypoints[0]
+            return target
         return path.point_at(target_arc_m + ahead_m - to_target_m)
 
+    if target_index == 0:
+        return aim_through_target()
+
     search_from_m = path.arc_at_waypoint(max(0, target_index - 2))
-    search_to_m = path.arc_at_waypoint(min(len(waypoints) - 1, target_index + 1))
-    along_m = path.project(position, search_from_m, search_to_m)
+    along_m = path.project(position, search_from_m, target_arc_m)
+    if along_m >= target_arc_m - 1e-6:
+        # Closest to the target itself (or to the path beyond it): head for
+        # the target until close enough to round the corner.
+        return aim_through_target()
     next_waypoint_m = min(
         (
             path.arc_at_waypoint(index) - along_m

@@ -30,12 +30,12 @@ def live_traffic_buffer_m(
     elif speed_mps<10.1:
         return 10.75
     elif speed_mps<=15.1:
-        return 15.75
+        return 18.0
     else:
-        return 20.75
+        return 25.0
 
 
-def _valid_aircraft(aircraft: TrafficAircraft) -> bool:
+def is_valid_traffic_aircraft(aircraft: TrafficAircraft) -> bool:
     numbers = (
         aircraft.lat,
         aircraft.lon,
@@ -90,7 +90,7 @@ def traffic_to_obstacles(
         if aircraft.aircraft_index in seen_indices:
             raise ValueError("DUPLICATE_TRAFFIC_IDENTITY")
         seen_indices.add(aircraft.aircraft_index)
-        if not _valid_aircraft(aircraft):
+        if not is_valid_traffic_aircraft(aircraft):
             raise ValueError("INVALID_TRAFFIC_AIRCRAFT")
 
         if not all_altitudes and not (

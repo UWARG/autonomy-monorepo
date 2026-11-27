@@ -68,3 +68,43 @@ def test_duplicate_waypoints_are_merged() -> None:
     assert path.arc_at_waypoint(1) == 0.0
     assert path.arc_m[-1] == pytest.approx(30.0, abs=0.1)
     assert all(math.isfinite(c) for point in path.points for c in point)
+
+
+# The WRESTRC triangle lap, in local meters: a long, narrow wedge with its
+# apex at WP2. The path sent while flying to WP2 is WP3, WP1, WP2, WP3, WP1.
+_WP1 = (0.0, 0.0, 10.0)
+_WP2 = (-108.8, 30.6, 10.0)
+_WP3 = (-35.6, -11.3, 10.0)
+TRIANGLE_PATH = [_WP3, _WP1, _WP2, _WP3, _WP1]
+
+
+def test_off_leg_near_the_return_leg_still_heads_for_the_target() -> None:
+    # Halfway out to WP2, pushed off the outbound leg (north ~15 m here)
+    # toward the return leg (north ~-0.5 m here), which is now closer.
+    position = (-54.4, 5.0, 10.0)
+
+    aim = aim_point(SplinePath(TRIANGLE_PATH), 2, position, lookahead_m=16.0, corner_lookahead_m=3.0)
+
+    assert math.dist(aim, _WP2) < math.dist(position, _WP2) - 10.0
+    assert math.dist(aim, _WP3) > math.dist(position, _WP3)
+
+
+def test_on_the_return_leg_short_of_the_target_aims_up_the_outbound_leg() -> None:
+    # On the return leg itself, ~20 m short of WP2.
+    position = (-90.0, 19.8, 10.0)
+
+    aim = aim_point(SplinePath(TRIANGLE_PATH), 2, position, lookahead_m=16.0, corner_lookahead_m=3.0)
+
+    # Ahead toward WP2 but not past it.
+    assert 1.0 < math.dist(aim, _WP2) < math.dist(position, _WP2)
+    assert aim[0] > _WP2[0]
+    assert math.dist(aim, _WP3) > math.dist(position, _WP3)
+
+
+def test_at_the_apex_rounds_onto_the_return_leg() -> None:
+    position = (-107.0, 30.0, 10.0)
+
+    aim = aim_point(SplinePath(TRIANGLE_PATH), 2, position, lookahead_m=16.0, corner_lookahead_m=3.0)
+
+    assert math.dist(aim, _WP2) < 3.0
+    assert math.dist(aim, _WP3) < math.dist(_WP2, _WP3)

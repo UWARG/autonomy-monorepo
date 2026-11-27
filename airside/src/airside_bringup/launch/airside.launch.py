@@ -59,7 +59,10 @@ def generate_launch_description() -> LaunchDescription:
                         "fcu_protocol": "v2.0",
                         "tgt_system": 1,
                         "tgt_component": 1,
-                        "plugin_denylist": ["rc_io"],
+                        # guided_target only echoes the FCU's POSITION_TARGET_GLOBAL_INT
+                        # into local frame; nothing here uses it, and without a GPS
+                        # origin it spams "PositionTargetGlobal failed because no origin".
+                        "plugin_denylist": ["rc_io", "guided_target"],
                     }
                 ],
             ),

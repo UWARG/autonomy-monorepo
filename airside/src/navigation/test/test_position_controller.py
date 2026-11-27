@@ -132,6 +132,38 @@ def test_persistent_blockage_holds_and_alerts_pilot(controller) -> None:
     assert controller._last_alert_s == NOW + 5.0
 
 
+def test_hold_resets_planner_without_clearing_patrol_history(
+    controller, monkeypatch
+) -> None:
+    reset_calls = []
+    monkeypatch.setattr(
+        controller._avoider, "reset_planner", lambda: reset_calls.append("planner")
+    )
+    monkeypatch.setattr(
+        controller._avoider, "reset", lambda: reset_calls.append("all")
+    )
+
+    controller._hold(HERE, "YIELD_CROSSING", NOW)
+
+    assert reset_calls == ["planner"]
+
+
+def test_release_resets_planner_without_clearing_patrol_history(
+    controller, monkeypatch
+) -> None:
+    reset_calls = []
+    monkeypatch.setattr(
+        controller._avoider, "reset_planner", lambda: reset_calls.append("planner")
+    )
+    monkeypatch.setattr(
+        controller._avoider, "reset", lambda: reset_calls.append("all")
+    )
+    controller._state = State(connected=True, armed=True, mode="LOITER")
+
+    assert controller._next_setpoint(NOW) is None
+    assert reset_calls == ["planner"]
+
+
 def test_predicted_hold_conflict_alerts_immediately(controller) -> None:
     assert controller._hold(HERE, "HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED", NOW) == HERE
     assert controller._last_alert_s == NOW

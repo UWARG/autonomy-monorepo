@@ -123,6 +123,7 @@ plan = avoider.plan(AvoidanceRequest(
         horizontal_keep_away_m=..., vertical_keep_away_m=...,
     ), ...),
     traffic_age_s=0.4,                          # how old the traffic sample is
+    traffic_sample_time_s=1234.5,               # monotonic receipt time for history
 ))
 
 plan.status                # PATH_FOUND or NO_PATH
@@ -138,26 +139,67 @@ heading hysteresis between calls) and `reset()` it when control is interrupted.
 ### What it computes
 
 1. **Traffic prediction** — live mode includes every other aircraft regardless
-   of altitude. Its circle radius is the server keep-away plus 5.75 m for
-   moving traffic, or no additional buffer for stationary traffic. Positions
-   are advanced by the supplied snapshot age and swept for 3 s. The lower-level
-   conversion API can still use a vertical band and raw radius with
-   `live_buffer=False`.
+   of altitude. Its circle radius is the server keep-away plus the configured
+   moving-traffic buffer, or no additional buffer for stationary traffic.
+   Unclassified positions are advanced by the supplied snapshot age and swept
+   for 3 s. With monotonic sample times, the avoider can classify a
+   back-and-forth pattern after two repeatable cycles. It then uses a reflected
+   path between the observed endpoints for time-based separation checks instead
+   of treating the whole patrol line as a static obstacle. A confirmed patrol's
+   circle uses the server keep-away plus `patrol_traffic_buffer_m` (default
+   6 m) instead of the speed-based live buffer. The modeled speed is
+   the one that reproduces the observed period, so pauses or slowing at the
+   ends do not drift the phase. Turn points are reconstructed from the samples
+   either side of each turn, and the current direction from replaying the last
+   sample interval, so 1 Hz samples of fast traffic still give tight
+   endpoints. The model's uncertainty covers residual sampling error, time
+   spent pausing at the ends, and grows over time with period variation and
+   the gap between cruise and average speed. Learned
+   history survives planner resets, stale snapshots and control hand-offs, and
+   is dropped per aircraft after a 2.5 s sample gap. A missed sample,
+   changed path, overshoot beyond the learned endpoints, or unsafe candidate
+   invalidates that use and falls back to the existing conservative planner.
+   The lower-level conversion API can still use a vertical band and raw radius
+   with `live_buffer=False`.
 2. **Local planning** — `BendyRuler2D` searches candidate headings for one
    lookahead leg, up to 16 m, and checks its geometric clearance against the
    predicted circles. If configured, a GPS flight-boundary polygon filters
    candidate segments before route scoring. Paths starting outside the
    boundary may move closer to it or safely re-enter, but may not cross through
    it and end back outside. Each geometrically feasible candidate is also checked
-   for closest approach against traffic moving at constant velocity during the
-   leg's estimated travel time (capped at 20 s). Conflicting candidates are
-   rejected before selection. If dynamic conflicts eliminate all candidates,
-   the avoider checks whether holding is safe; it yields if so and requests
-   pilot takeover otherwise. Geometric blockage still produces a no-path hold.
+   for closest approach against unclassified traffic moving at constant
+   velocity during the leg's estimated travel time (capped at 20 s). Confirmed
+   patrols are checked against their reflected position at sampled arrival
+   times, with the keep-away radius and model uncertainty preserved. Conflicting
+   candidates are rejected before selection. If dynamic conflicts eliminate
+   all candidates, the avoider checks whether holding is safe; it yields if so
+   and requests pilot takeover otherwise. Geometric blockage still produces a
+   no-path hold.
    If the current position is already inside an aircraft's expanded keep-away,
    an egress mode allows only candidates that immediately increase separation
    from every current conflict and remain clear of other aircraft. If no such
    candidate exists, the avoider holds and requests pilot takeover.
+   Each moving aircraft's recent track (`traffic_track_window_s`, default
+   30 s) forms a band of its avoidance radius that the drone may cross but
+   not stop in, since the aircraft may fly back along it. A leg ending inside
+   a band is only accepted if carrying on straight clears the band and the
+   whole crossing is safe: against the patrol model once the pattern is
+   confirmed, and otherwise against the aircraft turning back at any moment.
+   If the drone is inside a band and has no other safe move, it retreats
+   straight away from the track (`RETREATING_FROM_TRAFFIC_TRACK`).
+   When a confirmed patrol line blocks the way to the goal and heading
+   straight for the goal is not safe, the avoider searches crossing points
+   every 2 m along the line and past its ends. Each crossing goes straight
+   across, from a staging point just outside the patrol's circle on the
+   drone's side to an exit point just outside it on the far side. A crossing
+   is feasible if, after reaching its staging point, the predicted aircraft
+   stays at least the circle radius along the line from it for the whole
+   crossing. The quickest feasible crossing to the goal is kept across
+   cycles: the drone flies to its staging point
+   (`APPROACHING_PATROL_CROSSING`), waits there for the gap
+   (`WAITING_FOR_PATROL_GAP`), then crosses in one go (`CROSSING_PATROL`),
+   rechecking each cycle. A crossing is dropped if it stops being feasible,
+   the pattern is lost or it takes over 120 s.
 3. **Command** — the first lookahead point is returned as the next waypoint;
    the velocity fields are capped at `horizontal_speed_mps` and
    `vertical_speed_mps`.
@@ -171,8 +213,10 @@ heading hysteresis between calls) and `reset()` it when control is interrupted.
   `HOLD_CONFLICT_PILOT_TAKEOVER_REQUIRED` means the modeled hold point is
   unsafe; the pilot must take over.
 - A returned leg meets the geometric clearance margin and the modeled
-  constant-velocity closest-approach check. This depends on the supplied
-  traffic age and does not model acceleration or other flight dynamics.
+  closest-approach check: constant velocity for unclassified traffic, or
+  reflected patrol motion plus model uncertainty for confirmed patterns.
+  Pattern modeling depends on timely, repeatable samples and does not model
+  unexpected acceleration or route changes.
 - Candidate ordering and ties are deterministic.
 
 The lower-level planner (`BendyRuler2D`, `PlanRequest`, `ObstacleSnapshot`,

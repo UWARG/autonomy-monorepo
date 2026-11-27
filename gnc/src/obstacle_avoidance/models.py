@@ -101,6 +101,10 @@ class AvoidanceRequest:
     goal: Coordinate
     traffic: tuple[TrafficAircraft, ...]
     traffic_age_s: float  # how long ago ``traffic`` was sampled
+    traffic_sample_time_s: float | None = None  # monotonic time at receipt
+    # The mission waypoint ``goal`` leads to, when ``goal`` is a lookahead
+    # point short of it. Crossing a patrol line is planned against this.
+    waypoint: Coordinate | None = None
 
 
 @dataclass(frozen=True, slots=True)

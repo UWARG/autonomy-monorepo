@@ -62,6 +62,20 @@ class PositionController(rclpy.node.Node):
     # Approaching a waypoint, the lookahead shrinks to keep aiming at it, down
     # to this. Bounds how far inside the spline the drone cuts a corner.
     CORNER_LOOKAHEAD_M = 3.0
+    # Horizontal speed the avoider assumes when timing legs against moving and
+    # patrolling traffic. Must match the FCU's WPNAV_SPEED (the speed position
+    # setpoints are actually flown at): if the drone flies faster, it reaches a
+    # patrol line earlier than the timing check assumed.
+    HORIZONTAL_SPEED_MPS = 2.0
+    # Buffer beyond the server keep-away for traffic confirmed as flying back
+    # and forth, in place of the speed-based live buffer (up to 25 m).
+    PATROL_TRAFFIC_BUFFER_M = 0.0
+    # Whether a confirmed patrol's circle also grows by the model's estimated
+    # prediction error (typically 5-8 m now, growing ~1 m/s at 15 m/s traffic).
+    PATROL_MODEL_UNCERTAINTY = False
+    # Seconds of each aircraft's recent track the drone may cross but must
+    # not stop in, since the aircraft may fly back along it.
+    TRAFFIC_TRACK_WINDOW_S = 30.0
     POSITION_FRESHNESS_S = 1.0
 
     TYPE_MASK = (
@@ -79,6 +93,10 @@ class PositionController(rclpy.node.Node):
         super().__init__("position_controller")
         self._avoider = ObstacleAvoider(
             AvoidanceConfig(
+                horizontal_speed_mps=self.HORIZONTAL_SPEED_MPS,
+                patrol_traffic_buffer_m=self.PATROL_TRAFFIC_BUFFER_M,
+                patrol_model_uncertainty=self.PATROL_MODEL_UNCERTAINTY,
+                traffic_track_window_s=self.TRAFFIC_TRACK_WINDOW_S,
                 flight_boundary=(
                 Coordinate(43.434066, -80.577145, 0.0),
                 Coordinate(43.434358, -80.578878, 0.0),
@@ -112,6 +130,7 @@ class PositionController(rclpy.node.Node):
         self._blocked_since_s: float | None = None
         self._hold_reason: str | None = None
         self._last_status_s = -math.inf
+        self._last_reason: str | None = None
         self._last_alert_s = -math.inf
 
         self._setpoint_pub = self.create_publisher(
@@ -246,6 +265,8 @@ class PositionController(rclpy.node.Node):
                 goal=aim,
                 traffic=self._traffic_aircraft,
                 traffic_age_s=now_s - self._traffic_received_s,
+                traffic_sample_time_s=self._traffic_received_s,
+                waypoint=self._target,
             )
         )
         if plan.status is not PlanStatus.PATH_FOUND or plan.next_waypoint is None:
@@ -293,7 +314,7 @@ class PositionController(rclpy.node.Node):
     ) -> Coordinate | None:
         """Latch the position where the hold began and keep returning it."""
 
-        self._avoider.reset()
+        self._avoider.reset_planner()
         if reason in (
             "BLOCKED",
             "YIELD_CROSSING",
@@ -329,7 +350,9 @@ class PositionController(rclpy.node.Node):
         return self._hold_at
 
     def _release(self) -> None:
-        self._avoider.reset()
+        # Keep learned traffic patterns: they describe the traffic, not this
+        # leg, and the avoider drops an aircraft's history after a sample gap.
+        self._avoider.reset_planner()
         self._hold_at = None
         self._active = False
         self._blocked_since_s = None
@@ -340,6 +363,9 @@ class PositionController(rclpy.node.Node):
     ) -> None:
         """Publish token-free, per-aircraft radii and hold reasons at 1 Hz."""
 
+        if reason != self._last_reason:
+            self.get_logger().info(f"Avoidance: {reason}")
+            self._last_reason = reason
         if now_s - self._last_status_s < 1.0:
             return
         age_s = now_s - self._traffic_received_s
