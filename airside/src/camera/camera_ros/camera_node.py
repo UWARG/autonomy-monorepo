@@ -98,9 +98,6 @@ class CameraNode(Node):
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "camera"
 
-        # orientation is not provided by the camera IMU
-        msg.orientation_covariance[0] = -1.0
-
         msg.angular_velocity.x = imu_data.gyro_x
         msg.angular_velocity.y = imu_data.gyro_y
         msg.angular_velocity.z = imu_data.gyro_z
