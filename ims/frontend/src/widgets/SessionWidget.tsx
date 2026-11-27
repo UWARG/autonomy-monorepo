@@ -165,7 +165,7 @@ export default function SessionWidget() {
       </header>
 
       <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-2">
-        {/* ---------------------------------------------------------------- */}
+        {/* Recording controls */}
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between">
             <h3 className="widget-label">Record — ROS to file</h3>
@@ -254,7 +254,7 @@ export default function SessionWidget() {
           )}
         </div>
 
-        {/* ---------------------------------------------------------------- */}
+        {/* Replay controls */}
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center justify-between">
             <h3 className="widget-label">Replay — file to ROS</h3>
