@@ -1,0 +1,13 @@
+global_planner:
+  ros__parameters:
+    # Theta* algorithm
+    step_size: 0.5 # 3D grid spacing btw neighbour nodes (smaller = more detailed paths)
+    safety_margin: 0.5 # Prevents path from being too close to obstacle depending on size (m)
+    min_altitude: 1.0 # Min flight altitude (m)
+    max_altitude: 30.0 # Max flight altitude (m)
+    max_planning_time: 5.0 # Theta* timeout to prevent indefinite search (s)
+
+    lookahead_dist: 1.0 # Distance ahead on path to target (m)
+    acceptance_radius: 0.5 # Distance from goal to consider it reached (m)
+    replan_cooldown: 2.0 # Min seconds between replans
+    setpoint_rate: 10.0 # How frequently setpoints are published to MAVROS

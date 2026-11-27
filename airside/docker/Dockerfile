@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libgl1 \
     libglib2.0-0 \
+    liboctomap-dev \
     python3-colcon-common-extensions \
     python3-numpy \
     python3-pip \
@@ -56,8 +57,12 @@ RUN pip install \
 
 COPY airside/src/ src/
 
+RUN git clone --depth 1 --branch 2.0.1 \
+    https://github.com/octomap/octomap_msgs.git \
+    src/octomap_msgs
+
 RUN source /opt/ros/humble/setup.bash \
-  && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys ament_python \
+  && rosdep install --from-paths src --ignore-src --rosdistro humble -y --skip-keys "ament_python octomap" \
   && colcon build --symlink-install
 
 COPY airside/docker/airside_entrypoint.sh /entrypoint.sh
