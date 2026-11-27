@@ -252,21 +252,14 @@ class Scenario(Node):
         self.listener_snapshots += 1
         self.listener_healthy = msg.connected and msg.healthy
         self.listener_indices.update(item.aircraft_index for item in msg.aircraft)
-        if msg.own_aircraft_index != 1:
-            raise RuntimeError(
-                f"listener own aircraft index was {msg.own_aircraft_index}, expected 1"
-            )
-        if any(item.aircraft_index == 1 for item in msg.aircraft):
-            raise RuntimeError("listener did not filter own aircraft")
 
     def mock_event(self) -> dict[str, object] | None:
         if self.home_wgs84 is None:
             return None
         entries = []
-        for index, east_m, north_m, speed_mps, heading_deg, keepaway_m in [
-            (1, 0.0, 0.0, 0.0, 0.0, 5.0),
-            *self.aircraft(time.monotonic()),
-        ]:
+        for index, east_m, north_m, speed_mps, heading_deg, keepaway_m in self.aircraft(
+            time.monotonic()
+        ):
             lat, lon = offset(*self.home_wgs84, east_m, north_m)
             entries.append(
                 {
@@ -373,7 +366,6 @@ class Scenario(Node):
         snapshot.sequence = self.sequence
         snapshot.connected = True
         snapshot.healthy = True
-        snapshot.own_aircraft_index = 1
         for index, east_m, north_m, speed_mps, heading_deg, keepaway_m in self.aircraft(
             now_s
         ):

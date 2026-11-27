@@ -50,7 +50,7 @@ def capture(tmp_path, positions):
 def test_matches_moving_aircraft_on_route_and_preserves_timing(tmp_path):
     frames = capture(tmp_path, [10 + 0.5 * index for index in range(70)])
     route = ((43.0, -80.0), (43.0 + 30 / 111_195, -80.0))
-    match = match_route(frames, route, own_index=1)
+    match = match_route(frames, route)
     assert match is not None
     assert match.aircraft_index == 2
     assert match.segment_index == 0
@@ -84,12 +84,12 @@ def test_rejects_nonincreasing_snapshots_and_noninteger_index(tmp_path):
         load_capture(path)
 
 
-def test_no_route_match_when_traffic_is_far_or_is_our_aircraft(tmp_path):
+def test_no_route_match_when_traffic_is_far(tmp_path):
     frames = capture(tmp_path, [200] * 30)
     route = ((43.0, -80.0), (43.0 + 30 / 111_195, -80.0))
-    assert match_route(frames, route, own_index=1) is None
+    assert match_route(frames, route) is None
     nearby = capture(tmp_path, [10] * 30)
-    assert match_route(nearby, route, own_index=2) is None
+    assert match_route(nearby, route) is not None
 
 
 def test_replay_requires_enough_data_for_the_complete_route(tmp_path):

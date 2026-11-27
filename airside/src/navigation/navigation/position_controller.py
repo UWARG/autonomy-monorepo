@@ -348,14 +348,6 @@ class PositionController(rclpy.node.Node):
             return self._hold(position, "INVALID_TRAFFIC_RECEIVE_TIME", now_s)
         if self._traffic_motion_error:
             return self._hold(position, "INCONSISTENT_TRAFFIC_MOTION", now_s)
-        if not 0 <= traffic.own_aircraft_index <= 255:
-            return self._hold(position, "OWN_AIRCRAFT_INDEX_UNCONFIRMED", now_s)
-        if any(
-            aircraft.aircraft_index == traffic.own_aircraft_index
-            for aircraft in self._traffic_aircraft
-        ):
-            return self._hold(position, "OWN_AIRCRAFT_IN_TRAFFIC", now_s)
-
         aim = self._aim_point(position)
         self._update_progress(position, now_s)
         traffic_age_s = now_s - self._traffic_received_s

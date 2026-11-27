@@ -12,7 +12,6 @@ case "$scenario" in
 esac
 capture_in_container=""
 route_in_container=""
-own_index=""
 replay_start_s=""
 sitl_home=""
 sitl_param_file=sitl_speed_1p5.parm
@@ -33,18 +32,13 @@ if [[ "$scenario" == engine-* && "$scenario" != engine-replay ]]; then
     sitl_home="$home_lat,$home_lon,300,0"
 fi
 if [[ "$scenario" == replay || "$scenario" == engine-replay ]]; then
-    [[ -n "${2:-}" && -n "${3:-}" ]] || {
-        echo "usage: run_sitl_moving.sh replay|engine-replay <capture.jsonl> <diagnostic-own-index> --start-s <seconds> [--route route.yaml]" >&2
-        exit 2
-    }
-    own_index="$3"
-    [[ "$own_index" =~ ^[0-9]+$ ]] && (( own_index <= 255 )) || {
-        echo "confirmed own aircraft index must be 0..255" >&2
+    [[ -n "${2:-}" ]] || {
+        echo "usage: run_sitl_moving.sh replay|engine-replay <capture.jsonl> --start-s <seconds> [--route route.yaml]" >&2
         exit 2
     }
     capture_path="$(realpath "$2")"
     route_path="$repo_root/airside/src/engine/config/waypoints.yaml"
-    shift 3
+    shift 2
     while (( $# )); do
         case "$1" in
             --start-s)
@@ -153,11 +147,9 @@ sleep 3
     -e SCENARIO="$scenario" \
     -e CAPTURE_FILE="$capture_in_container" \
     -e ROUTE_FILE="$route_in_container" \
-    -e OWN_AIRCRAFT_INDEX="$own_index" \
     -e REPLAY_START_S="$replay_start_s" \
     -e EXPECTED_SITL_HOME="$sitl_home" \
     -e AEAC_CONNECTION_TOKEN=local-test-token \
-    -e AEAC_OWN_AIRCRAFT_INDEX=1 \
     -e AEAC_WEBSOCKET_URL=ws://127.0.0.1:18765 \
     -e FLIGHT_BOUNDARY_WGS84="$flight_boundary" \
     -v "$repo_root":/repo:ro \
@@ -204,13 +196,11 @@ sleep 3
         if [[ "$SCENARIO" == engine-replay ]]; then
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_engine_replay.py \
                 --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
-                --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
                 --replay-start-s "$REPLAY_START_S" \
                 --summary /artifacts/summary.json
         elif [[ "$SCENARIO" == replay ]]; then
             timeout 420 python3 /repo/airside/experiments/obstacle_avoidance/sitl_server_replay.py \
                 --capture "$CAPTURE_FILE" --route "$ROUTE_FILE" \
-                --own-aircraft-index "$OWN_AIRCRAFT_INDEX" \
                 --replay-start-s "$REPLAY_START_S" \
                 --summary /artifacts/summary.json
         elif [[ "$SCENARIO" == listener-* ]]; then

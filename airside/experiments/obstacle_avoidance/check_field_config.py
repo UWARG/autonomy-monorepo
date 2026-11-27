@@ -25,12 +25,6 @@ def check_config(settings: dict[str, str], route_file: Path, mode: str) -> list[
         problems.append("AEAC_UAV_ID missing")
     if not settings.get("AEAC_WEBSOCKET_URL", "").strip().startswith("wss://"):
         problems.append("AEAC_WEBSOCKET_URL must be wss://")
-    try:
-        index = int(settings.get("AEAC_OWN_AIRCRAFT_INDEX", ""))
-        if not 0 <= index <= 255:
-            raise ValueError
-    except ValueError:
-        problems.append("AEAC_OWN_AIRCRAFT_INDEX missing or invalid")
     boundary: FlightBoundary | None = None
     try:
         boundary = FlightBoundary.from_json(settings.get("FLIGHT_BOUNDARY_WGS84", ""))

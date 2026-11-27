@@ -13,7 +13,7 @@ services:
     network_mode: host
     stop_signal: SIGINT
     stop_grace_period: 30s
-    # AEAC_CONNECTION_TOKEN and optional AEAC_OWN_AIRCRAFT_INDEX.
+    # AEAC_CONNECTION_TOKEN is used only when the live listener is enabled.
     env_file:
       - path: .env
         required: false

@@ -233,7 +233,6 @@ def match_route(
     frames: tuple[Frame, ...],
     route: tuple[tuple[float, float], ...],
     *,
-    own_index: int | None = None,
     start_s: float | None = None,
     end_s: float | None = None,
 ) -> RouteMatch | None:
@@ -248,7 +247,7 @@ def match_route(
         if end_s is not None and frame.time_s > end_s:
             continue
         for aircraft in frame.aircraft:
-            if aircraft.index == own_index or aircraft.speed_mps <= 0.1:
+            if aircraft.speed_mps <= 0.1:
                 continue
             sightings[aircraft.index] = sightings.get(aircraft.index, 0) + 1
             for segment_index, (start, end) in enumerate(segments):
@@ -331,7 +330,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture", required=True, type=Path)
     parser.add_argument("--route", required=True, type=Path)
-    parser.add_argument("--own-aircraft-index", type=int)
     parser.add_argument("--replay-start-s", type=float, default=0.0)
     args = parser.parse_args()
     frames = load_capture(args.capture)
@@ -357,7 +355,6 @@ def main() -> int:
     match = match_route(
         frames,
         route,
-        own_index=args.own_aircraft_index,
         start_s=args.replay_start_s,
         end_s=replay_end_s,
     )

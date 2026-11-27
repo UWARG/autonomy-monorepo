@@ -10,7 +10,7 @@ services:
     # Fallback if host networking is unavailable:
     # ports:
     #   - "14550:14550/udp"
-    # AEAC_CONNECTION_TOKEN and optional AEAC_OWN_AIRCRAFT_INDEX.
+    # AEAC_CONNECTION_TOKEN is used only when the live listener is enabled.
     env_file:
       - path: .env
         required: false

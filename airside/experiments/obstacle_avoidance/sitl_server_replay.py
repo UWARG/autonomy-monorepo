@@ -37,11 +37,9 @@ from sitl_moving_readiness import ALTITUDE_M, Scenario, offset
 
 class ReplayScenario(Scenario):
     def __init__(
-        self, capture: Path, route: Path, own_index: int, replay_start_s: float
+        self, capture: Path, route: Path, replay_start_s: float
     ) -> None:
         super().__init__("replay")
-        if not 0 <= own_index <= 255:
-            raise ValueError("confirmed own aircraft index must be 0..255")
         self.frames = load_capture(capture)
         self.route = load_route(route)
         self.route_altitudes = load_route_altitudes(route)
@@ -52,7 +50,6 @@ class ReplayScenario(Scenario):
         self.match = match_route(
             self.frames,
             self.route,
-            own_index=own_index,
             start_s=self.start_s,
             end_s=self.replay_window_end_s,
         )
@@ -62,10 +59,9 @@ class ReplayScenario(Scenario):
         self.route_local = tuple(east_north(self.origin, point) for point in self.route)
         self.current_entry_index = 1
         self.completed_entries: list[int] = []
-        self.own_index = own_index
         self.indices = {
             aircraft.index for frame in self.frames for aircraft in frame.aircraft
-        } - {own_index}
+        }
         self.next_frame = next(
             index
             for index, frame in enumerate(self.frames)
@@ -176,10 +172,7 @@ class ReplayScenario(Scenario):
             snapshot.sequence = self.sequence
             snapshot.connected = True
             snapshot.healthy = True
-            snapshot.own_aircraft_index = self.own_index
             for aircraft in frame.aircraft:
-                if aircraft.index == self.own_index:
-                    continue
                 east_m, north_m = east_north(self.origin, (aircraft.lat, aircraft.lon))
                 lat, lon = offset(*self.home_wgs84, east_m, north_m)
                 snapshot.aircraft.append(
@@ -284,7 +277,6 @@ class ReplayScenario(Scenario):
             "scenario": "replay",
             "result": result,
             "source": "capture_jsonl_replay",
-            "own_aircraft_index": self.own_index,
             "encounter_aircraft_index": self.match.aircraft_index,
             "route_segment_index": self.match.segment_index,
             "route_centerline_distance_m": round(self.match.centerline_distance_m, 3),
@@ -329,7 +321,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--capture", required=True, type=Path)
     parser.add_argument("--route", required=True, type=Path)
-    parser.add_argument("--own-aircraft-index", required=True, type=int)
     parser.add_argument("--replay-start-s", required=True, type=float)
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
@@ -339,7 +330,6 @@ def main() -> None:
         node = ReplayScenario(
             args.capture,
             args.route,
-            args.own_aircraft_index,
             args.replay_start_s,
         )
         result = node.run()

@@ -4,9 +4,6 @@
 CONNECTION_TOKEN_ENV = "AEAC_CONNECTION_TOKEN"
 UAV_ID_ENV = "AEAC_UAV_ID"
 
-# Optional AEAC traffic index of this aircraft, removed from the traffic feed.
-OWN_AIRCRAFT_INDEX_ENV = "AEAC_OWN_AIRCRAFT_INDEX"
-
 # Environment variable that overrides the server's WebSocket URL.
 WEBSOCKET_URL_ENV = "AEAC_WEBSOCKET_URL"
 DEFAULT_WEBSOCKET_URL = "wss://o61e21rvtd.execute-api.ca-central-1.amazonaws.com/prod"

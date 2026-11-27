@@ -74,7 +74,6 @@ RUN pip install /monorepo/camera
 | `ROS_DOMAIN_ID` | `0` | ROS 2 domain ID for DDS discovery isolation |
 | `FCU_URL` | `serial:///dev/ttyAMA0:115200` | MAVROS connection to the ArduPilot FCU. SITL: see `compose.sitl.yaml` |
 | `AEAC_CONNECTION_TOKEN` | unset | AEAC team token for `traffic_listener`. Required for traffic, so without it lapping holds in place |
-| `AEAC_OWN_AIRCRAFT_INDEX` | unset | This aircraft's index in the AEAC traffic feed, if it appears there; it is removed from the obstacles |
 | `LAP_COUNT` | `3` | Laps to fly before reconnaissance |
 
 Put the AEAC values in `airside/.env` (gitignored); compose loads it if present.
@@ -151,7 +150,7 @@ and the controller aims ahead along a centripetal Catmull-Rom spline through it
 keeps aiming at the next waypoint while closing on it until within `CORNER_LOOKAHEAD_M`.
 
 It fails closed. Missing, stale (over 1.5 s), unhealthy or disconnected
-traffic, an unconfirmed own-aircraft index, a stale GPS fix or altitude, or no
+traffic, a stale GPS fix or altitude, or no
 safe path holds the drone at the position where the hold began. A persistent
 blocked route or traffic predicted to cross that hold point sends a MAVLink
 pilot-takeover warning; holding is not itself collision avoidance. The

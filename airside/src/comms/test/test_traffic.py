@@ -7,7 +7,6 @@ import pytest
 from comms.traffic import (
     TrafficAircraft,
     decode_message,
-    parse_other_aircraft,
     parse_traffic,
 )
 
@@ -127,18 +126,16 @@ class TestParseTraffic:
         assert len(problems) == 1
 
 
-def test_parse_other_aircraft_removes_configured_self() -> None:
-    own = copy.deepcopy(AIRCRAFT)
+def test_parse_traffic_retains_every_aircraft() -> None:
+    first = copy.deepcopy(AIRCRAFT)
     other = copy.deepcopy(AIRCRAFT)
     other["aircraftIndex"] = 5
 
-    aircraft, problems = parse_other_aircraft(
-        _traffic_message(own, other), own_aircraft_index=2
-    )
+    aircraft, problems = parse_traffic(_traffic_message(first, other))
 
     assert problems == []
-    assert [item.aircraft_index for item in aircraft] == [5]
+    assert [item.aircraft_index for item in aircraft] == [2, 5]
 
 
-def test_parse_other_aircraft_accepts_empty_snapshot() -> None:
-    assert parse_other_aircraft(_traffic_message(), own_aircraft_index=2) == ((), [])
+def test_parse_traffic_accepts_empty_snapshot() -> None:
+    assert parse_traffic(_traffic_message()) == ([], [])

@@ -246,7 +246,7 @@ def test_blocked_optional_lookahead_replans_to_required_waypoint(controller) -> 
 
 
 def test_snapshot_age_includes_time_before_ros_callback(controller) -> None:
-    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    snapshot = TrafficSnapshot(connected=True, healthy=True)
     received_ns = controller.get_clock().now().nanoseconds - 2_000_000_000
     snapshot.header.stamp.sec = received_ns // 1_000_000_000
     snapshot.header.stamp.nanosec = received_ns % 1_000_000_000
@@ -259,7 +259,7 @@ def test_snapshot_age_includes_time_before_ros_callback(controller) -> None:
 
 def test_missing_receive_time_holds(controller) -> None:
     controller._traffic_callback(
-        TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+        TrafficSnapshot(connected=True, healthy=True)
     )
     now_s = time.monotonic()
     controller._target_received_s = now_s
@@ -278,7 +278,7 @@ def test_impossible_aircraft_jump_holds(controller) -> None:
         0.0,
     )
     jumped = enu_to_coordinate(HERE, 100.0, 0.0)
-    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    snapshot = TrafficSnapshot(connected=True, healthy=True)
     snapshot.header.stamp = controller.get_clock().now().to_msg()
     snapshot.aircraft = [
         TrafficAircraftMsg(
@@ -316,7 +316,7 @@ def test_speed_or_heading_inconsistency_holds(
         heading_deg,
     )
     moved = enu_to_coordinate(HERE, actual_east_m, 0.0)
-    snapshot = TrafficSnapshot(connected=True, healthy=True, own_aircraft_index=1)
+    snapshot = TrafficSnapshot(connected=True, healthy=True)
     snapshot.header.stamp = controller.get_clock().now().to_msg()
     snapshot.aircraft = [
         TrafficAircraftMsg(
@@ -369,17 +369,12 @@ def test_crossing_yield_alerts_only_if_it_persists(controller) -> None:
     assert controller._last_alert_s == NOW + 20.0
 
 
-def test_unconfirmed_own_index_holds(controller) -> None:
-    controller._traffic.own_aircraft_index = -1
-    assert controller._next_setpoint(NOW) == HERE
-
-
-def test_own_aircraft_in_snapshot_holds(controller) -> None:
-    controller._traffic.own_aircraft_index = 2
+def test_incoming_aircraft_index_is_treated_as_traffic(controller) -> None:
     controller._traffic_aircraft = (
         TrafficAircraft(2, HERE.lat, HERE.lon, 10.0, 0.0, 0.0, 2.0, 5.0),
     )
     assert controller._next_setpoint(NOW) == HERE
+    assert controller._hold_reason is not None
 
 
 @pytest.mark.parametrize(

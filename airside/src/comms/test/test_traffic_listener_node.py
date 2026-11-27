@@ -8,11 +8,10 @@ from types import SimpleNamespace
 import pytest
 import rclpy
 import websocket
-from comms.constants import CONNECTION_TOKEN_ENV, OWN_AIRCRAFT_INDEX_ENV
+from comms.constants import CONNECTION_TOKEN_ENV
 from comms.traffic_listener_node import (
     SnapshotDelivery,
     TrafficListener,
-    parse_own_aircraft_index,
 )
 
 
@@ -21,24 +20,14 @@ def listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> TrafficListener:
     monkeypatch.setenv(CONNECTION_TOKEN_ENV, "test-token")
-    monkeypatch.setenv(OWN_AIRCRAFT_INDEX_ENV, "2")
+    # A legacy setting must not remove any server aircraft from the snapshot.
+    monkeypatch.setenv("AEAC_OWN_AIRCRAFT_INDEX", "2")
     monkeypatch.setattr(threading.Thread, "start", lambda self: None)
     rclpy.init()
     node = TrafficListener()
     yield node
     node.destroy_node()
     rclpy.shutdown()
-
-
-@pytest.mark.parametrize("raw", ["-1", "256", "1.5", "goose"])
-def test_own_aircraft_index_must_be_uint8(raw: str) -> None:
-    with pytest.raises(ValueError):
-        parse_own_aircraft_index(raw)
-
-
-def test_own_aircraft_index_is_optional() -> None:
-    assert parse_own_aircraft_index("") is None
-    assert parse_own_aircraft_index("7") == 7
 
 
 def test_invalid_websocket_message_invalidates_snapshot(
@@ -52,7 +41,7 @@ def test_invalid_websocket_message_invalidates_snapshot(
     assert delivery.reason == "INVALID_AEAC_MESSAGE"
 
 
-def test_mock_websocket_snapshot_filters_own_aircraft(
+def test_mock_websocket_snapshot_retains_every_aircraft(
     listener: TrafficListener, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     traffic = {
@@ -98,7 +87,7 @@ def test_mock_websocket_snapshot_filters_own_aircraft(
 
     delivery = listener._deliveries.get_nowait()
     assert delivery.healthy
-    assert [aircraft.aircraft_index for aircraft in delivery.aircraft] == [3]
+    assert [aircraft.aircraft_index for aircraft in delivery.aircraft] == [2, 3]
 
 
 def test_traffic_topic_gets_complete_snapshot(
@@ -137,7 +126,6 @@ def test_traffic_topic_gets_complete_snapshot(
     assert len(published) == 1
     snapshot = published[0]
     assert snapshot.connected and snapshot.healthy
-    assert snapshot.own_aircraft_index == 2
     assert len(snapshot.aircraft) == 1
     assert snapshot.aircraft[0].aircraft_index == 3
     assert snapshot.aircraft[0].latitude_deg == 43.47

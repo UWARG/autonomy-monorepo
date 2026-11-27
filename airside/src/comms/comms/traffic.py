@@ -109,17 +109,3 @@ def parse_traffic(message: dict[str, Any]) -> tuple[list[TrafficAircraft], list[
         except (KeyError, TypeError, ValueError) as error:
             problems.append(f"traffic entry {position} skipped: {error!r}")
     return aircraft, problems
-
-
-def parse_other_aircraft(
-    message: dict[str, Any], *, own_aircraft_index: int | None
-) -> tuple[tuple[TrafficAircraft, ...], list[str]]:
-    """Parse a snapshot and remove our own aircraft, if it is in the feed."""
-
-    aircraft, problems = parse_traffic(message)
-    return (
-        tuple(
-            item for item in aircraft if item.aircraft_index != own_aircraft_index
-        ),
-        problems,
-    )

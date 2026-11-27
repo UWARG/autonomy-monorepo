@@ -18,7 +18,6 @@ from comms.constants import (
     CONNECT_TIMEOUT_S,
     CONNECTION_TOKEN_ENV,
     DEFAULT_WEBSOCKET_URL,
-    OWN_AIRCRAFT_INDEX_ENV,
     PUBLISH_POLL_HZ,
     RECEIVE_TIMEOUT_S,
     RECONNECT_DELAY_S,
@@ -29,7 +28,7 @@ from comms.traffic import (
     TRAFFIC_EVENT,
     TrafficAircraft,
     decode_message,
-    parse_other_aircraft,
+    parse_traffic,
 )
 
 
@@ -41,23 +40,6 @@ class SnapshotDelivery:
     reason: str
     aircraft: tuple[TrafficAircraft, ...] = ()
     received_monotonic_ns: int = 0
-
-
-def parse_own_aircraft_index(raw: str) -> int | None:
-    """
-    Parses the AEAC traffic index of this aircraft. Empty means it is not in
-    the traffic feed, so nothing is filtered out.
-    """
-
-    if not raw.strip():
-        return None
-    try:
-        index = int(raw)
-    except ValueError as error:
-        raise ValueError("own aircraft index must be an integer") from error
-    if not 0 <= index <= 255:
-        raise ValueError("own aircraft index must fit uint8")
-    return index
 
 
 class TrafficListener(rclpy.node.Node):
@@ -79,20 +61,10 @@ class TrafficListener(rclpy.node.Node):
             os.environ.get(WEBSOCKET_URL_ENV, "").strip() or DEFAULT_WEBSOCKET_URL
         )
         self._token = os.environ.get(CONNECTION_TOKEN_ENV, "").strip()
-        self._config_valid = True
-        try:
-            self._own_aircraft_index = parse_own_aircraft_index(
-                os.environ.get(OWN_AIRCRAFT_INDEX_ENV, "")
-            )
-        except ValueError as error:
-            self._own_aircraft_index = None
-            self._config_valid = False
-            self.get_logger().error(f"Invalid '{OWN_AIRCRAFT_INDEX_ENV}': {error}")
-
         self.create_timer(1.0 / PUBLISH_POLL_HZ, self._publish_deliveries)
-        if not self._token or not self._config_valid:
+        if not self._token:
             self.get_logger().error(
-                f"'{CONNECTION_TOKEN_ENV}' missing or AEAC config invalid; "
+                f"'{CONNECTION_TOKEN_ENV}' missing; "
                 "publishing unhealthy traffic so avoidance holds"
             )
             # Republish so late subscribers still see why there is no traffic.
@@ -162,17 +134,14 @@ class TrafficListener(rclpy.node.Node):
             return
         event = message.get("event")
         if event == TRAFFIC_EVENT:
-            filtered, problems = parse_other_aircraft(
-                message,
-                own_aircraft_index=self._own_aircraft_index,
-            )
+            aircraft, problems = parse_traffic(message)
             self._deliveries.put(
                 SnapshotDelivery(
                     sequence=self._next_sequence(),
                     connected=True,
                     healthy=not problems,
                     reason="; ".join(problems),
-                    aircraft=filtered,
+                    aircraft=tuple(aircraft),
                     received_monotonic_ns=received_monotonic_ns,
                 )
             )
@@ -198,9 +167,6 @@ class TrafficListener(rclpy.node.Node):
             snapshot.connected = delivery.connected
             snapshot.healthy = delivery.healthy
             snapshot.reason = delivery.reason
-            snapshot.own_aircraft_index = (
-                -1 if self._own_aircraft_index is None else self._own_aircraft_index
-            )
             if delivery.healthy:
                 snapshot.aircraft = [
                     TrafficAircraftMsg(

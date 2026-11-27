@@ -94,8 +94,8 @@ retry changes the setpoint heading; it is not a physical-stall qualification.
 `listener-moving` and `listener-dropout` start the Airside launch with the
 mission manager and camera disabled. A local mock WebSocket supplies 1 Hz AEAC
 traffic to the real `traffic_listener`; no real token or server is used. These
-tests check the listener-to-controller link, including own-aircraft filtering
-and disconnect/reconnect behavior. The direct `moving` test bypasses the
+tests check the listener-to-controller link, including complete traffic
+snapshots and disconnect/reconnect behavior. The direct `moving` test bypasses the
 listener.
 
 `engine-triangle` and `engine-eight` additionally start the real mission
@@ -104,8 +104,8 @@ uses home `43.4338803,-80.5775947,330,0` for the active WRESTRC triangle;
 other routes use their first waypoint. A mock aircraft crosses a full travel
 leg at 1 Hz after takeoff. `engine-eight` uses a separate Cornfield fixture. The summary
 records target order, path lengths, traffic, clearance,
-speed, hold reasons and setpoint publishers. The mock own-aircraft index is a
-test fixture and does not identify the real UAV.
+speed, hold reasons and setpoint publishers. The server feed contains other
+aircraft only; no own-aircraft index or filtering is configured.
 
 If rosbag reports multiple types for `/position_controller/target`, inspect
 `summary.json`'s `target_publishers` and the failing stack's ROS graph. This
@@ -143,18 +143,17 @@ traffic fields and timing but omit names and the token.
 
 ## Replay a capture
 
-Use the confirmed own-aircraft index. Never infer it from a name. Preselect
-three start times and use a fresh SITL instance for each run:
+Preselect three start times and use a fresh SITL instance for each run:
 
 ```bash
 python3 airside/experiments/obstacle_avoidance/server_traffic_replay.py \
   --capture airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
   --route airside/src/engine/config/waypoints.yaml \
-  --own-aircraft-index <confirmed-index> --replay-start-s 0
+  --replay-start-s 0
 
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh replay \
   airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
-  <confirmed-index> --start-s 0
+  --start-s 0
 ```
 
 The runner starts at the mission start, commands the complete closed route,
@@ -171,7 +170,7 @@ route. The live listener is disabled so it cannot overwrite the capture:
 ```bash
 bash airside/experiments/obstacle_avoidance/run_sitl_moving.sh engine-replay \
   airside/experiments/obstacle_avoidance/captures/receive-only.jsonl \
-  <confirmed-index> --start-s 0 \
+  --start-s 0 \
   --route airside/experiments/obstacle_avoidance/routes/wrestrc-triangle.yaml
 ```
 
@@ -182,13 +181,13 @@ the server. A hold or blocked waypoint is not a completed lap.
 
 Live props-on testing remains disabled until the intended route is confirmed,
 all three final-image real-track replays pass on that route, and an authorized
-props-off check confirms both WebSockets, the own-aircraft index, WGS84/AGL,
+props-off check confirms both WebSockets, WGS84/AGL,
 approximately 1 Hz send/receive, and end-to-end
 delay. Do not send SITL telemetry to the real server.
 
 For that authorized check only, use a real vehicle with props removed and no
 other Airside stack running. In ignored `airside/.env`, set the confirmed
-`AEAC_UAV_ID`, `AEAC_OWN_AIRCRAFT_INDEX`, approved
+`AEAC_UAV_ID`, approved
 `FLIGHT_BOUNDARY_WGS84`, `USE_ENGINE=false`, and
 `USE_AEAC_TELEMETRY=true`. From the repository root, run the local check:
 

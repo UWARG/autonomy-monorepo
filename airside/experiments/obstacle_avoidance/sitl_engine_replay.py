@@ -20,9 +20,9 @@ from sitl_server_replay import ReplayScenario
 
 class EngineReplayScenario(ReplayScenario):
     def __init__(
-        self, capture: Path, route: Path, own_index: int, replay_start_s: float
+        self, capture: Path, route: Path, replay_start_s: float
     ) -> None:
-        super().__init__(capture, route, own_index, replay_start_s)
+        super().__init__(capture, route, replay_start_s)
         self.destroy_publisher(self.target_pub)
         self.engine_waypoints: list[tuple[float, float]] = []
         self.target_sequence: list[tuple[float, float]] = []
@@ -238,7 +238,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--capture", required=True, type=Path)
     parser.add_argument("--route", required=True, type=Path)
-    parser.add_argument("--own-aircraft-index", required=True, type=int)
     parser.add_argument("--replay-start-s", required=True, type=float)
     parser.add_argument("--summary", required=True, type=Path)
     args = parser.parse_args()
@@ -246,7 +245,7 @@ def main() -> None:
     node: EngineReplayScenario | None = None
     try:
         node = EngineReplayScenario(
-            args.capture, args.route, args.own_aircraft_index, args.replay_start_s
+            args.capture, args.route, args.replay_start_s
         )
         result = node.run()
     except Exception as error:

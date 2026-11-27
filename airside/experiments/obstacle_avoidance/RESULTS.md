@@ -5,7 +5,8 @@ Status on 2026-11-27: **draft; ready for others to test in SITL.**
 ## Implemented
 
 - Live AEAC traffic is consumed at about 1 Hz and converted to predicted local
-  exclusion areas. Server keep-away is never reduced.
+  exclusion areas. Every aircraft in the server snapshot is retained; no
+  own-aircraft index is needed. Server keep-away is never reduced.
 - Traffic older than 1.5 s, invalid motion, unsupported speed, no path, or a
   hold-point conflict stops autonomous progress and alerts the pilot.
 - Replanning retains a safe detour instead of switching targets every update.
@@ -22,15 +23,18 @@ Status on 2026-11-27: **draft; ready for others to test in SITL.**
 
 - Docker image: built from the current branch.
 - GNC: 188 tests passed.
-- ROS/colcon: 96 tests passed, with no failures or skipped tests.
+- ROS/colcon: 90 tests passed, with no failures or skipped tests.
 - Capture, configuration and replay tools: 10 tests passed.
 - Full eight-waypoint mock mission: PASS on the final image. The blocked
   waypoint moved outward, the replacement was reached at 2.76 m, all waypoints
   completed, and only `position_controller` published MAVROS setpoints.
 - That mission measured 1.55 m/s peak ownship speed, 1.01 s maximum traffic
   age, and at least 4.20 m clearance beyond the server keep-away cylinder.
-- Listener-to-controller moving traffic also passed on the final architecture,
-  including own-aircraft filtering and disconnect handling.
+- Listener-to-controller moving traffic passed on the rebuilt image without an
+  own-aircraft index. The mock server sent only aircraft 2; 58 snapshots reached
+  ROS, the target was reached, and only `position_controller` sent setpoints.
+  Peak speed was 1.54 m/s and minimum clearance beyond its 5 m server radius
+  was 5.88 m. The result included `YIELD_CROSSING` and pilot alerts.
 - Active WRESTRC triangle: two full mock SITL laps passed with home
   `43.4338803,-80.5775947,330,0`. A 1.2 m/s mock aircraft crossed a travel
   leg at 1 Hz; the controller reported `YIELD_CROSSING`. In the final-image
@@ -64,12 +68,11 @@ active triangle and are safe failure evidence, not an autonomous-avoidance pass.
 Before live props-on use:
 
 1. Load an approved WGS84 flight boundary and matching FCU fence.
-2. Confirm the real own-aircraft index; do not use the diagnostic replay index.
-3. Capture a complete same-route traffic window and pass three fresh full-route
+2. Capture a complete same-route traffic window and pass three fresh full-route
    replays, or record the route as unavailable when traffic blocks it.
-4. With authorization and props off, verify the receive and telemetry sockets,
+3. With authorization and props off, verify the receive and telemetry sockets,
    about 1 Hz traffic and telemetry, WGS84/AGL values, and end-to-end delay.
-5. Keep the first physical flight limited to 1 m/s with a safety pilot ready to
+4. Keep the first physical flight limited to 1 m/s with a safety pilot ready to
    take over.
 
 Until all gates pass, the PR stays draft and props-on is not cleared. A mock
