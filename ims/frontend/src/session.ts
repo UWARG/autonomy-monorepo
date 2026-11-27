@@ -551,7 +551,7 @@ export function playSession(): void {
     playerPubs = new Map(
       header.topics.map(({ name, type }) => [
         name,
-        new ROSLIB.Topic<unknown>({ ros, name, messageType: type }),
+        new ROSLIB.Topic<unknown>({ ros, name: `/replay${name}`, messageType: type }),
       ]),
     );
   }
