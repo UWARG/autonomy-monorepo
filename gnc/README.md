@@ -114,3 +114,88 @@ with an empty list for a drone without a pass. Invalid requests return
   turn arc) and is configurable via `ScanRequest.turn_penalty_m`.
 - **Spherical Earth model.** Local east/north projection uses the IUGG mean
   Earth radius; accurate to sub-meter over scan-scale regions.
+## Viewpoint guidance
+
+`guidance` builds a smooth reference path through an ordered viewpoint sequence and
+tracks it at control rate. The reference is a clamped cubic spline with continuous
+acceleration. A forward/backward speed profile enforces velocity and acceleration
+limits and lowers the speed around capture viewpoints. The tracker combines reference
+velocity and acceleration with position feedback, and reports when a measured gimbal
+has settled for a capture.
+
+```python
+from guidance import (
+    GimbalModel,
+    GimbalState,
+    GuidanceLimits,
+    GuidanceTracker,
+    Viewpoint,
+    build_reference,
+)
+
+viewpoints = [
+    Viewpoint((0.0, 0.0, 10.0), look_at_m=(0.0, 0.0, 0.0)),
+    Viewpoint((30.0, 0.0, 10.0), capture=True, look_at_m=(30.0, 0.0, 0.0)),
+    Viewpoint((60.0, 0.0, 10.0)),
+]
+limits = GuidanceLimits(max_velocity_mps=5.0, max_acceleration_mps2=1.5)
+
+reference = build_reference(viewpoints, limits)
+tracker = GuidanceTracker(reference, limits, GimbalModel())
+tracker.reset((0.0, 0.0, 10.0))
+
+command = tracker.step(
+    position_m=(0.0, 0.0, 10.0),
+    velocity_mps=(0.0, 0.0, 0.0),
+    gimbal_state=GimbalState(),
+    dt_s=0.05,
+    aircraft_yaw_rate_radps=0.0,
+    aircraft_yaw_rad=0.0,
+)
+```
+
+### Conventions
+
+- Positions, velocities, and look-at points are local ENU metres:
+  `(east, north, up)`. ArduPilot guided mode uses NED, so the integration layer must
+  map `north`, `east`, and `-up` into `vx`, `vy`, and `vz`.
+- Gimbal commands are earth-frame: yaw is `0` at north and positive clockwise, pitch
+  is relative to the horizon, and roll is commanded level. ArduPilot reports gimbal
+  status in body-frame coordinates, so `GimbalState` is body-frame.
+- Gimbal yaw limits are relative to the airframe. The tracker uses measured aircraft
+  yaw to decide whether a target is reachable and to convert the desired earth-frame
+  angles to body-frame for the settle check. The airframe is assumed level.
+- `capture=True` requires `look_at_m`. `CAPTURE_READY` is reported only after the
+  measured gimbal has remained inside the settle tolerances for `settle_time_s`.
+- `GuidanceLimits.max_deviation_m` optionally rejects a reference that bulges too far
+  from the straight-line waypoint path.
+- `GuidanceLimits.max_jerk_mps3`, when set, limits changes in the commanded
+  acceleration at each tracker step.
+- A viewpoint's `capture_speed_mps` must not exceed `max_velocity_mps`.
+- `TrackerConfig.max_aircraft_yaw_rate_radps` limits how quickly the commanded
+  aircraft yaw can change.
+- `aircraft_yaw_rad` is the measured airframe heading. `aircraft_yaw_rate_radps` is
+  added to the measured body-frame gimbal yaw rate when checking whether the camera
+  has settled.
+
+### Capture lifecycle
+
+`CAPTURE_READY` is reported while the capture conditions continue to hold. The caller
+takes the photo and then calls `tracker.mark_captured(index)`. If the drone passes the
+capture point before the conditions are met, the tracker reports `CAPTURE_MISSED` once
+and advances to the next capture. `COMPLETE` is reported near the final viewpoint.
+
+### Limitations
+
+- The module is numeric only. It does not publish ROS messages, call MAVROS, or
+  control a camera.
+- The gimbal is modelled as a three-axis yaw/pitch/roll mount. Roll is commanded
+  level. Converting earth-frame commands to the body-frame settle check assumes a
+  level airframe; aircraft roll and pitch rates are not modelled.
+- No obstacle avoidance, geofence, wind, or vehicle dynamics are modelled.
+- Start and end speeds are zero, so a capture at the first or last viewpoint occurs
+  at rest.
+
+The clamped cubic spline was chosen over a centripetal Catmull-Rom baseline because it
+provides continuous acceleration feedforward. Catmull-Rom produced smaller corner
+deviation, but substantially higher command jerk during the comparison.
