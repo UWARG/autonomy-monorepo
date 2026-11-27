@@ -53,6 +53,13 @@ The final-image WRESTRC run is at `artifacts/engine-triangle-KaqN1lcV/`.
 
 ## Receive-only server replay
 
+A 2026-11-27 receive-only check of the real server got 30 valid traffic
+snapshots in 30 s, each containing aircraft indices 0, 1, and 2. The actual
+`traffic_listener` then published 15 healthy `/aeac/traffic` snapshots in
+15 s with those same indices. A repeat with the SITL runner's default ROS
+middleware received 9 healthy snapshots in 10 s. No telemetry was sent. This
+verifies the live server-to-ROS path, not controller behavior in live SITL.
+
 A receive-only capture contained 298 WRESTRC snapshots near 1 Hz, with one
 7.27 s gap. No simulated ownship telemetry was sent.
 

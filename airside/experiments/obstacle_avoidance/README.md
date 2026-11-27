@@ -141,6 +141,21 @@ docker run --rm --network host --env-file airside/.env \
 Exit code 2 means that no moving traffic was observed. Captures contain
 traffic fields and timing but omit names and the token.
 
+To check that the real listener also publishes those snapshots on ROS, run
+this receive-only probe. It prints counts and aircraft indices, not names or
+the token:
+
+```bash
+docker run --rm --network host --ipc host --env-file airside/.env \
+  -e ROS_DOMAIN_ID=220 -e ROS_LOCALHOST_ONLY=1 \
+  -v "$PWD":/repo:ro -w /repo --entrypoint bash warg/airside:latest -lc \
+  'source /opt/ros/humble/setup.bash; source /ros_ws/install/setup.bash; \
+   python3 airside/experiments/obstacle_avoidance/probe_live_listener.py --duration-s 15'
+```
+
+Use an unused ROS domain ID below 233. This checks reception and ROS
+publication, not live SITL route completion.
+
 ## Replay a capture
 
 Preselect three start times and use a fresh SITL instance for each run:
