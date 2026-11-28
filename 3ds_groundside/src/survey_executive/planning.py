@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from itertools import pairwise
 
 from gnc.src.orthomosaic import (
     DroneSpec,
@@ -22,7 +21,7 @@ from src.groundside_manager.groundside_manager import DroneState
 
 from .request import SurveyRequest
 
-# Segments within this angle of each other count as the same pass direction.
+# A segment within this angle of the pass axis counts as flown along the pass.
 _AXIS_TOLERANCE_RAD = math.radians(10.0)
 # Shorter segments carry no usable direction (e.g. repeated setpoints).
 _MIN_SEGMENT_M = 1e-6
@@ -110,12 +109,9 @@ def plan_waypoints(
         drone_id: [coordinate_to_enu(anchor, point) for point in route]
         for drone_id, route in setpoints.items()
     }
-    axis_rad = _pass_axis_rad(list(enu_routes.values()))
-    if axis_rad is None:
-        # Only single-photo routes: no segment to read the pass from, so ask
-        # the planner which way it swept. Guessing (e.g. north) can turn the
-        # photo 90 degrees and leave a strip of a small gap uncovered.
-        axis_rad = _sweep_axis_rad(scan, starts)
+    # Ask the planner which way it swept rather than reading it off the
+    # routes: a one-photo route has no direction to read.
+    axis_rad = _sweep_axis_rad(scan, starts)
     return {
         drone_id: list(
             zip(setpoints[drone_id], _route_yaws_rad(enu_routes[drone_id], axis_rad))
@@ -144,22 +140,20 @@ def to_missions(
     }
 
 
-def _sweep_axis_rad(
-    scan: ScanRequest, starts: dict[str, Coordinate | None]
-) -> float | None:
+def _sweep_axis_rad(scan: ScanRequest, starts: dict[str, Coordinate | None]) -> float:
     """
     The planner's pass direction, radians clockwise from north in [0, pi).
 
     Re-plans the area the way ``plan_swarm_orthomosaic`` does (with the start
     for one drone, without for several), since the start can change the
-    angle it picks. None if that plan fails.
+    angle it picks. Raises ``PlanningError`` if the planner rejects it.
     """
 
     start = next(iter(starts.values())) if len(starts) == 1 else None
     try:
         plan = plan_orthomosaic_path(replace(scan, start=start))
-    except ValueError:
-        return None
+    except ValueError as error:
+        raise PlanningError("planner rejected the area") from error
     # gnc sweeps along +x, then turns the plan counterclockwise from east by
     # sweep_angle_deg; clockwise from north that is 90 deg minus the angle.
     return math.radians(90.0 - plan.sweep_angle_deg) % math.pi
@@ -186,38 +180,8 @@ def _axis_gap_rad(a: float, b: float) -> float:
     return min(gap, math.pi - gap)
 
 
-def _pass_axis_rad(routes: list[list[tuple[float, float]]]) -> float | None:
-    """
-    Most common segment direction across all routes, in [0, pi).
-
-    Passes are parallel and there is at most one turn between two passes, so
-    the largest group of parallel segments is the pass direction. None if no
-    route has a usable segment.
-    """
-
-    lines = [
-        heading % math.pi
-        for route in routes
-        for start, end in pairwise(route)
-        if (heading := _heading_rad(start, end)) is not None
-    ]
-    if not lines:
-        return None
-    best = max(
-        lines,
-        key=lambda candidate: sum(
-            _axis_gap_rad(candidate, other) <= _AXIS_TOLERANCE_RAD for other in lines
-        ),
-    )
-    group = [line for line in lines if _axis_gap_rad(best, line) <= _AXIS_TOLERANCE_RAD]
-    # Mean of line directions: double the angles so 1 deg and 179 deg agree.
-    sine = sum(math.sin(2.0 * line) for line in group)
-    cosine = sum(math.cos(2.0 * line) for line in group)
-    return (math.atan2(sine, cosine) / 2.0) % math.pi
-
-
 def _route_yaws_rad(
-    route: list[tuple[float, float]], axis_rad: float | None
+    route: list[tuple[float, float]], axis_rad: float
 ) -> list[float]:
     """
     Yaw for each setpoint: along the pass axis, pointing the way it is flown.
@@ -226,8 +190,6 @@ def _route_yaws_rad(
     axis, so the photos at each end of a pass don't turn to face the turn.
     """
 
-    if axis_rad is None:
-        return [0.0] * len(route)
     yaws: list[float] = []
     for index, point in enumerate(route):
         neighbours = []

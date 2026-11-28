@@ -212,12 +212,11 @@ def test_survey_survives_a_drone_killed_partway(fleet: FleetHarness) -> None:
     ]
     assert taken_over, "nobody took over drone-02's route"
     assert len(taken_over) == len(set(taken_over))
-    # A mission drone-02 had accepted but not reached when it died goes back
-    # to the pool, so compare photos (finished), not acks (accepted).
-    photographed_by_02 = {
-        photo.image_id for photo in fleet.photos if photo.drone_id == "drone-02"
-    }
-    assert photographed_by_02.isdisjoint(taken_over)
+    # Only what the executive counted done is drone-02's. A mission it was
+    # flying when killed goes back to the pool, even if its photo got out.
+    # drone-02 flies its own route in order, so those are its first ones.
+    done_by_02 = set(flown["drone-02"][: drones["drone-02"].missions_done])
+    assert done_by_02.isdisjoint(taken_over)
     route_02 = set(flown["drone-02"]) | set(taken_over)
     photographed = {
         photo.image_id for photo in fleet.photos if "-r0-drone-02-" in photo.image_id

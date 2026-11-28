@@ -19,7 +19,6 @@ from utils.src.types import Coordinate
 from src.survey_executive import SurveyRequest, photo_footprint
 from src.survey_executive.planning import (
     PlanningError,
-    _pass_axis_rad,
     _route_yaws_rad,
     _sweep_axis_rad,
     plan_routes,
@@ -138,10 +137,8 @@ def test_all_setpoints_share_the_planned_altitude() -> None:
 def test_planned_yaws_face_along_the_passes_both_ways() -> None:
     request = make_request()
     missions = plan_routes(request, [make_drone()], round_index=0)["drone-01"]
-    anchor = anchor_for_boundary(request.boundary)
-    route = [coordinate_to_enu(anchor, m.target) for m in missions]
-    axis = _pass_axis_rad([route])
-    assert axis is not None
+    # The planner sweeps this rectangle north-south.
+    axis = NORTH
 
     for mission in missions:
         assert angle_close(mission.yaw, axis) or angle_close(mission.yaw, axis + math.pi)
@@ -153,27 +150,9 @@ def test_planned_yaws_face_along_the_passes_both_ways() -> None:
 def test_yaw_in_the_turn_keeps_facing_along_the_pass() -> None:
     # Two passes north then south, 3 photos each, one eastward turn between.
     route = [(0.0, 0.0), (0.0, 10.0), (0.0, 20.0), (5.0, 20.0), (5.0, 10.0), (5.0, 0.0)]
-    axis = _pass_axis_rad([route])
-    assert axis is not None and angle_close(axis, NORTH)
-
-    yaws = _route_yaws_rad(route, axis)
+    yaws = _route_yaws_rad(route, NORTH)
     expected = [NORTH, NORTH, NORTH, SOUTH, SOUTH, SOUTH]
     assert all(angle_close(y, e) for y, e in zip(yaws, expected))
-
-
-def test_pass_axis_ignores_direction_and_wraps_near_north() -> None:
-    # Passes 1 degree either side of north, flown both ways.
-    tilt = math.radians(1.0)
-    route = [
-        (0.0, 0.0),
-        (10.0 * math.sin(tilt), 10.0 * math.cos(tilt)),
-        (5.0, 10.0),
-        (5.0 + 10.0 * math.sin(tilt), 0.0),
-    ]
-    axis = _pass_axis_rad([route])
-    assert axis is not None
-    # Mean of +1 deg and -1 deg lines is north, not 90 deg.
-    assert _axis_gap(axis, NORTH) < math.radians(1.5)
 
 
 def _axis_gap(a: float, b: float) -> float:
@@ -183,15 +162,9 @@ def _axis_gap(a: float, b: float) -> float:
 
 def test_east_west_passes_give_east_and_west_yaws() -> None:
     route = [(0.0, 0.0), (10.0, 0.0), (20.0, 0.0), (20.0, 5.0), (10.0, 5.0), (0.0, 5.0)]
-    yaws = _route_yaws_rad(route, _pass_axis_rad([route]))
+    yaws = _route_yaws_rad(route, EAST)
     expected = [EAST, EAST, EAST, WEST, WEST, WEST]
     assert all(angle_close(y, e) for y, e in zip(yaws, expected))
-
-
-def test_routes_without_direction_get_zero_yaw() -> None:
-    assert _pass_axis_rad([[(0.0, 0.0)], []]) is None
-    assert _pass_axis_rad([[(1.0, 1.0), (1.0, 1.0)]]) is None
-    assert _route_yaws_rad([(0.0, 0.0)], None) == [0.0]
 
 
 def test_drone_with_no_passes_gets_an_empty_route() -> None:
@@ -237,19 +210,20 @@ def scan_for(request: SurveyRequest, boundary: list[Coordinate]) -> ScanRequest:
     )
 
 
-def test_planner_sweep_angle_matches_the_axis_read_from_routes() -> None:
-    # Checks the angle conversion against an independent source: the pass
-    # direction read off a multi-photo plan.
+def test_planner_sweep_angle_matches_the_first_planned_pass() -> None:
+    # Checks the angle conversion against an independent source: the
+    # direction of the first pass of a multi-photo plan.
     request = make_request()
-    routes = plan_routes(request, [make_drone("drone-01")], round_index=0)
+    setpoints = planner_setpoints([DroneSpec("drone-01")])["drone-01"]
     anchor = anchor_for_boundary(RECTANGLE)
-    enu = [coordinate_to_enu(anchor, m.target) for m in routes["drone-01"]]
-    from_routes = _pass_axis_rad([enu])
+    (east_0, north_0), (east_1, north_1) = (
+        coordinate_to_enu(anchor, point) for point in setpoints[:2]
+    )
+    first_pass = math.atan2(east_1 - east_0, north_1 - north_0) % math.pi
 
     from_planner = _sweep_axis_rad(scan_for(request, RECTANGLE), {"drone-01": None})
 
-    assert from_routes is not None and from_planner is not None
-    assert _axis_gap(from_routes, from_planner) < math.radians(1.0)
+    assert _axis_gap(first_pass, from_planner) < math.radians(1.0)
 
 
 def test_single_photo_route_faces_the_planner_pass_and_covers_the_area() -> None:

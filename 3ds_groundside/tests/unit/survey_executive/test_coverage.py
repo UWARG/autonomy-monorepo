@@ -110,19 +110,15 @@ def test_rejected_photo_does_not_count() -> None:
 
     assert coverage.covered_fraction() == pytest.approx(0.75)
     assert [gap.area for gap in coverage.gaps(0.0)] == [pytest.approx(25.0)]
-    assert coverage.photo_count == 4
-    assert coverage.rejected_count == 1
 
 
 def test_rejection_that_arrives_before_the_photo_still_counts() -> None:
     coverage = CoverageMap(SQUARE_10)
     coverage.mark_rejected("ne")
-    assert coverage.rejected_count == 0
     for image_id, footprint in QUADRANTS.items():
         coverage.add_photo(image_id, footprint)
 
     assert coverage.covered_fraction() == pytest.approx(0.75)
-    assert coverage.rejected_count == 1
 
 
 def test_repeated_rejection_and_repeated_photo_are_idempotent() -> None:
@@ -131,8 +127,6 @@ def test_repeated_rejection_and_repeated_photo_are_idempotent() -> None:
     coverage.mark_rejected("sw")
     coverage.add_photo("ne", QUADRANTS["ne"])
 
-    assert coverage.photo_count == 4
-    assert coverage.rejected_count == 1
     assert coverage.covered_fraction() == pytest.approx(0.75)
 
 
@@ -140,7 +134,6 @@ def test_repeated_image_id_replaces_the_earlier_footprint() -> None:
     coverage = quadrant_map()
     coverage.add_photo("ne", box(5.0, 5.0, 7.5, 10.0))
 
-    assert coverage.photo_count == 4
     assert coverage.covered_fraction() == pytest.approx(87.5 / 100.0)
 
 

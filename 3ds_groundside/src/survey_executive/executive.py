@@ -56,15 +56,6 @@ def _photo_key(drone_id: str, image_id: str) -> str:
     return f"{drone_id}/{image_id}"
 
 
-def _valid_gps(lat: float, lon: float) -> bool:
-    return (
-        math.isfinite(lat)
-        and math.isfinite(lon)
-        and -90.0 <= lat <= 90.0
-        and -180.0 <= lon <= 180.0
-    )
-
-
 class SurveyExecutive:
     """
     Plans the survey, flies each drone's route in order, tracks coverage from
@@ -282,7 +273,7 @@ class SurveyExecutive:
                 message.drone_id, message.image_id or f"unnamed-{self._unnamed_photos}"
             )
             self._received_keys.add(key)
-            if not _valid_gps(message.lat, message.lon):
+            if not message.has_valid_position():
                 # One bad GPS tag must not take down the survey.
                 logger.info("photo %s has no usable GPS", key)
                 continue

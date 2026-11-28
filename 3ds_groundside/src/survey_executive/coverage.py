@@ -33,26 +33,6 @@ class CoverageMap:
         self._rejected: set[str] = set()
         self._covered: BaseGeometry | None = None  # cache, cleared on change
 
-    @property
-    def boundary(self) -> Polygon:
-        return self._boundary
-
-    @property
-    def photo_count(self) -> int:
-        """
-        Photos received with a footprint, rejected ones included.
-        """
-
-        return len(self._footprints)
-
-    @property
-    def rejected_count(self) -> int:
-        """
-        Rejected photos that have a footprint.
-        """
-
-        return len(self._rejected & self._footprints.keys())
-
     def add_photo(self, image_id: str, footprint: Polygon) -> None:
         """
         Records a photo. A repeated ``image_id`` replaces the earlier one.

@@ -42,6 +42,10 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 DEFAULT_HOME = GeoPosition(DEFAULT_HOME_LATITUDE, DEFAULT_HOME_LONGITUDE, 0.0)
+# Fast drones and frequent reports keep a whole survey to a few seconds.
+DRONE_SPEED_M_S = 100.0
+REPORT_PERIOD_S = 0.02
+DRONE_SPACING_M = 5.0
 SEND_TIMEOUT_S = 2.0
 # Long enough for a drone to notice its stop flag while waiting to reconnect.
 STOP_TIMEOUT_S = 5.0
@@ -238,7 +242,6 @@ class WebsocketDroneManager:
 
 @dataclass
 class _Flyer:
-    drone: MockDrone
     stop: threading.Event
     run: concurrent.futures.Future[None]
 
@@ -247,26 +250,15 @@ class FleetHarness:
     """
     A ``WebsocketDroneManager`` and MockDrones flying against it, between
     ``start`` and ``close`` (or use ``flying``). Drones start a few metres
-    apart, east of ``home``.
+    apart, east of ``DEFAULT_HOME``.
 
     Every arrival becomes a synthetic photo, kept in ``photos``. It then goes
     to ``photo_sink`` if ``keep_photo`` says so, and to ``held`` otherwise.
     Both callbacks run on the event loop.
     """
 
-    def __init__(
-        self,
-        drone_ids: Iterable[str],
-        home: GeoPosition = DEFAULT_HOME,
-        speed: float = 100.0,
-        report_period: float = 0.02,
-        spacing_m: float = 5.0,
-    ) -> None:
+    def __init__(self, drone_ids: Iterable[str]) -> None:
         self._drone_ids = list(drone_ids)
-        self._home = home
-        self._speed = speed
-        self._report_period = report_period
-        self._spacing_m = spacing_m
         self.photo_sink: Callable[[ImageMessage], None] = lambda photo: None
         self.keep_photo: Callable[[ImageMessage], bool] = lambda photo: True
         self._photos_lock = threading.Lock()
@@ -370,11 +362,11 @@ class FleetHarness:
         return await serve(self.manager.handle, "127.0.0.1", 0)
 
     def _launch(self, drone_id: str, index: int, url: str) -> None:
-        start = from_local(self._home, (index * self._spacing_m, 0.0, 0.0))
-        drone = MockDrone(drone_id, start, self._speed, self._report_period)
+        start = from_local(DEFAULT_HOME, (index * DRONE_SPACING_M, 0.0, 0.0))
+        drone = MockDrone(drone_id, start, DRONE_SPEED_M_S, REPORT_PERIOD_S)
         stop = threading.Event()
         run = asyncio.run_coroutine_threadsafe(drone.run(url, stop.is_set), self._loop)
-        self._flyers[drone_id] = _Flyer(drone, stop, run)
+        self._flyers[drone_id] = _Flyer(stop, run)
 
     def _photograph(self, state: DroneState) -> None:
         photo = photo_from_state(state)
@@ -393,13 +385,12 @@ class FleetHarness:
 
 
 @contextmanager
-def flying(drone_ids: Iterable[str], **options: Any) -> Iterator[FleetHarness]:
+def flying(drone_ids: Iterable[str]) -> Iterator[FleetHarness]:
     """
     A started ``FleetHarness`` with every drone reporting, closed on exit.
-    ``options`` go to ``FleetHarness``.
     """
 
-    harness = FleetHarness(drone_ids, **options)
+    harness = FleetHarness(drone_ids)
     harness.start()
     try:
         harness.wait_until_reporting()
