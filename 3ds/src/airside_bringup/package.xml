@@ -17,6 +17,11 @@
   <exec_depend>camera</exec_depend>
   <exec_depend>engine</exec_depend>
   <exec_depend>navigation</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>imu_filter_madgwick</exec_depend>
+  <exec_depend>rtabmap_sync</exec_depend>
+  <exec_depend>rtabmap_odom</exec_depend>
+  <exec_depend>rtabmap_slam</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
