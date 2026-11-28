@@ -22,12 +22,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pil \
     python3-pytest \
     python3-rosdep \
+    ros-humble-imu-filter-madgwick \
     ros-humble-mavros \
     ros-humble-mavros-extras \
     ros-humble-py-trees \
     ros-humble-py-trees-ros \
     ros-humble-py-trees-ros-interfaces \
     ros-humble-rosbridge-suite \
+    ros-humble-rtabmap-ros \
     wget \
   && rm -rf /var/lib/apt/lists/*
 
@@ -46,7 +48,7 @@ FROM dev AS prod
 
 COPY camera/ /monorepo/camera/
 COPY utils/ /monorepo/utils/
-RUN pip install /monorepo/camera /monorepo/utils
+RUN pip install "/monorepo/camera[oakd]" /monorepo/utils
 
 COPY 3ds/src/ src/
 

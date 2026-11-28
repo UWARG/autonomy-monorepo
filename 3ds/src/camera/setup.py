@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'camera = camera_ros.camera_node:main',
+            'oakd_stereo = camera_ros.oakd_stereo:main',
         ],
     },
 )
