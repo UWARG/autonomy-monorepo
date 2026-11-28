@@ -34,3 +34,74 @@
     @apply inline-block h-2 w-2 rounded-full;
   }
 }
+/* Leaflet overrides for the dark map widget. Two-class selectors beat leaflet.css, which loads later. */
+.ims-map .leaflet-control-attribution {
+  background: rgba(12, 15, 22, 0.65);
+  color: #5e687a;
+  font-size: 9px;
+}
+.ims-map .leaflet-control-attribution a {
+  color: #9ba5b7;
+}
+.ims-map .leaflet-control-scale-line {
+  background: rgba(12, 15, 22, 0.65);
+  border-color: #9ba5b7;
+  color: #eaeef5;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+}
+.ims-map .leaflet-tooltip {
+  background: #151a24;
+  border: 1px solid #252c3a;
+  border-radius: 6px;
+  box-shadow: none;
+  color: #eaeef5;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.ims-map .leaflet-tooltip-top::before {
+  border-top-color: #252c3a;
+}
+.ims-map .leaflet-tooltip-right::before {
+  border-right-color: #252c3a;
+}
+/* Always-on traffic labels: bare text with a dark halo instead of a tooltip box. */
+.ims-map .leaflet-tooltip.ims-map-label {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: #fbd38d;
+  font-size: 10px;
+  line-height: 1.25;
+  text-shadow: 0 0 3px #0c0f16, 0 0 3px #0c0f16, 0 0 2px #0c0f16;
+}
+.ims-map .leaflet-tooltip.ims-map-label-clear {
+  color: #c4ccd8;
+}
+.ims-map .leaflet-tooltip.ims-map-label::before {
+  display: none;
+}
+.ims-map-edge-label {
+  white-space: nowrap;
+  color: #fbd38d;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  text-shadow: 0 0 3px #0c0f16, 0 0 3px #0c0f16, 0 0 2px #0c0f16;
+}
+.ims-map-icon {
+  background: none;
+  border: none;
+}
+.ims-map-wp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid;
+  border-radius: 9999px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ims-map .leaflet-tooltip-left.ims-map-label {
+  text-align: right;
+}

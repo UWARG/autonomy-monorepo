@@ -10,14 +10,13 @@ import py_trees
 import py_trees_ros
 import rclpy
 from engine.behaviors.comms.configure_stream_rates import ConfigureStreamRates
+from engine.behaviors.guided_mode_gate import PauseUnlessGuided
 from engine.behaviors.navigation.load_waypoint_list import LoadWaypointList
+from engine.behaviors.navigation.record_launch_point import RecordLaunchPoint
 from engine.behaviors.navigation.takeoff import Takeoff
-from engine.behaviors.rc.rc_switch import KillSwitch
-from engine.constants import (
-    RC_SWITCHES_ENABLED,
-    TICK_PERIOD_MS,
-    UNICODE_TREE_DEBUG,
-)
+from engine.constants import TICK_PERIOD_MS, UNICODE_TREE_DEBUG
+from engine.mission_status import MissionStatusPublisher
+from engine.subtrees.abort import create_abort_subtree
 from engine.subtrees.land import create_land_subtree
 from engine.subtrees.lapping import create_lapping_subtree
 from engine.subtrees.target_reconnaissance import (
@@ -27,23 +26,37 @@ from engine.subtrees.target_reconnaissance import (
 
 def create_root() -> py_trees.behaviour.Behaviour:
     """
-    Builds the full mission tree.
+    Builds the full mission tree: fly laps, hand control to the pilot for
+    reconnaissance until the recon-complete switch is flipped, then return to
+    and land at the launch point.
 
-    The KillSwitch decorator freezes the mission (without resetting its
-    progress) while the kill switch is high, so flipping the switch back
+    RecordLaunchPoint waits for the pilot to arm, so the laps can be oriented
+    from where the drone took off.
+
+    The engine never changes flight mode. PauseUnlessGuided freezes the
+    mission (without resetting its progress) until the pilot selects GUIDED,
+    and again whenever the pilot takes back control, so returning to GUIDED
     resumes the mission where it left off. The final MissionComplete node
     holds the tree in RUNNING after landing.
 
     ```
-    KillSwitch
-    └── Mission [Sequence]
+    SafetySupervisor [Selector]
+    ├── Abort
+    │   ├── CheckAbort
+    │   ├── RetryLand [Retry forever]
+    │   │   └── AbortLand
+    │   └── Aborted [Running]
+    └── Root [Sequence]
         ├── ConfigureStreamRates
-        ├── LoadWaypointList
-        ├── Takeoff
-        ├── Lapping
-        ├── TargetReconnaissance
-        ├── LandPhase
-        └── MissionComplete [Running]
+        └── PauseUnlessGuided
+            └── Mission [Sequence]
+                ├── RecordLaunchPoint
+                ├── LoadWaypointList
+                ├── Takeoff
+                ├── Lapping
+                ├── TargetReconnaissance
+                ├── LandPhase
+                └── MissionComplete [Running]
     ```
     """
 
@@ -51,7 +64,7 @@ def create_root() -> py_trees.behaviour.Behaviour:
         name="Mission",
         memory=True,
         children=[
-            ConfigureStreamRates(),
+            RecordLaunchPoint(),
             LoadWaypointList(),
             Takeoff(),
             create_lapping_subtree(),
@@ -61,9 +74,20 @@ def create_root() -> py_trees.behaviour.Behaviour:
         ],
     )
 
-    if RC_SWITCHES_ENABLED:
-        return KillSwitch(child=mission)
-    return mission
+    mission_root = py_trees.composites.Sequence(
+        name="Root",
+        memory=True,
+        children=[
+            ConfigureStreamRates(),
+            PauseUnlessGuided(child=mission),
+        ],
+    )
+
+    return py_trees.composites.Selector(
+        name="SafetySupervisor",
+        memory=False,
+        children=[create_abort_subtree(), mission_root],
+    )
 
 
 def main(args: list[str] | None = None) -> None:
@@ -89,6 +113,7 @@ def main(args: list[str] | None = None) -> None:
         rclpy.try_shutdown()
         return
 
+    tree.add_post_tick_handler(MissionStatusPublisher(tree.node).publish)
     tree.tick_tock(period_ms=TICK_PERIOD_MS)
 
     try:

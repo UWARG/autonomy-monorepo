@@ -1,18 +1,5 @@
-/**
- * Session recording — the second data-flow direction.
- *
- *   capture : ROS topics -> JSONL session file
- *   replay  : session file -> same ROS topics
- *
- * A session is JSON Lines: the first line is a {@link SessionHeader}, every
- * following line is a {@link SessionFrame}. Timestamps are client receipt
- * times (ms since `startedAt`) so replay reproduces the arrival cadence the
- * dashboard actually saw; the ROS stamp stays untouched inside `msg`.
- *
- * State lives in this module (not in React) and is exposed through
- * `subscribeSession`/`getSessionSnapshot` for `useSyncExternalStore`, so
- * StrictMode double-effects cannot duplicate subscriptions.
- */
+// Record ROS messages as JSONL and replay them on their original topics.
+// Frame times track client receipt; ROS timestamps remain unchanged in the message.
 import ROSLIB from 'roslib';
 import { ros } from './ros.js';
 import { ROS_URL, isReplayableTopic } from './constants.ts';
@@ -20,19 +7,12 @@ import { ROS_URL, isReplayableTopic } from './constants.ts';
 /** Bump when the frame/header shape changes; old files are then rejected. */
 export const SESSION_VERSION = 1;
 
-/**
- * Byte cap for the in-memory sink. A session streaming to a real file is
- * unbounded; a buffered one lives in the tab, so an unattended capture has to
- * end before the tab dies with it. Reaching the cap stops the recording with
- * the buffer intact and downloadable.
- */
+// Cap memory recordings to avoid exhausting the tab; keep the buffer downloadable.
+// File streaming is not capped.
 const MEMORY_BUFFER_LIMIT_MIB = 64;
 const MEMORY_BUFFER_LIMIT_BYTES = MEMORY_BUFFER_LIMIT_MIB * 1024 * 1024;
 
-/**
- * UTF-8 length without allocating an encoded copy — these run once per frame
- * and feed the size the UI reports, which has to be file size, not UTF-16.
- */
+// Count UTF-8 bytes without allocating an encoded copy for each frame.
 function utf8Length(text: string): number {
   let bytes = 0;
   for (let i = 0; i < text.length; i++) {
@@ -89,7 +69,9 @@ interface SessionSink {
 }
 
 export interface RecorderSnapshot {
+  starting: boolean;
   recording: boolean;
+  stopping: boolean;
   startedAt: number | null;
   /** Milliseconds since `startedAt`; frozen at the last write once stopped. */
   elapsedMs: number;
@@ -121,9 +103,7 @@ export interface SessionSnapshot {
   player: PlayerSnapshot;
 }
 
-// ---------------------------------------------------------------------------
 // Sinks
-// ---------------------------------------------------------------------------
 
 interface PickWritable {
   write(data: string): Promise<void>;
@@ -159,12 +139,9 @@ function memorySink(): SessionSink {
   };
 }
 
-/**
- * Streams lines to a user-picked file so a long session never has to be held
- * in memory. Must be invoked from a click handler — the picker needs user
- * activation.
- */
-async function fileSink(fileName: string, onError: (err: unknown) => void): Promise<SessionSink> {
+// Stream to a file without buffering the session in memory.
+// Call from a click handler because the picker requires user activation.
+async function fileSink(fileName: string): Promise<SessionSink> {
   const pick = (window as unknown as PickerWindow).showSaveFilePicker;
   if (!pick) throw new Error('File System Access API unavailable');
   const handle = await pick({
@@ -174,15 +151,12 @@ async function fileSink(fileName: string, onError: (err: unknown) => void): Prom
     ],
   });
   const writable = await handle.createWritable();
-  // Writes are serialized so lines never interleave; a failed write must not
-  // poison the chain for every later line.
+  // Serialize writes; a failure rejects subsequent writes without sending them to disk.
   let chain: Promise<void> = Promise.resolve();
   return {
     kind: 'file',
     write: (line) => {
-      chain = chain
-        .then(() => writable.write(`${line}\n`))
-        .catch((err) => onError(err));
+      chain = chain.then(() => writable.write(`${line}\n`));
       return chain;
     },
     close: async () => {
@@ -191,18 +165,18 @@ async function fileSink(fileName: string, onError: (err: unknown) => void): Prom
       return null;
     },
     abort: async () => {
-      await chain;
+      await chain.catch(() => undefined);
       await writable.abort?.().catch(() => undefined);
     },
   };
 }
 
-// ---------------------------------------------------------------------------
 // Store
-// ---------------------------------------------------------------------------
 
 const EMPTY_RECORDER: RecorderSnapshot = {
+  starting: false,
   recording: false,
+  stopping: false,
   startedAt: null,
   elapsedMs: 0,
   frames: 0,
@@ -226,6 +200,7 @@ const EMPTY_PLAYER: PlayerSnapshot = {
   error: null,
 };
 
+// Shared state avoids duplicate recorder subscriptions during React StrictMode effects.
 let snapshot: SessionSnapshot = { recorder: EMPTY_RECORDER, player: EMPTY_PLAYER };
 const listeners = new Set<() => void>();
 
@@ -245,19 +220,9 @@ export function getSessionSnapshot(): SessionSnapshot {
   return snapshot;
 }
 
-// ---------------------------------------------------------------------------
 // Topic discovery
-// ---------------------------------------------------------------------------
 
-/**
- * Topics currently advertised on the ROS graph, with their message types.
- *
- * Built with the `new Promise` constructor rather than `Promise.withResolvers`
- * (ES2024) on purpose: Vite's build target is baseline-widely-available
- * (Chrome 111 / Firefox 114 / Safari 16.4) and the dashboard has no error
- * boundary, so a 2024-only built-in would blank the whole page instead of
- * showing the rosapi error on an older ground-station browser.
- */
+// Fetch advertised ROS topics and their message types.
 export function getTopicTypes(): Promise<SessionTopic[]> {
   return new Promise<SessionTopic[]>((resolve, reject) => {
     ros.getTopics(
@@ -268,14 +233,14 @@ export function getTopicTypes(): Promise<SessionTopic[]> {
   });
 }
 
-// ---------------------------------------------------------------------------
 // Recorder
-// ---------------------------------------------------------------------------
 
 let recStartedAt: number | null = null;
 let recFrames = 0;
 let recBytes = 0;
 let recError: string | null = null;
+let recStarting = false;
+let recStopping = false;
 let recSink: SessionSink | null = null;
 let recSubs: ROSLIB.Topic[] = [];
 let recFileName = '';
@@ -288,7 +253,9 @@ function pushRecorder(force = false): void {
   lastRecEmit = now;
   emit({
     recorder: {
+      starting: recStarting,
       recording: recSink != null,
+      stopping: recStopping,
       startedAt: recStartedAt,
       elapsedMs:
         recSink != null && recStartedAt != null ? now - recStartedAt : snapshot.recorder.elapsedMs,
@@ -305,92 +272,96 @@ function pushRecorder(force = false): void {
 const sessionFileName = (startedAt: number): string =>
   `ims-session-${new Date(startedAt).toISOString().replace(/[:.]/g, '-')}.jsonl`;
 
-/**
- * Start capturing `topics`. Opens the file picker first (it needs the click's
- * user activation); if the picker is unavailable or dismissed, recording falls
- * back to an in-memory buffer that `stopRecording` hands back as a download.
- */
+// Start capturing selected topics; open the picker while click activation is available.
+// Fall back to a downloadable memory buffer if the picker is unavailable or dismissed.
 export async function startRecording(
   topics: SessionTopic[],
   opts: { toFile?: boolean } = {},
 ): Promise<void> {
+  if (recStarting || recSink || recStopping) return;
   if (snapshot.player.playing) {
     recError = 'Stop replay before recording.';
     pushRecorder(true);
     return;
   }
-  if (recSink) return;
   if (topics.length === 0) {
     recError = 'No topics selected.';
     pushRecorder(true);
     return;
   }
 
-  const startedAt = Date.now();
-  recFileName = sessionFileName(startedAt);
-  const onSinkError = (err: unknown) => {
-    recError = `Session file write failed: ${String(err)}`;
+  let sink: SessionSink | null = null;
+  const subs: ROSLIB.Topic[] = [];
+  recStarting = true;
+  try {
     pushRecorder(true);
-  };
-
-  let sink: SessionSink;
-  let notice: string | null = null;
-  if (opts.toFile ?? true) {
-    if (canStreamToFile()) {
-      try {
-        sink = await fileSink(recFileName, onSinkError);
-      } catch {
-        // Picker dismissed or blocked — keep the capture, buffer it in memory.
+    const startedAt = Date.now();
+    recFileName = sessionFileName(startedAt);
+    let notice: string | null = null;
+    if (opts.toFile ?? true) {
+      if (canStreamToFile()) {
+        try {
+          sink = await fileSink(recFileName);
+        } catch {
+          // Picker dismissed or blocked — keep the capture, buffer it in memory.
+          sink = memorySink();
+          notice = 'File picker dismissed — recording to memory; you can download it on stop.';
+        }
+      } else {
         sink = memorySink();
-        notice = 'File picker dismissed — recording to memory; you can download it on stop.';
+        notice = 'This browser cannot stream to a file — recording to memory.';
       }
     } else {
       sink = memorySink();
-      notice = 'This browser cannot stream to a file — recording to memory.';
     }
-  } else {
-    sink = memorySink();
-  }
 
-  const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
-  const headerLine = JSON.stringify(header);
-  try {
+    const header: SessionHeader = { version: SESSION_VERSION, startedAt, rosUrl: ROS_URL, topics };
+    const headerLine = JSON.stringify(header);
     await sink.write(headerLine);
+
+    for (const { name, type } of topics) {
+      const topic = new ROSLIB.Topic({ ros, name, messageType: type });
+      subs.push(topic);
+      topic.subscribe((msg) => onFrame(name, msg, startedAt));
+    }
+
+    recStartedAt = startedAt;
+    recFrames = 0;
+    // The header line and its newline are already in the file the sink is writing.
+    recBytes = utf8Length(headerLine) + 1;
+    recSink = sink;
+    recSubs = subs;
+    recError = notice;
+    recLast = null;
+    emit({
+      recorder: {
+        starting: recStarting,
+        recording: true,
+        stopping: recStopping,
+        startedAt,
+        elapsedMs: 0,
+        frames: 0,
+        bytes: 0,
+        sinkKind: sink.kind,
+        topics,
+        lastRecording: null,
+        error: recError,
+      },
+    });
   } catch (err) {
-    await sink.abort();
-    recError = `Could not write session header: ${String(err)}`;
+    recError = `Could not start recording: ${String(err)}`;
+    for (const topic of subs) {
+      try {
+        topic.unsubscribe();
+      } catch {
+        // A failed subscribe may leave ROSLIB only partially initialized.
+      }
+    }
+    await sink?.abort();
+  } finally {
+    recStarting = false;
     pushRecorder(true);
-    return;
   }
-
-  const subs: ROSLIB.Topic[] = [];
-  for (const { name, type } of topics) {
-    const topic = new ROSLIB.Topic({ ros, name, messageType: type });
-    topic.subscribe((msg) => onFrame(name, msg, startedAt));
-    subs.push(topic);
-  }
-
-  recStartedAt = startedAt;
-  recFrames = 0;
-  // The header line and its newline are already in the file the sink is writing.
-  recBytes = utf8Length(headerLine) + 1;
-  recSink = sink;
-  recSubs = subs;
-  recError = notice;
-  recLast = null;
-  emit({
-    recorder: {
-      recording: true,
-      startedAt,
-      elapsedMs: 0,
-      frames: 0,
-      bytes: 0,
-      sinkKind: sink.kind,
-      topics,
-      lastRecording: null,
-      error: recError,
-    },
-  });
 }
 
 function onFrame(topicName: string, msg: unknown, startedAt: number): void {
@@ -403,8 +374,7 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
   } catch {
     return; // un-serializable payload (should not happen for rosbridge JSON)
   }
-  // Both sinks write one line plus a newline per frame, so the framing byte is
-  // part of the file (and of the buffer the cap bounds).
+  // Include the newline in byte counts and the memory cap.
   const bytes = utf8Length(line) + 1;
   if (sink.kind === 'memory' && recBytes + bytes > MEMORY_BUFFER_LIMIT_BYTES) {
     void stopRecording(
@@ -413,51 +383,66 @@ function onFrame(topicName: string, msg: unknown, startedAt: number): void {
     );
     return;
   }
-  recFrames += 1;
-  recBytes += bytes;
-  void sink.write(line).catch((err) => {
-    recError = `Session file write failed: ${String(err)}`;
-    pushRecorder(true);
-  });
+  if (sink.kind === 'memory') {
+    recFrames += 1;
+    recBytes += bytes;
+  }
+  void sink.write(line)
+    .then(() => {
+      if (sink.kind === 'file') {
+        recFrames += 1;
+        recBytes += bytes;
+        pushRecorder();
+      }
+    })
+    .catch((err) => {
+      if (recSink === sink) void stopRecording(`Session file write failed: ${String(err)}`);
+    });
   pushRecorder();
 }
 
-/**
- * Stop capturing and hand the session back. `reason` is shown as the recorder
- * error; the memory cap uses it to explain a stop the user did not ask for.
- */
+// Stop capture and return the recording; show `reason` as the recorder error.
 export async function stopRecording(reason?: string): Promise<Recording | null> {
   const sink = recSink;
   if (!sink) return null;
-  recSink = null;
-  for (const topic of recSubs) topic.unsubscribe();
-  recSubs = [];
-  if (reason) recError = reason;
-  // Read the counters before awaiting: finalizing a file can outlive the start
-  // of a new capture, which must neither be described by these numbers nor have
-  // its `lastRecording` overwritten by them.
-  const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
-  pushRecorder(true);
-
-  let blob: Blob | null = null;
+  recStopping = true;
   try {
-    blob = await sink.close();
-  } catch (err) {
-    // Same ownership rule as the counters: a finalize that outlives the start of
-    // a new capture must not report its failure against that capture.
-    if (recSink == null) recError = `Could not finalize session file: ${String(err)}`;
-  }
-  const recording: Recording = { blob, ...finished };
-  if (recSink == null) {
-    recLast = recording;
+    recSink = null;
+    for (const topic of recSubs) {
+      try {
+        topic.unsubscribe();
+      } catch (err) {
+        recError ??= `Could not unsubscribe from ${topic.name}: ${String(err)}`;
+      }
+    }
+    recSubs = [];
+    if (reason) recError = reason;
+    pushRecorder(true);
+
+    let blob: Blob | null = null;
+    try {
+      blob = await sink.close();
+    } catch (err) {
+      recError ??= `Could not finalize session file: ${String(err)}`;
+      await sink.abort();
+      return null;
+    }
+    // File counters are final only after all pending writes have completed.
+    const finished = { fileName: recFileName, frames: recFrames, bytes: recBytes };
+    const recording: Recording = { blob, ...finished };
+    // Do not overwrite a recording that started while this file was closing.
+    if (recSink == null) {
+      recLast = recording;
+      pushRecorder(true);
+    }
+    return recording;
+  } finally {
+    recStopping = false;
     pushRecorder(true);
   }
-  return recording;
 }
 
-// ---------------------------------------------------------------------------
 // Player
-// ---------------------------------------------------------------------------
 
 const PLAY_TICK_MS = 25;
 
@@ -490,7 +475,7 @@ function pushPlayer(force = false): void {
 }
 
 export async function loadSessionFile(file: File): Promise<void> {
-  if (recSink) {
+  if (recStarting || recSink || recStopping) {
     emit({ player: { ...snapshot.player, error: 'Stop recording before loading a session.' } });
     return;
   }
@@ -556,7 +541,7 @@ function parseSession(text: string): {
 
 export function playSession(): void {
   if (playerTimer != null || playerFrames.length === 0) return;
-  if (recSink) {
+  if (recStarting || recSink || recStopping) {
     emit({ player: { ...snapshot.player, error: 'Stop recording before replaying.' } });
     return;
   }
@@ -566,14 +551,13 @@ export function playSession(): void {
     playerPubs = new Map(
       header.topics.map(({ name, type }) => [
         name,
-        new ROSLIB.Topic<unknown>({ ros, name, messageType: type }),
+        new ROSLIB.Topic<unknown>({ ros, name: `/replay${name}`, messageType: type }),
       ]),
     );
   }
 
-  // Resuming keeps `playerNext`, which already points at the first frame not
-  // yet published — reseeking from the cursor would silently drop every frame
-  // that came due between the last tick and the pause.
+  // Keep the next unpublished frame on resume; reseeking could skip frames
+  // that became due between the last timer tick and the pause.
   const resuming = playerPaused;
   playerPaused = false;
   const cursor =
@@ -601,8 +585,7 @@ function tick(): void {
 
   while (playerNext < playerFrames.length && playerFrames[playerNext].t <= elapsed) {
     const frame = playerFrames[playerNext++];
-    // Allowlist, not blocklist: anything the recorder did not track — including
-    // a command topic a session file names freely — is refused, not published.
+    // Reject frames outside the replay allowlist, including control commands.
     if (!isReplayableTopic(frame.topic)) {
       blockedCount += 1;
       continue;
@@ -616,10 +599,7 @@ function tick(): void {
       publisher.publish(frame.msg);
       pubCount += 1;
     } catch (err) {
-      // Treat a failed publish like a pause: keep `playerNext` (minus the frame
-      // that just failed, so it is retried) instead of leaving a stale cursor
-      // for the next Play to reseek from, which would republish frames already
-      // sent and drop this one.
+      // Retry the failed frame on resume without repeating frames already published.
       playerNext -= 1;
       playerPaused = true;
       emit({

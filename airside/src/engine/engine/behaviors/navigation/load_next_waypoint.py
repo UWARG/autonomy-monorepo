@@ -3,15 +3,18 @@ from __future__ import annotations
 import py_trees
 import rclpy.node
 from engine import blackboard_keys
+from utils.src.types import Coordinate
 
 
 class LoadNextWaypoint(py_trees.behaviour.Behaviour):
     """
     Advances to the next waypoint in the current lap.
 
-    Reads ``waypoints`` and ``waypoint_index`` from the blackboard, writes the
-    waypoint at the index to ``current_waypoint``, and increments the index.
-    Returns SUCCESS when a waypoint was loaded, FAILURE when the list is
+    The lap route is the waypoints followed by the first one again. Reads
+    ``waypoints`` and ``waypoint_index`` from the blackboard, writes the
+    route entry at the index to ``current_waypoint``, and increments the
+    index. Also writes the stretch of route around it to ``waypoint_path``.
+    Returns SUCCESS when a waypoint was loaded, FAILURE when the route is
     exhausted.
     """
 
@@ -28,6 +31,12 @@ class LoadNextWaypoint(py_trees.behaviour.Behaviour):
         self.blackboard.register_key(
             key=blackboard_keys.CURRENT_WAYPOINT, access=py_trees.common.Access.WRITE
         )
+        self.blackboard.register_key(
+            key=blackboard_keys.WAYPOINT_PATH, access=py_trees.common.Access.WRITE
+        )
+        self.blackboard.register_key(
+            key=blackboard_keys.LAPS_REMAINING, access=py_trees.common.Access.READ
+        )
 
     def setup(self, **kwargs: rclpy.node.Node) -> None:
         self._node = kwargs["node"]
@@ -42,15 +51,39 @@ class LoadNextWaypoint(py_trees.behaviour.Behaviour):
             )
             return py_trees.common.Status.FAILURE
 
-        if index >= len(waypoints):
+        if index > len(waypoints):
             self._node.get_logger().info(
-                f"{self.name}: all {len(waypoints)} waypoints visited, lap complete"
+                f"{self.name}: lap complete"
             )
             return py_trees.common.Status.FAILURE
 
-        self.blackboard.set(blackboard_keys.CURRENT_WAYPOINT, waypoints[index])
+        waypoint = waypoints[index % len(waypoints)]
+        self.blackboard.set(blackboard_keys.CURRENT_WAYPOINT, waypoint)
+        self.blackboard.set(
+            blackboard_keys.WAYPOINT_PATH, self._path(waypoints, index)
+        )
         self.blackboard.set(blackboard_keys.WAYPOINT_INDEX, index + 1)
+        closing = " (closing the lap)" if index == len(waypoints) else ""
         self._node.get_logger().info(
-            f"{self.name}: waypoint {index + 1}/{len(waypoints)}: {waypoints[index]}"
+            f"{self.name}: waypoint {index % len(waypoints) + 1}/{len(waypoints)}"
+            f"{closing}: {waypoint}"
         )
         return py_trees.common.Status.SUCCESS
+
+    def _path(
+        self, waypoints: list[Coordinate], index: int
+    ) -> tuple[list[Coordinate], int]:
+        """
+        Up to two route entries either side of entry ``index``, and where
+        ``index`` falls among them.
+        """
+
+        try:
+            laps_remaining = self.blackboard.get(blackboard_keys.LAPS_REMAINING)
+        except KeyError:
+            laps_remaining = 0
+        count = len(waypoints)
+        last = count + 2 if laps_remaining > 0 else count
+        first = -1 if index >= 1 else 0
+        entries = range(max(index - 2, first), min(index + 2, last) + 1)
+        return [waypoints[entry % count] for entry in entries], index - entries.start
