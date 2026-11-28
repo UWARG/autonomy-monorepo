@@ -16,35 +16,12 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Read version from pyproject.toml
-        id: version
-        working-directory: warg_cli
-        run: |
-          version="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          with Path("pyproject.toml").open("rb") as file:
-              print(tomllib.load(file)["project"]["version"])
-          PY
-          )"
-          echo "tag=warg-cli/v${version}" >> "$GITHUB_OUTPUT"
-
-      - name: Create tag if it does not exist
+      - name: Tag release and start publish
         env:
-          TAG: ${{ steps.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
-            echo "Tag ${TAG} already exists. Nothing to do."
-          else
-            git tag "${TAG}"
-            git push origin "${TAG}"
-            echo "Created and pushed ${TAG}."
-            gh workflow run publish-warg-cli.yml --repo "${GITHUB_REPOSITORY}" --ref "${TAG}"
-            echo "Started publish workflow for ${TAG}."
-          fi
+        run: bash .github/scripts/tag-warg-cli.sh
