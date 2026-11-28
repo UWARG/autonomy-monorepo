@@ -184,6 +184,13 @@ class RouteDispatcher:
         head = [] if flight is None else [flight.mission]
         return head + list(self._queues.get(drone_id, []))
 
+    def drone_ids(self) -> list[str]:
+        """
+        Every drone that has been loaded, in the order first loaded.
+        """
+
+        return list(self._queues)
+
     def dropped(self) -> set[str]:
         """
         Drones currently dropped out.
