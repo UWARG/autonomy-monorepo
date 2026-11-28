@@ -8,13 +8,20 @@ import math
 
 import pytest
 from gnc.src.orthomosaic import DroneSpec, ScanRequest, plan_swarm_orthomosaic
-from utils.src.coordinates import anchor_for_boundary, coordinate_to_enu
+from shapely.geometry import box
+from utils.src.coordinates import (
+    anchor_for_boundary,
+    coordinate_to_enu,
+    enu_to_coordinate,
+)
 from utils.src.types import Coordinate
 
+from src.survey_executive import SurveyRequest, photo_footprint
 from src.survey_executive.planning import (
     PlanningError,
     _pass_axis_rad,
     _route_yaws_rad,
+    _sweep_axis_rad,
     plan_routes,
     task_id,
 )
@@ -218,3 +225,52 @@ def test_negative_round_index_is_rejected() -> None:
 def test_duplicate_drone_ids_are_rejected_by_name() -> None:
     with pytest.raises(ValueError, match="duplicate drone IDs"):
         plan_routes(make_request(), [make_drone(), make_drone()], round_index=0)
+
+
+def scan_for(request: SurveyRequest, boundary: list[Coordinate]) -> ScanRequest:
+    return ScanRequest(
+        boundary=boundary,
+        camera=request.camera,
+        target_gsd_m=request.target_gsd_m,
+        forward_overlap=request.forward_overlap,
+        side_overlap=request.side_overlap,
+    )
+
+
+def test_planner_sweep_angle_matches_the_axis_read_from_routes() -> None:
+    # Checks the angle conversion against an independent source: the pass
+    # direction read off a multi-photo plan.
+    request = make_request()
+    routes = plan_routes(request, [make_drone("drone-01")], round_index=0)
+    anchor = anchor_for_boundary(RECTANGLE)
+    enu = [coordinate_to_enu(anchor, m.target) for m in routes["drone-01"]]
+    from_routes = _pass_axis_rad([enu])
+
+    from_planner = _sweep_axis_rad(scan_for(request, RECTANGLE), {"drone-01": None})
+
+    assert from_routes is not None and from_planner is not None
+    assert _axis_gap(from_routes, from_planner) < math.radians(1.0)
+
+
+def test_single_photo_route_faces_the_planner_pass_and_covers_the_area() -> None:
+    # A 14 m x 30 m strip: one east-west pass of one photo. Facing north
+    # would put the 30 m side of the footprint across the 30 m strip and
+    # leave part of it uncovered.
+    request = make_request()
+    anchor = anchor_for_boundary(RECTANGLE)
+    strip = box(26.3, -55.6, 40.3, -25.9)
+    boundary = [
+        enu_to_coordinate(anchor, east, north, 0.0)
+        for east, north in list(strip.exterior.coords)[:-1]
+    ]
+
+    routes = plan_routes(request, [make_drone("drone-01")], 1, boundary=boundary)
+
+    (mission,) = routes["drone-01"]
+    east, north = coordinate_to_enu(anchor, mission.target)
+    footprint = photo_footprint(
+        east, north, mission.target.alt, 0.0, 0.0, math.degrees(mission.yaw),
+        request.camera, max_gsd_m=request.max_gsd_m,
+    )
+    assert footprint is not None
+    assert strip.difference(footprint).area < 1e-6

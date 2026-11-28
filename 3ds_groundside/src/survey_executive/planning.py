@@ -5,9 +5,15 @@ Turns planner setpoints into ordered Missions with stable task IDs.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from itertools import pairwise
 
-from gnc.src.orthomosaic import DroneSpec, ScanRequest, plan_swarm_orthomosaic
+from gnc.src.orthomosaic import (
+    DroneSpec,
+    ScanRequest,
+    plan_orthomosaic_path,
+    plan_swarm_orthomosaic,
+)
 from utils.src.coordinates import anchor_for_boundary, coordinate_to_enu
 from utils.src.types import Coordinate
 
@@ -105,6 +111,11 @@ def plan_waypoints(
         for drone_id, route in setpoints.items()
     }
     axis_rad = _pass_axis_rad(list(enu_routes.values()))
+    if axis_rad is None:
+        # Only single-photo routes: no segment to read the pass from, so ask
+        # the planner which way it swept. Guessing (e.g. north) can turn the
+        # photo 90 degrees and leave a strip of a small gap uncovered.
+        axis_rad = _sweep_axis_rad(scan, starts)
     return {
         drone_id: list(
             zip(setpoints[drone_id], _route_yaws_rad(enu_routes[drone_id], axis_rad))
@@ -131,6 +142,27 @@ def to_missions(
         ]
         for drone_id, route in waypoints.items()
     }
+
+
+def _sweep_axis_rad(
+    scan: ScanRequest, starts: dict[str, Coordinate | None]
+) -> float | None:
+    """
+    The planner's pass direction, radians clockwise from north in [0, pi).
+
+    Re-plans the area the way ``plan_swarm_orthomosaic`` does (with the start
+    for one drone, without for several), since the start can change the
+    angle it picks. None if that plan fails.
+    """
+
+    start = next(iter(starts.values())) if len(starts) == 1 else None
+    try:
+        plan = plan_orthomosaic_path(replace(scan, start=start))
+    except ValueError:
+        return None
+    # gnc sweeps along +x, then turns the plan counterclockwise from east by
+    # sweep_angle_deg; clockwise from north that is 90 deg minus the angle.
+    return math.radians(90.0 - plan.sweep_angle_deg) % math.pi
 
 
 def _heading_rad(start: tuple[float, float], end: tuple[float, float]) -> float | None:
