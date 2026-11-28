@@ -76,7 +76,9 @@ class SurveyExecutive:
 
     ``tick`` does all the work and is meant to run on one thread (see
     ``SurveyRunner``). ``on_photo`` may be called from any thread; the other
-    methods are safe to call from any thread too.
+    methods are safe to call from any thread too, but wait for a running
+    tick, which includes the manager's command sends. A manager whose sync
+    send blocks for long would also delay ``progress`` and ``abort``.
 
     If gaps remain after ``max_reshoot_rounds``, the survey still ends
     COMPLETE, with ``fully_covered`` False and the gaps counted in progress.
@@ -119,7 +121,7 @@ class SurveyExecutive:
         self._round_done_at: float | None = None
         self._anchor: Coordinate | None = None
         self._coverage: CoverageMap | None = None
-        self._photos_received = 0
+        self._unnamed_photos = 0
         # Photo keys are "drone_id/image_id": image IDs are file names, and
         # two drones can use the same ones.
         self._received_keys: set[str] = set()
@@ -156,6 +158,8 @@ class SurveyExecutive:
             except (ValueError, PlanningError) as error:
                 self._abort_locked(f"refused to start: {error}")
                 raise
+            # Photos queued before the survey started belong to no round.
+            self._take_inbox()
             self._load(routes)
             self._state = SurveyState.SURVEYING
             logger.info(
@@ -235,7 +239,8 @@ class SurveyExecutive:
                 round_index=self._round_index,
                 percent_covered=100.0 * covered,
                 fully_covered=self._fully_covered,
-                photos_received=self._photos_received,
+                # A photo sent twice under the same key counts once.
+                photos_received=len(self._received_keys),
                 # Only photos this survey received: the stitcher may hold others.
                 photos_rejected=len(self._rejected_keys & self._received_keys),
                 missions_done=len(completed),
@@ -270,10 +275,11 @@ class SurveyExecutive:
     def _take_photos(self) -> None:
         assert self._coverage is not None and self._anchor is not None
         for message in self._take_inbox():
-            self._photos_received += 1
-            # A photo without an ID can't be matched to a rejection later.
+            if not message.image_id:
+                # Can't be matched to a rejection later; still one photo.
+                self._unnamed_photos += 1
             key = _photo_key(
-                message.drone_id, message.image_id or f"unnamed-{self._photos_received}"
+                message.drone_id, message.image_id or f"unnamed-{self._unnamed_photos}"
             )
             self._received_keys.add(key)
             if not _valid_gps(message.lat, message.lon):

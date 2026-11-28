@@ -575,3 +575,40 @@ def test_runner_refuses_a_survey_that_was_never_started() -> None:
 
     with pytest.raises(RuntimeError, match="start the survey"):
         runner.start()
+
+
+def test_photos_sent_before_start_are_dropped() -> None:
+    harness = Harness()
+    target = Coordinate(RECTANGLE[0].lat, RECTANGLE[0].lon, 30.0)
+    harness.executive.on_photo(photo_at("drone-01", "early", target, 0.0))
+
+    harness.executive.start()
+    harness.executive.tick()
+
+    progress = harness.executive.progress()
+    assert progress.photos_received == 0
+    assert progress.percent_covered == 0.0
+
+
+def test_a_photo_sent_twice_counts_once() -> None:
+    harness = Harness()
+    harness.executive.start()
+    target = Coordinate(RECTANGLE[0].lat, RECTANGLE[0].lon, 30.0)
+
+    for _ in range(2):
+        harness.executive.on_photo(photo_at("drone-01", "IMG_0001", target, 0.0))
+    harness.executive.tick()
+
+    assert harness.executive.progress().photos_received == 1
+
+
+def test_photos_without_an_id_each_count() -> None:
+    harness = Harness()
+    harness.executive.start()
+    target = Coordinate(RECTANGLE[0].lat, RECTANGLE[0].lon, 30.0)
+
+    for _ in range(2):
+        harness.executive.on_photo(photo_at("drone-01", "", target, 0.0))
+    harness.executive.tick()
+
+    assert harness.executive.progress().photos_received == 2
