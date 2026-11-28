@@ -1,0 +1,27 @@
+name: Tag warg-cli release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "warg_cli/pyproject.toml"
+  workflow_dispatch:
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Tag release and start publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/tag-warg-cli.sh
