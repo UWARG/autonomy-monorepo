@@ -13,11 +13,10 @@ import multiprocessing
 import signal
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
 from multiprocessing.synchronize import Event
-from typing import Callable
 
 from websockets.exceptions import InvalidURI
 from websockets.uri import parse_uri

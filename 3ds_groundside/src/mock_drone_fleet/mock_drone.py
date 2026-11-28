@@ -6,9 +6,9 @@ import asyncio
 import logging
 import math
 import time
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import InvalidURI, WebSocketException

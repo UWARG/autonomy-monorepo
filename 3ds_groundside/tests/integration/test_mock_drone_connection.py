@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable
-from typing import Any, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import pytest
 from websockets.asyncio.server import ServerConnection, serve
