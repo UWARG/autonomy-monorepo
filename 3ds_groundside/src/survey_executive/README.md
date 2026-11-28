@@ -125,7 +125,15 @@ rejected photos reshot, a drone dropped partway, round limits, abort from
 each state, and random dropouts over fixed seeds where every setpoint must
 finish exactly once.
 
+`tests/integration/test_survey_executive.py` flies whole surveys with three
+real mock drones over websockets: a nominal run, a drone killed partway, and
+a run where the stitcher rejects a whole route's photos. Each must end
+`COMPLETE` and fully covered, with every route flown in planned order. A
+small test-only manager (`tests/integration/survey_harness.py`) stands in
+for #153 and turns each arrival into a photo.
+
 ```bash
 cd 3ds_groundside
 uv run --extra dev pytest tests/unit/survey_executive
+uv run --extra dev pytest tests/integration/test_survey_executive.py
 ```
