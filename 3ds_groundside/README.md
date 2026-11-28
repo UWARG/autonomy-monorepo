@@ -19,6 +19,8 @@ Groundside operator tooling for 3DS autonomy.
 
 - `src/image_stitcher/`: builds an orthomosaic map from drone photos. See
   [its README](src/image_stitcher/README.md).
+- `src/survey_executive/`: runs a whole survey (plan, dispatch, coverage,
+  reshoot). See [its README](src/survey_executive/README.md).
 
 ## Commands
 
