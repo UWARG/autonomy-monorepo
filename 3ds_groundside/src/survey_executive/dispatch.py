@@ -9,6 +9,7 @@ scramble the planned routes.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -83,10 +84,11 @@ class RouteDispatcher:
         ack_timeout_s: float = DEFAULT_ACK_TIMEOUT_S,
         dropout_after_s: float = DEFAULT_DROPOUT_AFTER_S,
     ) -> None:
-        if ack_timeout_s <= 0:
-            raise ValueError("ack_timeout_s must be positive")
-        if dropout_after_s <= 0:
-            raise ValueError("dropout_after_s must be positive")
+        # isfinite too: NaN fails every comparison, so it would never time out.
+        if not (math.isfinite(ack_timeout_s) and ack_timeout_s > 0):
+            raise ValueError("ack_timeout_s must be positive and finite")
+        if not (math.isfinite(dropout_after_s) and dropout_after_s > 0):
+            raise ValueError("dropout_after_s must be positive and finite")
         self._manager = manager
         self._clock = clock
         self._ack_timeout_s = ack_timeout_s

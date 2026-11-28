@@ -349,13 +349,17 @@ class FleetHarness:
             for flyer in self._flyers.values():
                 flyer.run.result(timeout=STOP_TIMEOUT_S)
             if self._server is not None:
-                self._server.close()
-                self._call(self._server.wait_closed())
+                self._call(self._close_server(self._server))
         finally:
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(STOP_TIMEOUT_S)
             if not self._thread.is_alive():  # closing a running loop raises
                 self._loop.close()
+
+    async def _close_server(self, server: Server) -> None:
+        # close() starts a task, so it must run on the loop thread too.
+        server.close()
+        await server.wait_closed()
 
     async def _serve(self) -> Server:
         # serve() needs the running loop, so it is built on the loop thread.
@@ -371,12 +375,13 @@ class FleetHarness:
     def _photograph(self, state: DroneState) -> None:
         photo = photo_from_state(state)
         keep = self.keep_photo(photo)
+        # Deliver first, so a photo in ``photos`` has already reached the sink.
+        if keep:
+            self.photo_sink(photo)
         with self._photos_lock:
             self._photos.append(photo)
             if not keep:
                 self._held.append(photo)
-        if keep:
-            self.photo_sink(photo)
 
     def _call(self, coroutine: Coroutine[Any, Any, T]) -> T:
         return asyncio.run_coroutine_threadsafe(coroutine, self._loop).result(

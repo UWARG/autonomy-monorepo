@@ -18,6 +18,7 @@ from src.groundside_manager.groundside_manager import DroneState, MissionState
 from src.image_stitcher.message import ImageMessage
 from src.survey_executive import (
     DroneActivity,
+    PlanningError,
     SurveyExecutive,
     SurveyRunner,
     SurveyState,
@@ -361,9 +362,87 @@ def test_photos_after_the_end_are_ignored() -> None:
     target = harness.fleet.commands["drone-01"][1]
 
     harness.executive.on_photo(photo_at("drone-01", "late", target, 0.0))
+
+    # Nothing ticks after the end, so a late photo must not even be queued.
+    assert harness.executive._inbox == []
+    harness.executive.tick()
+    assert harness.executive.progress().photos_received == received
+
+
+def test_photos_without_image_id_never_count_as_coverage() -> None:
+    harness = Harness(max_reshoot_rounds=0)
+    # The stitcher would record a rejection of these under "", which can't
+    # be told apart, so they must not be trusted as coverage.
+    harness.name_photo = lambda drone_id, task_id: ""
+    harness.executive.start()
+    harness.run()
+
+    progress = harness.executive.progress()
+    assert progress.state is SurveyState.COMPLETE
+    assert not progress.fully_covered
+    assert progress.percent_covered == 0.0
+    assert progress.photos_received == progress.missions_total
+
+
+def test_rejection_arriving_on_the_settle_deadline_tick_still_counts() -> None:
+    harness = Harness()
+    harness.executive.start()
+    harness.run_until(
+        lambda: (progress := harness.executive.progress()).missions_done
+        == progress.missions_total
+    )
+    deadline = harness.fleet.clock() + SETTLE_S
+    rejected = [f"survey-1-r0-drone-01-{index:03d}" for index in range(4)]
+    read_drones = harness.fleet.get_all_drones
+
+    def rejections_arrive_during_the_poll() -> dict[str, DroneState]:
+        # The stitcher rejects them while the deadline tick polls the fleet,
+        # after the tick has already read the rejections once.
+        if harness.fleet.clock() >= deadline and not harness.rejected:
+            harness.rejected.extend(("drone-01", t, "blurry") for t in rejected)
+        return read_drones()
+
+    harness.fleet.get_all_drones = rejections_arrive_during_the_poll  # type: ignore[method-assign]
+    harness.run()
+
+    progress = harness.executive.progress()
+    assert progress.photos_rejected == len(rejected)
+    assert progress.round_index == 1  # the gap was reshot, not missed
+    assert progress.fully_covered
+
+
+def test_photo_with_a_null_attitude_is_skipped_not_fatal() -> None:
+    harness = Harness()
+    harness.executive.start()
+    target = Coordinate(RECTANGLE[0].lat, RECTANGLE[0].lon, 30.0)
+
+    harness.executive.on_photo(photo_at("drone-01", "x", target, 0.0, roll_deg=None))
     harness.executive.tick()
 
-    assert harness.executive.progress().photos_received == received
+    progress = harness.executive.progress()
+    assert progress.state is SurveyState.SURVEYING
+    assert progress.photos_received == 1
+    assert progress.percent_covered == 0.0
+
+
+def test_planner_refusal_at_start_aborts_before_any_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise PlanningError("planner rejected the area or fleet")
+
+    monkeypatch.setattr("src.survey_executive.executive.plan_routes", refuse)
+    harness = Harness()
+
+    with pytest.raises(PlanningError):
+        harness.executive.start()
+
+    progress = harness.executive.progress()
+    assert progress.state is SurveyState.ABORTED
+    assert progress.abort_reason is not None
+    assert progress.abort_reason.startswith("refused to start")
+    harness.step()
+    assert harness.fleet.sent == []
 
 
 def test_progress_is_json_ready_with_per_drone_status() -> None:

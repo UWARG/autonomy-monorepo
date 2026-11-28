@@ -5,7 +5,7 @@ Live map of which part of the survey area good photos actually cover.
 from __future__ import annotations
 
 from gnc.src.orthomosaic import validate_polygon
-from shapely.geometry import Polygon
+from shapely.geometry import JOIN_STYLE, Polygon
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 
@@ -87,8 +87,9 @@ class CoverageMap:
         uncovered = self._boundary.difference(self.covered())
         # Shrink then grow back with square corners: removes slivers and
         # leaves everything wider unchanged.
-        opened = uncovered.buffer(-_SLIVER_M, join_style="mitre").buffer(
-            _SLIVER_M, join_style="mitre"
+        # JOIN_STYLE, not "mitre": Shapely 1.8 only takes the number.
+        opened = uncovered.buffer(-_SLIVER_M, join_style=JOIN_STYLE.mitre).buffer(
+            _SLIVER_M, join_style=JOIN_STYLE.mitre
         )
         parts = [
             part

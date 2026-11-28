@@ -76,7 +76,9 @@ class SurveyExecutive:
     If no drone is left, it waits until one rejoins or the operator aborts.
 
     Photos are matched to stitcher rejections by (drone_id, image_id), the
-    way the stitcher names them. Photos sent before ``start`` are dropped.
+    way the stitcher names them, so a photo with no ``image_id`` never
+    counts as coverage. Photos sent before ``start`` or after the end are
+    dropped.
     """
 
     def __init__(
@@ -162,9 +164,14 @@ class SurveyExecutive:
 
     def on_photo(self, message: ImageMessage) -> None:
         """
-        Queues a photo for the next tick. Safe from any thread.
+        Queues a photo for the next tick. Safe from any thread. Photos sent
+        once the survey is final are dropped, since nothing ticks any more.
         """
 
+        # Read without the main lock so a long tick can't block the photo
+        # source; at worst one photo slips in as the survey ends.
+        if self._state.is_final:
+            return
         with self._inbox_lock:
             self._inbox.append(message)
 
@@ -188,6 +195,9 @@ class SurveyExecutive:
             if self._round_done_at is None:
                 self._round_done_at = now
             if now - self._round_done_at >= self._settle_s:
+                # Anything that arrived during this tick still counts.
+                self._take_photos()
+                self._take_rejections()
                 self._finish_round()
 
     def abort(self, reason: str = "operator abort") -> None:
@@ -267,11 +277,15 @@ class SurveyExecutive:
         assert self._coverage is not None and self._anchor is not None
         for message in self._take_inbox():
             if not message.image_id:
-                # Can't be matched to a rejection later; still one photo.
+                # A rejection can't be matched to it, so it counts as
+                # received but never as coverage.
                 self._unnamed_photos += 1
-            key = _photo_key(
-                message.drone_id, message.image_id or f"unnamed-{self._unnamed_photos}"
-            )
+                self._received_keys.add(
+                    _photo_key(message.drone_id, f"unnamed-{self._unnamed_photos}")
+                )
+                logger.info("photo from %s has no image_id", message.drone_id)
+                continue
+            key = _photo_key(message.drone_id, message.image_id)
             self._received_keys.add(key)
             if not message.has_valid_position():
                 # One bad GPS tag must not take down the survey.

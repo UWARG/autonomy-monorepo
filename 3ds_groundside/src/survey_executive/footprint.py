@@ -11,11 +11,16 @@ from gnc.src.orthomosaic.footprint import validate_camera
 from shapely.geometry import Polygon
 from shapely.geometry.polygon import orient
 
+from src.image_stitcher.message import is_finite
+
 # Image corners as (right, forward) signs: top-left, top-right, bottom-right,
 # bottom-left, with the image top facing the drone's nose.
 _CORNERS = ((-1.0, 1.0), (1.0, 1.0), (1.0, -1.0), (-1.0, -1.0))
 # A ray with no downward part never meets the ground (and would divide by 0).
 _MIN_DOWN = 1e-9
+# Relative slack on the GSD depth limit, so float rounding can't clip a level
+# photo taken exactly at the limit.
+_DEPTH_TOLERANCE = 1e-9
 
 
 def photo_footprint(
@@ -50,7 +55,8 @@ def photo_footprint(
     if max_gsd_m is not None and not (math.isfinite(max_gsd_m) and max_gsd_m > 0.0):
         raise ValueError("max_gsd_m must be positive and finite")
     values = (east_m, north_m, alt_m, roll_deg, pitch_deg, yaw_deg)
-    if not all(math.isfinite(value) for value in values) or alt_m <= 0.0:
+    # is_finite, not math.isfinite: a JSON null attitude is "no footprint".
+    if not all(is_finite(value) for value in values) or alt_m <= 0.0:
         return None
 
     rotation = _body_to_ned(
@@ -114,6 +120,7 @@ def _clip_to_gsd(
     """
 
     max_depth_m = ((max_gsd_m * focal_px) ** 2 * alt_m) ** (1.0 / 3.0)
+    max_depth_m *= 1.0 + _DEPTH_TOLERANCE
     axis_east, axis_north, axis_down = axis_enu_down
 
     def excess(point: tuple[float, float]) -> float:

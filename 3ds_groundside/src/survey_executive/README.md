@@ -46,7 +46,8 @@ runner.stop()
   run on a fake fleet.
 - Feeding photos to the stitcher stays with the caller. The executive only
   reads `stitcher.rejections`, and matches them to photos by
-  `(drone_id, image_id)`. Photos sent before `start()` are dropped, and a
+  `(drone_id, image_id)`, so a photo without an `image_id` never counts as
+  coverage. Photos sent before `start()` or after the end are dropped, and a
   photo sent twice counts once.
 - `tick()` sends the drone commands while holding the executive's lock, so
   `progress()` and `abort()` wait for it. Keep the manager's

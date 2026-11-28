@@ -4,6 +4,7 @@ Unit tests for route-preserving dispatch of planned Missions.
 
 from __future__ import annotations
 
+import math
 import random
 from collections import Counter
 
@@ -323,10 +324,13 @@ def test_remaining_is_a_copy() -> None:
     assert len(dispatcher.remaining("a")) == 2
 
 
-@pytest.mark.parametrize("timeout_s", [0.0, -1.0])
-def test_non_positive_timeout_is_refused(timeout_s: float) -> None:
+@pytest.mark.parametrize("timeout_s", [0.0, -1.0, math.nan, math.inf])
+def test_non_positive_or_non_finite_timeout_is_refused(timeout_s: float) -> None:
+    # NaN fails every comparison, so it would silently never time out.
     with pytest.raises(ValueError, match="ack_timeout_s"):
         RouteDispatcher(FakeFleet(), FakeClock(), ack_timeout_s=timeout_s)
+    with pytest.raises(ValueError, match="dropout_after_s"):
+        RouteDispatcher(FakeFleet(), FakeClock(), dropout_after_s=timeout_s)
 
 
 def ids(missions: list[Mission]) -> list[str]:
@@ -488,12 +492,6 @@ def test_random_dropouts_finish_every_mission_exactly_once(seed: int) -> None:
     planned = {m.task_id for planned in routes.values() for m in planned}
     assert set(finished) == planned
     assert set(finished.values()) == {1}
-
-
-@pytest.mark.parametrize("dropout_s", [0.0, -1.0])
-def test_non_positive_dropout_is_refused(dropout_s: float) -> None:
-    with pytest.raises(ValueError, match="dropout_after_s"):
-        RouteDispatcher(FakeFleet(), FakeClock(), dropout_after_s=dropout_s)
 
 
 class StampingFleet(FakeFleet):

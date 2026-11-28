@@ -128,10 +128,13 @@ def test_killed_drone_disconnects_and_goes_quiet(fleet: FleetHarness) -> None:
     stamp = fleet.manager.get_all_drones()["drone-02"].last_update_timestamp
     live_stamp = fleet.manager.get_all_drones()["drone-01"].last_update_timestamp
     time.sleep(0.2)
-    states = fleet.manager.get_all_drones()
-    assert states["drone-02"].last_update_timestamp == stamp
-    assert states["drone-01"].connected
-    assert states["drone-01"].last_update_timestamp != live_stamp
+    assert fleet.manager.get_all_drones()["drone-02"].last_update_timestamp == stamp
+    fleet.wait_for(
+        lambda: fleet.manager.get_all_drones()["drone-01"].last_update_timestamp
+        != live_stamp,
+        what="drone-01 to keep reporting",
+    )
+    assert fleet.manager.get_all_drones()["drone-01"].connected
     assert not fleet.manager.send_location_command_sync(
         "drone-02", "t-1", target_north(10.0), 0.0
     )

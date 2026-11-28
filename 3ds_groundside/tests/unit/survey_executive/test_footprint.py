@@ -7,7 +7,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from gnc.src.orthomosaic import derive_altitude, ground_footprint
+from gnc.src.orthomosaic import CameraSpec, derive_altitude, ground_footprint
 from shapely.affinity import rotate
 from shapely.geometry import Point
 
@@ -125,6 +125,7 @@ def test_yaw_full_turn_and_negative_yaw_agree() -> None:
         {"east_m": math.inf},
         {"roll_deg": math.nan},
         {"yaw_deg": math.inf},
+        {"pitch_deg": None},  # JSON null from the photo source
     ],
 )
 def test_unplaceable_photo_gives_none(overrides: dict[str, float]) -> None:
@@ -182,6 +183,23 @@ def test_level_photo_is_kept_whole_or_dropped_at_its_gsd() -> None:
     assert full is not None and kept is not None
     assert kept.symmetric_difference(full).area == pytest.approx(0.0, abs=1e-9)
     assert footprint(max_gsd_m=nadir_gsd_m * 0.9999) is None
+
+
+def test_level_photo_exactly_at_the_gsd_limit_is_kept() -> None:
+    # The planner flies at exactly the target GSD, so with max_gsd_ratio=1
+    # float rounding in the depth limit must not drop the whole photo.
+    camera = CameraSpec(
+        image_width_px=4000,
+        image_height_px=4000,
+        horizontal_fov_rad=math.radians(90.0),
+        vertical_fov_rad=math.radians(90.0),
+    )
+    alt_m = 0.01 * 4000 / (2.0 * math.tan(math.radians(45.0)))
+
+    kept = photo_footprint(0.0, 0.0, alt_m, 0.0, 0.0, 0.0, camera, max_gsd_m=0.01)
+
+    assert kept is not None
+    assert kept.area == pytest.approx((2.0 * alt_m) ** 2)
 
 
 def test_level_photo_gsd_matches_the_measured_gsd() -> None:
